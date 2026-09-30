@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Profile &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-content container" style="max-width: 640px;">
+    <div id="successBanner" class="card" style="display:none; background:#E4F6ED; border-color: var(--color-success); margin-bottom:20px;">
+      <span class="icon icon-success" style="-webkit-mask-image:url('../images-website/icons/done.png');mask-image:url('../images-website/icons/done.png');"></span>
+      Profile updated successfully.
+    </div>
+    <div id="formBanner" class="form-error" style="display:none; background:#FBE6E7; padding:10px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
+    <!-- Identity block -->
+    <div class="profile-identity">
+      <div class="profile-avatar-wrap">
+        <span id="identityAvatar"></span>
+        <button type="button" class="profile-avatar-upload" id="picUploadBtn" title="Change profile picture">
+          <span id="picUploadIcon"></span>
+        </button>
+        <input type="file" id="picFileInput" class="hidden" accept=".png,.jpg,.jpeg">
+      </div>
+      <div>
+        <div class="profile-identity-name">
+          <h2 id="identityName" style="margin:0;"></h2>
+          <button type="button" class="icon-btn" id="nameEditBtn"><span id="nameEditIcon"></span> Edit</button>
+        </div>
+        <div class="profile-identity-meta" id="identitySubtitle"></div>
+        <div class="profile-identity-line" id="identityAgeGender"></div>
+        <div class="form-error" id="picError" style="display:none;">Please upload a PNG or JPG image.</div>
+      </div>
+    </div>
+    <div class="card hidden" id="nameEditCard" style="margin-bottom:24px;">
+      <div class="form-group">
+        <label class="form-label" for="nameEditInput">Name</label>
+        <input type="text" id="nameEditInput" class="form-control">
+        <div class="form-error" id="nameEditError">This field is required.</div>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary btn-sm" id="nameSaveBtn">Save</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="nameCancelBtn">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Contact Info section -->
+    <div class="card section-card" id="contactCard">
+      <div class="section-card-header">
+        <h3>Contact Info</h3>
+        <button type="button" class="icon-btn" data-edit="contact"><span class="edit-icon"></span> Edit</button>
+      </div>
+      <div id="contactView">
+        <div class="field-view"><div class="field-label">Phone</div><div id="viewPhone"></div></div>
+        <div class="field-view"><div class="field-label">Email</div><div id="viewEmail"></div></div>
+        <div class="field-view"><div class="field-label">Age</div><div id="viewAge"></div></div>
+        <div class="field-view"><div class="field-label">Gender</div><div id="viewGender"></div></div>
+        <div class="field-view"><div class="field-label">Password</div><div>&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div></div>
+      </div>
+      <div class="hidden" id="contactEdit">
+        <div class="form-group">
+          <label class="form-label" for="pPhone">Phone</label>
+          <input type="tel" id="pPhone" class="form-control">
+          <div class="form-error" id="pPhoneError">Please enter a valid phone number.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pEmail">Email</label>
+          <input type="email" id="pEmail" class="form-control">
+          <div class="form-error" id="pEmailError">This field is required.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pAge">Age</label>
+          <input type="number" id="pAge" class="form-control" min="15" max="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Gender</label>
+          <div class="grid grid-2" style="gap:12px;">
+            <button type="button" class="card card-hover gender-option" data-gender="Male" style="text-align:center; padding:14px 12px; cursor:pointer;">Male</button>
+            <button type="button" class="card card-hover gender-option" data-gender="Female" style="text-align:center; padding:14px 12px; cursor:pointer;">Female</button>
+          </div>
+          <input type="hidden" id="pGender">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pPassword">Password</label>
+          <input type="password" id="pPassword" class="form-control" placeholder="Leave blank to keep current password">
+          <div class="form-error" id="pPasswordError">Password must be at least 8 characters.</div>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-primary btn-sm" data-save="contact">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cancel="contact">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Education section -->
+    <div class="card section-card" id="eduCard">
+      <div class="section-card-header">
+        <h3>Education</h3>
+        <button type="button" class="icon-btn" data-edit="education"><span class="edit-icon"></span> Edit</button>
+      </div>
+      <div id="eduView">
+        <div class="field-view"><div class="field-label">Educational Status</div><div id="viewEduStatus"></div></div>
+        <div class="field-view"><div class="field-label">Field of Study</div><div id="viewField"></div></div>
+      </div>
+      <div class="hidden" id="eduEdit">
+        <div class="form-group">
+          <label class="form-label" for="pEduStatus">Educational Status</label>
+          <select id="pEduStatus" class="form-control"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pField">Field of Study</label>
+          <select id="pField" class="form-control"></select>
+          <input type="text" id="pFieldOther" class="form-control hidden" placeholder="Tell us your field of study" style="margin-top:10px;">
+          <div class="form-error" id="pFieldError">This field is required.</div>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-primary btn-sm" data-save="education">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cancel="education">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Experience & Skills section -->
+    <div class="card section-card" id="expCard">
+      <div class="section-card-header">
+        <h3>Experience &amp; Skills</h3>
+        <button type="button" class="icon-btn" data-edit="experience"><span class="edit-icon"></span> Edit</button>
+      </div>
+      <div id="expView">
+        <div class="field-view"><div class="field-label">Experience</div><div id="viewExperience"></div></div>
+        <div class="field-view"><div class="field-label">Qualifications</div><div id="viewQualifications"></div></div>
+        <div class="field-view"><div class="field-label">Skills</div><div id="viewSkills"></div></div>
+      </div>
+      <div class="hidden" id="expEdit">
+        <div class="form-group">
+          <label class="form-label" for="pExperience">Experience</label>
+          <textarea id="pExperience" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pQualifications">Qualifications</label>
+          <textarea id="pQualifications" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Skills</label>
+          <div id="pSkillsBox"></div>
+          <input type="text" id="pSkillOther" class="form-control hidden" placeholder="Type your own, separated by commas" style="margin-top:10px;">
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-primary btn-sm" data-save="experience">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cancel="experience">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  renderHeader({ active: "", base: "../" });
+  renderFooter({ base: "../" });
+
+  let current = Store.getCurrentUser();
+
+  const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
+  function fileHasExt(file, exts) {
+    if (!file) return true;
+    const name = file.name.toLowerCase();
+    return exts.some(ext => name.endsWith(ext));
+  }
+  function setInvalid(input, errorEl, isInvalid) {
+    input.classList.toggle("invalid", isInvalid);
+    if (errorEl) errorEl.style.display = isInvalid ? "block" : "none";
+  }
+
+  const formBanner = document.getElementById("formBanner");
+  const successBanner = document.getElementById("successBanner");
+  function showBanner(msg) { successBanner.style.display = "none"; formBanner.textContent = msg; formBanner.style.display = "block"; }
+  function hideBanners() { formBanner.style.display = "none"; successBanner.style.display = "none"; }
+  function showSuccess() { formBanner.style.display = "none"; successBanner.style.display = "block"; }
+
+  document.querySelectorAll(".edit-icon").forEach(el => { el.outerHTML = iconHtml("edit", { base: "../", sizePx: 14 }); });
+  document.getElementById("nameEditIcon").outerHTML = iconHtml("edit", { base: "../", sizePx: 12 });
+  document.getElementById("picUploadIcon").outerHTML = iconHtml("upload", { base: "../", sizePx: 12 });
+
+  /* ---------- Identity block ---------- */
+  function renderIdentity() {
+    document.getElementById("identityAvatar").outerHTML = `<span id="identityAvatar">${avatarHtml(current, { base: "../", sizePx: 72, fontPx: 1.4 })}</span>`;
+    document.getElementById("identityName").textContent = current.name;
+    document.getElementById("identitySubtitle").textContent = current.fieldOfStudy || "";
+    document.getElementById("identityAgeGender").textContent = [current.age ? `${current.age} years old` : "", current.gender || ""].filter(Boolean).join(" · ");
+  }
+  renderIdentity();
+
+  document.getElementById("picUploadBtn").addEventListener("click", () => document.getElementById("picFileInput").click());
+  document.getElementById("picFileInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const picError = document.getElementById("picError");
+    if (!fileHasExt(file, [".png", ".jpg", ".jpeg"])) {
+      picError.style.display = "block";
+      return;
+    }
+    picError.style.display = "none";
+    current = Store.updateUser(current.id, { profilePicture: file.name });
+    renderIdentity();
+    showSuccess();
+  });
+
+  /* Name edit (identity block) */
+  const nameEditCard = document.getElementById("nameEditCard");
+  document.getElementById("nameEditBtn").addEventListener("click", () => {
+    document.getElementById("nameEditInput").value = current.name;
+    nameEditCard.classList.remove("hidden");
+  });
+  document.getElementById("nameCancelBtn").addEventListener("click", () => nameEditCard.classList.add("hidden"));
+  document.getElementById("nameSaveBtn").addEventListener("click", () => {
+    const name = document.getElementById("nameEditInput").value.trim();
+    setInvalid(document.getElementById("nameEditInput"), document.getElementById("nameEditError"), !name);
+    if (!name) return;
+    current = Store.updateUser(current.id, { name });
+    renderIdentity();
+    nameEditCard.classList.add("hidden");
+    showSuccess();
+  });
+
+  /* ---------- Section: Contact Info (Phone, Email, Age, Gender, Password) ---------- */
+  const pGender = document.getElementById("pGender");
+  function selectGenderButton(gender) {
+    document.querySelectorAll(".gender-option").forEach(b => {
+      const active = b.dataset.gender === gender;
+      b.style.borderColor = active ? "var(--color-primary)" : "";
+      b.style.borderWidth = active ? "2px" : "";
+    });
+  }
+  document.querySelectorAll(".gender-option").forEach(btn => {
+    btn.addEventListener("click", () => {
+      pGender.value = btn.dataset.gender;
+      selectGenderButton(btn.dataset.gender);
+    });
+  });
+
+  function fillContactView() {
+    document.getElementById("viewPhone").textContent = current.phone || "—";
+    document.getElementById("viewEmail").textContent = current.email || "—";
+    document.getElementById("viewAge").textContent = current.age || "—";
+    document.getElementById("viewGender").textContent = current.gender || "—";
+  }
+  function enterContactEdit() {
+    document.getElementById("pPhone").value = current.phone || "";
+    document.getElementById("pEmail").value = current.email || "";
+    document.getElementById("pAge").value = current.age || "";
+    pGender.value = current.gender || "";
+    selectGenderButton(current.gender || "");
+    document.getElementById("pPassword").value = "";
+    document.getElementById("contactView").classList.add("hidden");
+    document.getElementById("contactEdit").classList.remove("hidden");
+  }
+  function exitContactEdit() {
+    document.getElementById("contactEdit").classList.add("hidden");
+    document.getElementById("contactView").classList.remove("hidden");
+  }
+  function saveContact() {
+    hideBanners();
+    const phone = document.getElementById("pPhone").value.trim();
+    const email = document.getElementById("pEmail").value.trim();
+    const password = document.getElementById("pPassword").value;
+
+    let valid = true;
+    const phoneInvalid = !phone || !PHONE_REGEX.test(phone);
+    setInvalid(document.getElementById("pPhone"), document.getElementById("pPhoneError"), phoneInvalid);
+    if (phoneInvalid) valid = false;
+    setInvalid(document.getElementById("pEmail"), document.getElementById("pEmailError"), !email);
+    if (!email) valid = false;
+    const pwInvalid = password.length > 0 && password.length < 8;
+    setInvalid(document.getElementById("pPassword"), document.getElementById("pPasswordError"), pwInvalid);
+    if (pwInvalid) valid = false;
+
+    if (!valid) {
+      showBanner("All mandatory fields must be filled in correctly.");
+      return;
+    }
+
+    const existing = Store.findUserByEmail(email);
+    if (existing && existing.id !== current.id) {
+      showBanner("Email already registered");
+      setInvalid(document.getElementById("pEmail"), document.getElementById("pEmailError"), true);
+      document.getElementById("pEmailError").textContent = "Email already registered";
+      return;
+    }
+
+    const patch = {
+      phone, email,
+      age: Number(document.getElementById("pAge").value) || current.age,
+      gender: pGender.value || current.gender
+    };
+    if (password) patch.password = password;
+    current = Store.updateUser(current.id, patch);
+    fillContactView();
+    renderIdentity();
+    exitContactEdit();
+    showSuccess();
+  }
+  fillContactView();
+
+  /* ---------- Section: Education ---------- */
+  const pEduStatus = document.getElementById("pEduStatus");
+  EDUCATIONAL_STATUSES.forEach(s => pEduStatus.add(new Option(s, s)));
+  const pField = document.getElementById("pField");
+  FIELDS_OF_STUDY.forEach(f => pField.add(new Option(f, f)));
+  const pFieldOther = document.getElementById("pFieldOther");
+  pField.addEventListener("change", () => pFieldOther.classList.toggle("hidden", pField.value !== "Other"));
+
+  function fillEduView() {
+    document.getElementById("viewEduStatus").textContent = current.educationalStatus || "—";
+    document.getElementById("viewField").textContent = current.fieldOfStudy || "—";
+  }
+  function enterEduEdit() {
+    pEduStatus.value = current.educationalStatus || "";
+    const knownField = FIELDS_OF_STUDY.includes(current.fieldOfStudy);
+    pField.value = knownField ? current.fieldOfStudy : (current.fieldOfStudy ? "Other" : "");
+    pFieldOther.classList.toggle("hidden", pField.value !== "Other");
+    if (pField.value === "Other") pFieldOther.value = current.fieldOfStudy || "";
+    document.getElementById("eduView").classList.add("hidden");
+    document.getElementById("eduEdit").classList.remove("hidden");
+  }
+  function exitEduEdit() {
+    document.getElementById("eduEdit").classList.add("hidden");
+    document.getElementById("eduView").classList.remove("hidden");
+  }
+  function saveEducation() {
+    hideBanners();
+    let fieldOfStudy = pField.value;
+    if (fieldOfStudy === "Other") fieldOfStudy = pFieldOther.value.trim();
+    setInvalid(pField, document.getElementById("pFieldError"), !fieldOfStudy);
+    if (!fieldOfStudy) {
+      showBanner("Please fill in all mandatory fields.");
+      return;
+    }
+    current = Store.updateUser(current.id, { educationalStatus: pEduStatus.value, fieldOfStudy });
+    fillEduView();
+    renderIdentity();
+    exitEduEdit();
+    showSuccess();
+  }
+  fillEduView();
+
+  /* ---------- Section: Experience & Skills ---------- */
+  const pSkillsBox = document.getElementById("pSkillsBox");
+  const pSkillOther = document.getElementById("pSkillOther");
+  pSkillsBox.innerHTML = SKILL_OPTIONS.map(s => `
+    <label class="filter-option">
+      <input type="checkbox" value="${s}" class="skill-checkbox"> ${s}
+    </label>
+  `).join("");
+  pSkillsBox.querySelectorAll(".skill-checkbox").forEach(cb => {
+    if (cb.value === "Other") cb.addEventListener("change", () => pSkillOther.classList.toggle("hidden", !cb.checked));
+  });
+
+  function fillExpView() {
+    document.getElementById("viewExperience").textContent = current.experience || "—";
+    document.getElementById("viewQualifications").textContent = current.qualifications || "—";
+    document.getElementById("viewSkills").textContent = (current.skills || []).length ? current.skills.join(", ") : "—";
+  }
+  function enterExpEdit() {
+    document.getElementById("pExperience").value = current.experience || "";
+    document.getElementById("pQualifications").value = current.qualifications || "";
+    pSkillsBox.querySelectorAll(".skill-checkbox").forEach(cb => cb.checked = false);
+    pSkillOther.classList.add("hidden");
+    pSkillOther.value = "";
+    (current.skills || []).forEach(s => {
+      const cb = pSkillsBox.querySelector(`.skill-checkbox[value="${CSS.escape(s)}"]`);
+      if (cb) cb.checked = true;
+    });
+    const extraSkills = (current.skills || []).filter(s => !SKILL_OPTIONS.includes(s));
+    if (extraSkills.length) {
+      pSkillsBox.querySelector('.skill-checkbox[value="Other"]').checked = true;
+      pSkillOther.classList.remove("hidden");
+      pSkillOther.value = extraSkills.join(", ");
+    }
+    document.getElementById("expView").classList.add("hidden");
+    document.getElementById("expEdit").classList.remove("hidden");
+  }
+  function exitExpEdit() {
+    document.getElementById("expEdit").classList.add("hidden");
+    document.getElementById("expView").classList.remove("hidden");
+  }
+  function saveExperience() {
+    hideBanners();
+    const skills = [];
+    pSkillsBox.querySelectorAll(".skill-checkbox:checked").forEach(cb => {
+      if (cb.value !== "Other") skills.push(cb.value);
+    });
+    if (!pSkillOther.classList.contains("hidden") && pSkillOther.value.trim()) {
+      pSkillOther.value.split(",").map(s => s.trim()).filter(Boolean).forEach(s => skills.push(s));
+    }
+    current = Store.updateUser(current.id, {
+      experience: document.getElementById("pExperience").value.trim(),
+      qualifications: document.getElementById("pQualifications").value.trim(),
+      skills
+    });
+    fillExpView();
+    exitExpEdit();
+    showSuccess();
+  }
+  fillExpView();
+
+  document.querySelectorAll("[data-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      hideBanners();
+      if (btn.dataset.edit === "contact") enterContactEdit();
+      if (btn.dataset.edit === "education") enterEduEdit();
+      if (btn.dataset.edit === "experience") enterExpEdit();
+    });
+  });
+  document.querySelectorAll("[data-cancel]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.cancel === "contact") exitContactEdit();
+      if (btn.dataset.cancel === "education") exitEduEdit();
+      if (btn.dataset.cancel === "experience") exitExpEdit();
+    });
+  });
+  document.querySelectorAll("[data-save]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.save === "contact") saveContact();
+      if (btn.dataset.save === "education") saveEducation();
+      if (btn.dataset.save === "experience") saveExperience();
+    });
+  });
+</script>
+
+</body>
+</html>

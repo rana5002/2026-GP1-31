@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ufuq &mdash; Find Your Next Training Program or Course</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container hero-inner">
+      <h1>Find the right training program or course &mdash; in one place</h1>
+      <p>Ufuq brings together training programs and courses for IT, Computer Science and Computer Engineering students across Saudi Arabia.</p>
+      <div class="flex-center gap-3" style="margin-top: 32px; flex-wrap: wrap;">
+        <a href="pages/signup.html" class="btn btn-primary">Sign Up</a>
+        <a href="pages/login.html" class="btn btn-outline">Log In</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Value props -->
+  <section class="section section-alt">
+    <div class="container">
+      <h2 class="text-center" style="margin-bottom: 40px;">Built for computing students &mdash; and the companies training them</h2>
+      <div class="grid grid-3">
+        <div class="card text-center">
+          <div class="flex-center" style="margin-bottom:12px;">
+            <span class="icon icon-primary" style="width:30px;height:30px;-webkit-mask-image:url('images-website/icons/training.png');mask-image:url('images-website/icons/training.png');"></span>
+          </div>
+          <h3>One Place for Opportunities</h3>
+          <p>Training programs and courses from verified companies, gathered in a single platform.</p>
+        </div>
+        <div class="card text-center">
+          <div class="flex-center" style="margin-bottom:12px;">
+            <span class="icon icon-primary" style="width:30px;height:30px;-webkit-mask-image:url('images-website/icons/company.png');mask-image:url('images-website/icons/company.png');"></span>
+          </div>
+          <h3>Verified Companies</h3>
+          <p>Every company account is reviewed by an admin before it can publish opportunities.</p>
+        </div>
+        <div class="card text-center">
+          <div class="flex-center" style="margin-bottom:12px;">
+            <span class="icon icon-primary" style="width:30px;height:30px;-webkit-mask-image:url('images-website/icons/goal.png');mask-image:url('images-website/icons/goal.png');"></span>
+          </div>
+          <h3>A Profile That Follows You</h3>
+          <p>Keep your field of study, skills and experience in one profile, ready to grow with the platform.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA for companies -->
+  <section class="section">
+    <div class="container">
+      <div class="card flex-between" style="background: var(--color-primary-tint); border: none; flex-wrap: wrap; gap: 20px;">
+        <div>
+          <h3 style="margin-bottom:4px;">Are you offering a training program or course?</h3>
+          <p style="margin:0;">Register your company to publish opportunities and reach students across Saudi Arabia.</p>
+        </div>
+        <a href="pages/signup.html" class="btn btn-primary">Register Your Company</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="js/store.js"></script>
+<script src="js/constants.js"></script>
+<script src="js/components.js"></script>
+<script>
+  renderHeader({ active: "home", base: "" });
+  renderFooter({ base: "" });
+</script>
+
+</body>
+</html>

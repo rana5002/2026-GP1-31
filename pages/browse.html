@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browse Opportunities &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-content container">
+    <div class="flex-between" style="margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin-bottom:2px;">Browse Opportunities</h2>
+        <p class="text-muted" style="margin:0;">Training programs and courses from verified companies.</p>
+      </div>
+      <button type="button" class="btn btn-outline" id="filtersToggleBtn">
+        <span id="filtersToggleIcon"></span>
+        Filters
+      </button>
+    </div>
+
+    <div class="card hidden" id="filterPanel" style="margin-bottom:24px;">
+      <div class="grid grid-3">
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Opportunity Type</h4>
+          <div id="filterType"></div>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Location / City</h4>
+          <select class="form-control" id="filterLocation" disabled>
+            <option value="">Any</option>
+          </select>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Industry Sector</h4>
+          <select class="form-control" id="filterIndustry" disabled>
+            <option value="">Any</option>
+          </select>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Duration</h4>
+          <div id="filterDuration"></div>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Application Method</h4>
+          <div id="filterMethod"></div>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Company Name</h4>
+          <input type="text" class="form-control" id="filterCompany" placeholder="Search by company" disabled>
+        </div>
+      </div>
+      <div class="flex gap-2" style="margin-top:var(--space-4);">
+        <button type="button" class="btn btn-primary btn-sm" disabled title="Filtering opens up once opportunities are searchable in Sprint 2.">Apply Filters</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="filtersClearBtn">Clear</button>
+      </div>
+      <p class="form-hint" style="margin-top:var(--space-3);">Filters are a preview of what's coming &mdash; opportunity search and listing arrive in a later sprint.</p>
+    </div>
+
+    <div class="empty-state" id="browseEmptyState">
+      <div class="empty-icon">
+        <span class="icon icon-muted" id="emptyStateIcon" style="width:40px;height:40px;"></span>
+      </div>
+      <h3>No opportunities to show yet</h3>
+      <p>Check back soon &mdash; new training programs and courses will appear here once companies start publishing.</p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  renderHeader({ active: "browse", base: "../" });
+  renderFooter({ base: "../" });
+
+  document.getElementById("filtersToggleIcon").outerHTML = iconHtml("filter", { base: "../", sizePx: 16, extraClass: "icon-filter" });
+  document.getElementById("emptyStateIcon").outerHTML = iconHtml("training", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+
+  /* ---------- Filters panel (inert placeholder ahead of Sprint 2) ---------- */
+  const filterType = document.getElementById("filterType");
+  filterType.innerHTML = OPPORTUNITY_TYPES.map(t => `
+    <label class="filter-option">
+      <input type="checkbox" disabled> ${t}
+    </label>
+  `).join("");
+
+  const filterLocation = document.getElementById("filterLocation");
+  CITIES.forEach(c => filterLocation.add(new Option(c, c)));
+
+  const filterIndustry = document.getElementById("filterIndustry");
+  INDUSTRY_SECTORS.forEach(s => filterIndustry.add(new Option(s, s)));
+
+  const filterDuration = document.getElementById("filterDuration");
+  ["Under 2 weeks", "2–9 weeks", "Over 9 weeks"].forEach(d => {
+    filterDuration.innerHTML += `<label class="filter-option"><input type="radio" name="filterDuration" disabled> ${d}</label>`;
+  });
+
+  const filterMethod = document.getElementById("filterMethod");
+  filterMethod.innerHTML = APPLICATION_METHODS.map(m => `
+    <label class="filter-option">
+      <input type="checkbox" disabled> ${m}
+    </label>
+  `).join("");
+
+  const filterPanel = document.getElementById("filterPanel");
+  const filtersToggleBtn = document.getElementById("filtersToggleBtn");
+  filtersToggleBtn.addEventListener("click", () => {
+    filterPanel.classList.toggle("hidden");
+  });
+  document.getElementById("filtersClearBtn").addEventListener("click", () => {
+    filterPanel.querySelectorAll("input[type=checkbox]").forEach(cb => cb.checked = false);
+    filterPanel.querySelectorAll("input[type=radio]").forEach(r => r.checked = false);
+    filterPanel.querySelectorAll("select").forEach(s => s.value = "");
+    const companyInput = document.getElementById("filterCompany");
+    if (companyInput) companyInput.value = "";
+  });
+</script>
+
+</body>
+</html>

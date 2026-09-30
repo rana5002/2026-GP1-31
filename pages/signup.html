@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Up &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="auth-wrapper">
+    <div class="auth-card" style="max-width: 620px;">
+      <h2 class="text-center">Create your account</h2>
+      <p class="text-center" style="margin-bottom: 24px;">Sign up as a student to browse opportunities, or as a company to publish them.</p>
+
+      <div class="role-toggle">
+        <button type="button" class="active" id="roleUserBtn">Student / Graduate</button>
+        <button type="button" id="roleCompanyBtn">Company</button>
+      </div>
+
+      <div id="formBanner" class="form-error" style="display:none; background:#FBE6E7; padding:10px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
+      <!-- ================= USER FORM ================= -->
+      <form id="userForm" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="uName">Name</label>
+          <input type="text" id="uName" class="form-control">
+          <div class="form-error" id="uNameError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="uEmail">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/email.png');mask-image:url('../images-website/icons/email.png');"></span>
+            Email
+          </label>
+          <input type="email" id="uEmail" class="form-control">
+          <div class="form-error" id="uEmailError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="uPhone">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/phone.png');mask-image:url('../images-website/icons/phone.png');"></span>
+            Phone
+          </label>
+          <input type="tel" id="uPhone" class="form-control" placeholder="e.g. 05XXXXXXXX">
+          <div class="form-error" id="uPhoneError">Please enter a valid phone number.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label icon-label" for="uEduStatus">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>
+              Educational Status
+            </label>
+            <select id="uEduStatus" class="form-control">
+              <option value="">Select&hellip;</option>
+            </select>
+            <div class="form-error" id="uEduStatusError">This field is required.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label icon-label" for="uField">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>
+              Field of Study
+            </label>
+            <select id="uField" class="form-control">
+              <option value="">Select&hellip;</option>
+            </select>
+            <input type="text" id="uFieldOther" class="form-control hidden" placeholder="Tell us your field of study" style="margin-top:10px;">
+            <div class="form-error" id="uFieldError">This field is required.</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="uAge">Age</label>
+          <input type="number" id="uAge" class="form-control" min="15" max="100">
+          <div class="form-error" id="uAgeError">Please enter an age between 15 and 100.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Gender</label>
+          <div class="grid grid-2" style="gap:12px;">
+            <button type="button" class="card card-hover gender-option" data-gender="Male" style="text-align:center; padding:18px 12px; cursor:pointer;">
+              <div class="flex-center" style="margin-bottom:6px;">
+                <span class="icon icon-primary" style="width:26px;height:26px;-webkit-mask-image:url('../images-website/icons/userMale.png');mask-image:url('../images-website/icons/userMale.png');"></span>
+              </div>
+              <div style="font-weight:600;">Male</div>
+            </button>
+            <button type="button" class="card card-hover gender-option" data-gender="Female" style="text-align:center; padding:18px 12px; cursor:pointer;">
+              <div class="flex-center" style="margin-bottom:6px;">
+                <span class="icon icon-primary" style="width:26px;height:26px;-webkit-mask-image:url('../images-website/icons/userFemale.png');mask-image:url('../images-website/icons/userFemale.png');"></span>
+              </div>
+              <div style="font-weight:600;">Female</div>
+            </button>
+          </div>
+          <input type="hidden" id="uGender">
+          <div class="form-error" id="uGenderError" style="display:none;">Please select a gender.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label icon-label" for="uPassword">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/lock.png');mask-image:url('../images-website/icons/lock.png');"></span>
+              Password
+            </label>
+            <input type="password" id="uPassword" class="form-control">
+            <div class="form-error" id="uPasswordError">Password must be at least 8 characters.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label icon-label" for="uPassword2">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/lock.png');mask-image:url('../images-website/icons/lock.png');"></span>
+              Confirm Password
+            </label>
+            <input type="password" id="uPassword2" class="form-control">
+            <div class="form-error" id="uPassword2Error">Passwords do not match.</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <p class="form-hint" style="margin-bottom:16px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; color:var(--color-text-faint);">
+          Optional &mdash; you can add these now or later from your profile
+        </p>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="uPicture">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/upload.png');mask-image:url('../images-website/icons/upload.png');"></span>
+            Profile Picture
+          </label>
+          <input type="file" id="uPicture" class="form-control" accept=".png,.jpg,.jpeg">
+          <div class="form-error" id="uPictureError">Please upload a PNG or JPG image.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="uExperience">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/form.png');mask-image:url('../images-website/icons/form.png');"></span>
+            Experience
+          </label>
+          <textarea id="uExperience" class="form-control" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="uQualifications">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>
+            Qualifications
+          </label>
+          <textarea id="uQualifications" class="form-control" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>
+            Skills
+          </label>
+          <div id="uSkillsBox"></div>
+          <input type="text" id="uSkillOther" class="form-control hidden" placeholder="Type your own, separated by commas" style="margin-top:10px;">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px;">Create Account</button>
+      </form>
+
+      <!-- ================= COMPANY FORM ================= -->
+      <form id="companyForm" class="hidden" novalidate>
+        <div class="form-group">
+          <label class="form-label icon-label" for="cName">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/company.png');mask-image:url('../images-website/icons/company.png');"></span>
+            Company Name
+          </label>
+          <input type="text" id="cName" class="form-control">
+          <div class="form-error" id="cNameError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cEmail">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/email.png');mask-image:url('../images-website/icons/email.png');"></span>
+            Official Email
+          </label>
+          <input type="email" id="cEmail" class="form-control">
+          <div class="form-error" id="cEmailError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cPhone">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/phone.png');mask-image:url('../images-website/icons/phone.png');"></span>
+            Contact Phone
+          </label>
+          <input type="tel" id="cPhone" class="form-control" placeholder="e.g. 05XXXXXXXX">
+          <div class="form-error" id="cPhoneError">Please enter a valid phone number.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="cCr">CR Number</label>
+          <input type="text" id="cCr" class="form-control">
+          <div class="form-error" id="cCrError">This field is required.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="cIndustry">Industry Sector</label>
+            <select id="cIndustry" class="form-control">
+              <option value="">Select&hellip;</option>
+            </select>
+            <div class="form-error" id="cIndustryError">This field is required.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label icon-label" for="cLocation">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/location.png');mask-image:url('../images-website/icons/location.png');"></span>
+              Location / City
+            </label>
+            <select id="cLocation" class="form-control">
+              <option value="">Select&hellip;</option>
+            </select>
+            <div class="form-error" id="cLocationError">This field is required.</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="cDescription">Company Description</label>
+          <textarea id="cDescription" class="form-control" rows="3"></textarea>
+          <div class="form-error" id="cDescriptionError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cDoc">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/document.png');mask-image:url('../images-website/icons/document.png');"></span>
+            Verification Document (CR document)
+          </label>
+          <input type="file" id="cDoc" class="form-control" accept=".pdf,.png,.jpg,.jpeg">
+          <div class="form-error" id="cDocError">Please upload a PDF, PNG or JPG file.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cLogo">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/upload.png');mask-image:url('../images-website/icons/upload.png');"></span>
+            Company Logo
+          </label>
+          <input type="file" id="cLogo" class="form-control" accept=".png,.jpg,.jpeg">
+          <div class="form-error" id="cLogoError">Please upload a PNG or JPG image.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cWebsite">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/externalLink.png');mask-image:url('../images-website/icons/externalLink.png');"></span>
+            Website URL <span class="text-muted" style="font-weight:400;">(optional)</span>
+          </label>
+          <input type="url" id="cWebsite" class="form-control" placeholder="https://">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="cPassword">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/lock.png');mask-image:url('../images-website/icons/lock.png');"></span>
+            Password
+          </label>
+          <input type="password" id="cPassword" class="form-control">
+          <div class="form-error" id="cPasswordError">Password must be at least 8 characters.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px;">Register Company</button>
+      </form>
+
+      <!-- ================= COMPANY PENDING CONFIRMATION ================= -->
+      <div id="companyPending" class="hidden text-center">
+        <div class="flex-center" style="margin-bottom:16px;">
+          <span class="icon icon-success" style="width:40px;height:40px;-webkit-mask-image:url('../images-website/icons/done.png');mask-image:url('../images-website/icons/done.png');"></span>
+        </div>
+        <h3>Registration submitted</h3>
+        <p>Your company account is <strong>pending admin review</strong>. You'll be able to log in once it's approved.</p>
+        <a href="login.html" class="btn btn-outline" style="margin-top:8px;">Back to Log In</a>
+      </div>
+
+      <p class="text-center" style="margin-top:20px;" id="loginLinkRow">
+        Already have an account? <a href="login.html">Log In</a>
+      </p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  renderHeader({ active: "", base: "../" });
+  renderFooter({ base: "../" });
+
+  const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
+
+  const roleUserBtn = document.getElementById("roleUserBtn");
+  const roleCompanyBtn = document.getElementById("roleCompanyBtn");
+  const userForm = document.getElementById("userForm");
+  const companyForm = document.getElementById("companyForm");
+  const formBanner = document.getElementById("formBanner");
+
+  function showBanner(msg) {
+    formBanner.textContent = msg;
+    formBanner.style.display = "block";
+  }
+  function hideBanner() {
+    formBanner.style.display = "none";
+  }
+
+  roleUserBtn.addEventListener("click", () => {
+    roleUserBtn.classList.add("active");
+    roleCompanyBtn.classList.remove("active");
+    userForm.classList.remove("hidden");
+    companyForm.classList.add("hidden");
+    hideBanner();
+  });
+  roleCompanyBtn.addEventListener("click", () => {
+    roleCompanyBtn.classList.add("active");
+    roleUserBtn.classList.remove("active");
+    companyForm.classList.remove("hidden");
+    userForm.classList.add("hidden");
+    hideBanner();
+  });
+
+  function setInvalid(input, errorEl, isInvalid) {
+    input.classList.toggle("invalid", isInvalid);
+    if (errorEl) errorEl.style.display = isInvalid ? "block" : "none";
+  }
+
+  function fileHasExt(file, exts) {
+    if (!file) return true; // optional / not re-uploaded
+    const name = file.name.toLowerCase();
+    return exts.some(ext => name.endsWith(ext));
+  }
+
+  /* ---------- Populate selects ---------- */
+  const uEduStatus = document.getElementById("uEduStatus");
+  EDUCATIONAL_STATUSES.forEach(s => uEduStatus.add(new Option(s, s)));
+
+  const uField = document.getElementById("uField");
+  FIELDS_OF_STUDY.forEach(f => uField.add(new Option(f, f)));
+  const uFieldOther = document.getElementById("uFieldOther");
+  uField.addEventListener("change", () => uFieldOther.classList.toggle("hidden", uField.value !== "Other"));
+
+  const cIndustry = document.getElementById("cIndustry");
+  INDUSTRY_SECTORS.forEach(s => cIndustry.add(new Option(s, s)));
+
+  const cLocation = document.getElementById("cLocation");
+  CITIES.forEach(c => cLocation.add(new Option(c, c)));
+
+  /* ---------- Gender picker ---------- */
+  const uGender = document.getElementById("uGender");
+  document.querySelectorAll(".gender-option").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".gender-option").forEach(b => { b.style.borderColor = ""; b.style.borderWidth = ""; });
+      btn.style.borderColor = "var(--color-primary)";
+      btn.style.borderWidth = "2px";
+      uGender.value = btn.dataset.gender;
+      document.getElementById("uGenderError").style.display = "none";
+    });
+  });
+
+  /* ---------- Skills checkboxes ---------- */
+  const uSkillsBox = document.getElementById("uSkillsBox");
+  const uSkillOther = document.getElementById("uSkillOther");
+  uSkillsBox.innerHTML = SKILL_OPTIONS.map(s => `
+    <label class="filter-option">
+      <input type="checkbox" value="${s}" class="skill-checkbox"> ${s}
+    </label>
+  `).join("");
+  uSkillsBox.querySelectorAll(".skill-checkbox").forEach(cb => {
+    if (cb.value === "Other") {
+      cb.addEventListener("change", () => uSkillOther.classList.toggle("hidden", !cb.checked));
+    }
+  });
+
+  /* ---------- User form submit ---------- */
+  userForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    hideBanner();
+
+    const name = document.getElementById("uName").value.trim();
+    const email = document.getElementById("uEmail").value.trim();
+    const phone = document.getElementById("uPhone").value.trim();
+    const eduStatus = uEduStatus.value;
+    let fieldOfStudy = uField.value;
+    if (fieldOfStudy === "Other") fieldOfStudy = uFieldOther.value.trim();
+    const age = document.getElementById("uAge").value;
+    const gender = uGender.value;
+    const password = document.getElementById("uPassword").value;
+    const password2 = document.getElementById("uPassword2").value;
+    const pictureFile = document.getElementById("uPicture").files[0];
+
+    let valid = true;
+
+    setInvalid(document.getElementById("uName"), document.getElementById("uNameError"), !name);
+    if (!name) valid = false;
+
+    setInvalid(document.getElementById("uEmail"), document.getElementById("uEmailError"), !email);
+    if (!email) valid = false;
+
+    const phoneInvalid = !phone || !PHONE_REGEX.test(phone);
+    setInvalid(document.getElementById("uPhone"), document.getElementById("uPhoneError"), phoneInvalid);
+    if (phoneInvalid) valid = false;
+
+    setInvalid(uEduStatus, document.getElementById("uEduStatusError"), !eduStatus);
+    if (!eduStatus) valid = false;
+
+    setInvalid(uField, document.getElementById("uFieldError"), !fieldOfStudy);
+    if (!fieldOfStudy) valid = false;
+
+    const ageInvalid = !age || Number(age) < 15 || Number(age) > 100;
+    setInvalid(document.getElementById("uAge"), document.getElementById("uAgeError"), ageInvalid);
+    if (ageInvalid) valid = false;
+
+    const genderError = document.getElementById("uGenderError");
+    if (!gender) { genderError.style.display = "block"; valid = false; } else { genderError.style.display = "none"; }
+
+    const pwInvalid = password.length < 8;
+    setInvalid(document.getElementById("uPassword"), document.getElementById("uPasswordError"), pwInvalid);
+    if (pwInvalid) valid = false;
+
+    const pw2Invalid = password !== password2 || !password2;
+    setInvalid(document.getElementById("uPassword2"), document.getElementById("uPassword2Error"), pw2Invalid);
+    if (pw2Invalid) valid = false;
+
+    const pictureInvalid = pictureFile && !fileHasExt(pictureFile, [".png", ".jpg", ".jpeg"]);
+    setInvalid(document.getElementById("uPicture"), document.getElementById("uPictureError"), pictureInvalid);
+    if (pictureInvalid) valid = false;
+
+    if (!valid) {
+      showBanner("All fields are mandatory. Please check the highlighted fields.");
+      return;
+    }
+
+    const skills = [];
+    uSkillsBox.querySelectorAll(".skill-checkbox:checked").forEach(cb => {
+      if (cb.value !== "Other") skills.push(cb.value);
+    });
+    if (!uSkillOther.classList.contains("hidden") && uSkillOther.value.trim()) {
+      uSkillOther.value.split(",").map(s => s.trim()).filter(Boolean).forEach(s => skills.push(s));
+    }
+
+    const user = Store.createUser({
+      name, email, phone,
+      educationalStatus: eduStatus,
+      fieldOfStudy,
+      age: Number(age),
+      gender,
+      password,
+      profilePicture: pictureFile ? pictureFile.name : "",
+      experience: document.getElementById("uExperience").value.trim(),
+      qualifications: document.getElementById("uQualifications").value.trim(),
+      skills
+    });
+
+    if (!user) {
+      showBanner("Email already registered");
+      setInvalid(document.getElementById("uEmail"), document.getElementById("uEmailError"), true);
+      document.getElementById("uEmailError").textContent = "Email already registered";
+      return;
+    }
+
+    Store.login(user.id, "user");
+    window.location.href = "browse.html";
+  });
+
+  /* ---------- Company form submit ---------- */
+  companyForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    hideBanner();
+
+    const name = document.getElementById("cName").value.trim();
+    const email = document.getElementById("cEmail").value.trim();
+    const phone = document.getElementById("cPhone").value.trim();
+    const crNumber = document.getElementById("cCr").value.trim();
+    const industry = cIndustry.value;
+    const description = document.getElementById("cDescription").value.trim();
+    const location = cLocation.value;
+    const docFile = document.getElementById("cDoc").files[0];
+    const logoFile = document.getElementById("cLogo").files[0];
+    const website = document.getElementById("cWebsite").value.trim();
+    const password = document.getElementById("cPassword").value;
+
+    let valid = true;
+
+    setInvalid(document.getElementById("cName"), document.getElementById("cNameError"), !name);
+    if (!name) valid = false;
+
+    setInvalid(document.getElementById("cEmail"), document.getElementById("cEmailError"), !email);
+    if (!email) valid = false;
+
+    const phoneInvalid = !phone || !PHONE_REGEX.test(phone);
+    setInvalid(document.getElementById("cPhone"), document.getElementById("cPhoneError"), phoneInvalid);
+    if (phoneInvalid) valid = false;
+
+    setInvalid(document.getElementById("cCr"), document.getElementById("cCrError"), !crNumber);
+    if (!crNumber) valid = false;
+
+    setInvalid(cIndustry, document.getElementById("cIndustryError"), !industry);
+    if (!industry) valid = false;
+
+    setInvalid(cLocation, document.getElementById("cLocationError"), !location);
+    if (!location) valid = false;
+
+    setInvalid(document.getElementById("cDescription"), document.getElementById("cDescriptionError"), !description);
+    if (!description) valid = false;
+
+    const docInvalid = !docFile || !fileHasExt(docFile, [".pdf", ".png", ".jpg", ".jpeg"]);
+    setInvalid(document.getElementById("cDoc"), document.getElementById("cDocError"), docInvalid);
+    if (docInvalid) valid = false;
+
+    const logoInvalid = !logoFile || !fileHasExt(logoFile, [".png", ".jpg", ".jpeg"]);
+    setInvalid(document.getElementById("cLogo"), document.getElementById("cLogoError"), logoInvalid);
+    if (logoInvalid) valid = false;
+
+    const pwInvalid = password.length < 8;
+    setInvalid(document.getElementById("cPassword"), document.getElementById("cPasswordError"), pwInvalid);
+    if (pwInvalid) valid = false;
+
+    if (!valid) {
+      showBanner("All fields are mandatory. Please check the highlighted fields.");
+      return;
+    }
+
+    const company = Store.createCompany({
+      name, email, phone, crNumber, industry, description, location,
+      verificationDocName: docFile.name,
+      logoFileName: logoFile.name,
+      website,
+      password
+    });
+
+    if (!company) {
+      showBanner("Company already registered");
+      setInvalid(document.getElementById("cEmail"), document.getElementById("cEmailError"), true);
+      document.getElementById("cEmailError").textContent = "Company already registered";
+      return;
+    }
+
+    companyForm.classList.add("hidden");
+    document.getElementById("loginLinkRow").classList.add("hidden");
+    document.querySelector(".role-toggle").classList.add("hidden");
+    document.getElementById("companyPending").classList.remove("hidden");
+  });
+</script>
+
+</body>
+</html>
