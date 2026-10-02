@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Ufuq | Register</title><link rel="stylesheet" href="../css/styles.css"></head><body><header class="site-header"><div class="container nav-wrap">
+<a class="brand" href="../index.html"><img src="../images-website/logo.png" alt="Ufuq logo"><span class="brand-name">Ufuq</span></a>
+<button class="menu-btn" aria-label="Open menu">☰</button>
+<nav class="main-nav">
+<a class="" href="../index.html">Home</a>
+<a class="" href="../pages/opportunities.html">Opportunities</a>
+<a class="" href="../pages/courses.html">Courses</a>
+</nav>
+<div class="nav-actions"><a class="login-link" href="../pages/login.html">Login</a><a class="btn btn-primary btn-small" href="../pages/register.html">Register</a></div>
+</div></header><main class="form-page"><div class="form-card"><img class="form-logo" src="../images-website/logo.png" alt="Ufuq"><h1>Create an account</h1><p>Select an account type to continue.</p><form id="registerForm">
+<div class="form-grid">
+<div class="form-group full"><label>Account Type</label><select id="accountType" name="accountType"><option value="user">User</option><option value="company">Company</option></select></div>
+
+<div id="userFields" class="form-grid" style="grid-column:1/-1">
+<div class="form-group"><label>Name</label><input name="userName"></div>
+<div class="form-group"><label>Email</label><input type="email" name="userEmail"></div>
+<div class="form-group"><label>Phone Number</label><input name="userPhone" placeholder="+966 5XXXXXXXX"></div>
+<div class="form-group"><label>Password</label><input type="password" minlength="8" name="userPassword"></div>
+<div class="form-group"><label>Educational Status</label><select name="education"><option>Student</option><option>Fresh Graduate</option><option>Employed</option></select></div>
+<div class="form-group"><label>Field of Study</label><input name="major"></div>
+<div class="form-group"><label>Age</label><input type="number" name="age"></div>
+<div class="form-group"><label>Gender</label><select name="gender"><option>Female</option><option>Male</option></select></div>
+<div class="form-group full"><label>Profile Picture (Optional)</label><input type="file" name="profilePicture" accept=".png,.jpg,.jpeg"></div>
+<div class="form-group"><label>Experience (Optional)</label><input name="experience"></div>
+<div class="form-group"><label>Qualifications (Optional)</label><input name="qualifications"></div>
+<div class="form-group full"><label>Skills (Optional)</label><input name="skills" placeholder="e.g. PHP, SQL, Cybersecurity"></div>
+</div>
+
+<div id="companyFields" class="form-grid" style="grid-column:1/-1;display:none">
+<div class="form-group"><label>Company Name</label><input name="companyName"></div>
+<div class="form-group"><label>Official Email</label><input type="email" name="companyEmail"></div>
+<div class="form-group"><label>Contact Phone</label><input name="companyPhone" placeholder="+966 5XXXXXXXX"></div>
+<div class="form-group"><label>CR Number</label><input name="crNumber"></div>
+<div class="form-group"><label>Industry Sector</label><input name="industry"></div>
+<div class="form-group"><label>Location / City</label><input name="location"></div>
+<div class="form-group full"><label>Company Description</label><textarea name="companyDescription"></textarea></div>
+<div class="form-group"><label>Verification Document</label><input type="file" accept=".pdf,.png,.jpg,.jpeg"></div>
+<div class="form-group"><label>Company Logo</label><input type="file" accept=".png,.jpg,.jpeg"></div>
+<div class="form-group"><label>Website URL (Optional)</label><input type="url" name="website"></div>
+<div class="form-group"><label>Password</label><input type="password" minlength="8" name="companyPassword"></div>
+</div>
+</div>
+<button class="btn btn-primary form-submit" type="submit" id="registerButton">Register</button>
+<p class="demo-msg" hidden></p>
+</form><p class="form-note" id="registerStatus">Already registered? <a href="login.html">Log in</a></p></div></main><footer class="site-footer"><div class="container footer-grid">
+<div><a class="footer-brand" href="../index.html"><img src="../images-website/logo.png" alt="Ufuq logo"><div><strong>Ufuq</strong><span>Discover. Explore. Apply.</span></div></a></div>
+<div class="footer-col"><h4>Explore</h4><a href="../pages/opportunities.html">Opportunities</a><a href="../pages/courses.html">Courses</a></div>
+<div class="footer-col"><h4>Account</h4><a href="../pages/login.html">Login</a><a href="../pages/register.html">Register</a></div>
+<div class="footer-col"><h4>Ufuq</h4><a href="../pages/about.html">About</a></div>
+</div><div class="container footer-bottom"><span>© 2026 Ufuq. All rights reserved.</span><span>Graduation Project · IT496</span></div></footer><script src="../js/main.js"></script></body></html><script>
+document.addEventListener("DOMContentLoaded", function(){
+  const type = document.getElementById("accountType");
+  const user = document.getElementById("userFields");
+  const company = document.getElementById("companyFields");
+  const button = document.getElementById("registerButton");
+  function switchType(){
+    const isCompany = type.value === "company";
+    user.style.display = isCompany ? "none" : "grid";
+    company.style.display = isCompany ? "grid" : "none";
+    button.textContent = isCompany ? "Submit Registration" : "Register";
+  }
+  type.addEventListener("change", switchType);
+  switchType();
+});
+</script>
