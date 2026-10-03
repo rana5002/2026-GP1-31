@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Gap Analysis &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container" style="max-width:720px;">
+      <h2 style="margin-bottom:2px;">Skill Gap Analysis</h2>
+      <p class="text-muted" style="margin:0;">
+        Compare your current skills against a target job role and see what to learn next.
+      </p>
+    </div>
+  </div>
+  <div class="page-content container" style="max-width:720px; padding-top:0;">
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label">Your Skills (from your profile)</label>
+        <div id="mySkills"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Job Role</label>
+        <input type="text" class="form-control" id="targetRole" placeholder="e.g. Backend Developer, Data Analyst, Network Engineer">
+      </div>
+      <button type="button" class="btn btn-primary" id="analyzeBtn">Analyze Gap</button>
+
+      <div id="resultArea" class="hidden" style="margin-top:20px;">
+        <div class="divider"></div>
+        <div class="flex gap-3" style="align-items:flex-start;">
+          <span class="icon icon-primary" style="width:28px;height:28px;flex-shrink:0;" id="resultIcon"></span>
+          <div>
+            <h3 style="margin:0 0 6px;">Analysis engine not connected yet</h3>
+            <p class="text-muted" style="margin:0;">
+              This feature compares your skills against real job-skill data using a sentence-embedding model to
+              identify what you're missing for a target role. That model isn't wired up to the live site yet,
+              so no results can be shown honestly — once the backend AI service is connected, this page will
+              return a real breakdown of matched and missing skills for "<span id="roleEcho"></span>".
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "skill-gap", base: "../" });
+  renderFooter({ base: "../" });
+
+  const skills = me.skills && me.skills.length ? me.skills : [];
+  document.getElementById("mySkills").innerHTML = skills.length
+    ? skills.map(s => `<span class="badge badge-primary" style="margin:0 6px 6px 0; display:inline-block;">${s}</span>`).join("")
+    : `<p class="text-muted" style="font-size:0.88rem; margin:0;">No skills on your profile yet — add some from your <a href="dashboard-user.html">profile page</a> for a better analysis.</p>`;
+
+  document.getElementById("analyzeBtn").addEventListener("click", () => {
+    const role = document.getElementById("targetRole").value.trim();
+    if (!role) return;
+    document.getElementById("roleEcho").textContent = role;
+    document.getElementById("resultArea").classList.remove("hidden");
+    document.getElementById("resultIcon").outerHTML = iconHtml("goal", { base: "../", sizePx: 28, extraClass: "icon-primary" });
+  });
+</script>
+
+</body>
+</html>

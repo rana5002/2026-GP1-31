@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Review &mdash; Ufuq Admin</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-content container" style="max-width:760px;">
+    <a href="dashboard-admin.html?tab=verification" class="text-muted" style="font-size:0.9rem; display:inline-block; margin-bottom:12px;">&larr; Back to Company Verification</a>
+
+    <div class="flex-between" style="margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div class="flex gap-3" style="align-items:center;">
+        <span class="icon icon-primary" id="companyIcon" style="width:28px;height:28px;"></span>
+        <div>
+          <h2 id="companyName" style="margin-bottom:2px;">Company</h2>
+          <span class="badge" id="statusBadge"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3 style="margin-bottom:16px;">Company Details</h3>
+      <div class="grid grid-2" style="gap: 16px 24px;">
+        <div class="field-view">
+          <div class="field-label">Email</div>
+          <div id="fEmail"></div>
+        </div>
+        <div class="field-view">
+          <div class="field-label">Phone</div>
+          <div id="fPhone"></div>
+        </div>
+        <div class="field-view">
+          <div class="field-label">CR Number</div>
+          <div id="fCr"></div>
+        </div>
+        <div class="field-view">
+          <div class="field-label">Industry</div>
+          <div id="fIndustry"></div>
+        </div>
+        <div class="field-view">
+          <div class="field-label">Location</div>
+          <div id="fLocation"></div>
+        </div>
+        <div class="field-view">
+          <div class="field-label">Website</div>
+          <div id="fWebsite"></div>
+        </div>
+      </div>
+      <div class="field-view" style="margin-top:12px;">
+        <div class="field-label">Description</div>
+        <div id="fDescription"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3 style="margin-bottom:16px;">Verification Document</h3>
+      <div id="docPreviewMount"></div>
+    </div>
+
+    <div class="card" id="rejectedNoticeCard" style="margin-bottom:20px; display:none; background:#FBE6E7; border-color: var(--color-danger);">
+      <strong>Rejection reason:</strong> <span id="rejectedReasonText"></span>
+    </div>
+
+    <div class="card" id="actionsCard">
+      <h3 style="margin-bottom:16px;">Decision</h3>
+      <div class="flex gap-2 flex-wrap" id="decisionRow">
+        <button class="btn btn-primary" id="approveBtn">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/done.png');mask-image:url('../images-website/icons/done.png');"></span>
+          Approve
+        </button>
+        <button class="btn btn-danger" id="rejectToggleBtn">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/error.png');mask-image:url('../images-website/icons/error.png');"></span>
+          Reject
+        </button>
+      </div>
+      <div class="hidden" id="rejectForm" style="margin-top:14px;">
+        <label class="form-label" for="rejectReason">Reason for rejection</label>
+        <textarea class="form-control" rows="3" id="rejectReason" placeholder="Explain why this company is being rejected"></textarea>
+        <div class="flex gap-2" style="margin-top:10px;">
+          <button class="btn btn-danger btn-sm" id="rejectConfirmBtn">Confirm Rejection</button>
+          <button class="btn btn-ghost btn-sm" id="rejectCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["admin"], { base: "" });
+  renderHeader({ active: "verification", base: "../" });
+  renderFooter({ base: "../" });
+
+  const params = new URLSearchParams(window.location.search);
+  const companyId = params.get("id");
+  const company = companyId ? Store.getCompanyById(companyId) : null;
+
+  if (!company) {
+    window.location.href = "dashboard-admin.html?tab=verification";
+  }
+
+  document.getElementById("companyIcon").outerHTML = iconHtml("company", { base: "../", sizePx: 28, extraClass: "icon-primary" });
+
+  /* Renders the CR verification document as a read-only "document card".
+     This prototype only stores the uploaded file's *filename* (no backend
+     yet to hold real bytes), so real preview/download is intentionally not
+     wired up. Swapping in a real <a href="..."> download link later is a
+     one-line change inside this function once file uploads are backed by
+     a server. */
+  function renderDocumentPreview(filename) {
+    return `
+      <div class="card doc-card">
+        ${iconHtml("document", { base: "../", sizePx: 32, extraClass: "icon-primary" })}
+        <div class="doc-info">
+          <div style="font-weight:600;">${filename || "No document uploaded"}</div>
+          <div class="text-muted" style="font-size:0.82rem;">Verification document on file</div>
+        </div>
+        <div class="doc-caption">
+          <button type="button" class="btn btn-ghost btn-sm" disabled
+            title="Document preview will be available once file uploads are connected to the backend.">
+            ${iconHtml("document", { base: "../", sizePx: 16 })}
+            View Document
+          </button>
+          <div class="form-hint">Document preview will be available once file uploads are connected to the backend.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function fillPage() {
+    const c = Store.getCompanyById(companyId);
+    document.getElementById("companyName").textContent = c.name;
+    const badge = document.getElementById("statusBadge");
+    badge.textContent = c.status.charAt(0).toUpperCase() + c.status.slice(1);
+    badge.className = "badge " + (c.status === "verified" ? "badge-success" : c.status === "rejected" ? "badge-danger" : "badge-warning");
+
+    document.getElementById("fEmail").textContent = c.email;
+    document.getElementById("fPhone").textContent = c.phone;
+    document.getElementById("fCr").textContent = c.crNumber;
+    document.getElementById("fIndustry").textContent = c.industry;
+    document.getElementById("fLocation").textContent = c.location;
+    document.getElementById("fWebsite").textContent = c.website || "—";
+    document.getElementById("fDescription").textContent = c.description;
+
+    document.getElementById("docPreviewMount").innerHTML = renderDocumentPreview(c.verificationDocName);
+
+    const rejectedCard = document.getElementById("rejectedNoticeCard");
+    if (c.status === "rejected" && c.rejectionReason) {
+      rejectedCard.style.display = "block";
+      document.getElementById("rejectedReasonText").textContent = c.rejectionReason;
+    } else {
+      rejectedCard.style.display = "none";
+    }
+
+    const actionsCard = document.getElementById("actionsCard");
+    actionsCard.style.display = c.status === "pending" ? "block" : "none";
+  }
+  fillPage();
+
+  document.getElementById("approveBtn").addEventListener("click", () => {
+    Store.approveCompany(companyId);
+    window.location.href = "dashboard-admin.html?tab=verification";
+  });
+  document.getElementById("rejectToggleBtn").addEventListener("click", () => {
+    document.getElementById("rejectForm").classList.remove("hidden");
+  });
+  document.getElementById("rejectCancelBtn").addEventListener("click", () => {
+    document.getElementById("rejectForm").classList.add("hidden");
+  });
+  document.getElementById("rejectConfirmBtn").addEventListener("click", () => {
+    const reason = document.getElementById("rejectReason").value.trim();
+    Store.rejectCompany(companyId, reason);
+    window.location.href = "dashboard-admin.html?tab=verification";
+  });
+</script>
+
+</body>
+</html>

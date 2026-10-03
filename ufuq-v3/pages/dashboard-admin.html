@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container">
+      <h2 style="margin:0;">Admin Dashboard</h2>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+    <!-- ================= VERIFICATION TAB ================= -->
+    <div class="tab-panel" id="tab-verification">
+      <h3 style="margin-bottom:12px;">Pending Review</h3>
+      <div id="pendingList" class="grid" style="grid-template-columns: 1fr; gap:16px;"></div>
+      <div class="empty-state hidden" id="pendingEmptyState">
+        <div class="empty-icon">
+          <span class="icon icon-muted" style="width:40px;height:40px;-webkit-mask-image:url('../images-website/icons/company.png');mask-image:url('../images-website/icons/company.png');"></span>
+        </div>
+        <h3>No companies waiting for review</h3>
+      </div>
+
+      <div class="divider" style="margin-top:32px;"></div>
+
+      <h3 style="margin-bottom:12px;">Reviewed Companies</h3>
+      <div class="card">
+        <table class="data-table">
+          <thead><tr><th>Company</th><th>CR Number</th><th>Industry</th><th>Status</th></tr></thead>
+          <tbody id="reviewedTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ================= OPPORTUNITIES TAB ================= -->
+    <div class="tab-panel" id="tab-opportunities">
+      <div class="flex-between" style="margin-bottom:16px;">
+        <p class="text-muted" style="margin:0;">Opportunities added by the admin on behalf of companies not on the platform.</p>
+        <a href="admin-opportunity-form.html" class="btn btn-primary">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/add.png');mask-image:url('../images-website/icons/add.png');"></span>
+          Add Opportunity
+        </a>
+      </div>
+
+      <div class="card" id="oppTableCard">
+        <table class="data-table">
+          <thead><tr><th>Title</th><th>Company</th><th>Type</th><th>Status</th><th></th></tr></thead>
+          <tbody id="oppTableBody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state hidden" id="oppEmptyState">
+        <div class="empty-icon">
+          <span class="icon icon-muted" style="width:40px;height:40px;-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>
+        </div>
+        <h3>No admin-added opportunities yet</h3>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  const VALID_TABS = ["verification", "opportunities"];
+  const params = new URLSearchParams(window.location.search);
+  let activeTab = params.get("tab");
+  if (!VALID_TABS.includes(activeTab)) activeTab = "verification";
+
+  requireRole(["admin"], { base: "" });
+  renderHeader({ active: activeTab, base: "../" });
+  renderFooter({ base: "../" });
+
+  /* ---------- Tabs ---------- */
+  function activateTab(tab) {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + tab));
+  }
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      activateTab(btn.dataset.tab);
+      history.replaceState(null, "", `?tab=${btn.dataset.tab}`);
+    });
+  });
+  activateTab(activeTab);
+
+  /* ---------- Company verification ---------- */
+  function renderPending() {
+    const pending = Store.getPendingCompanies();
+    const list = document.getElementById("pendingList");
+    document.getElementById("pendingEmptyState").classList.toggle("hidden", pending.length > 0);
+    list.innerHTML = pending.map(c => `
+      <div class="card flex-between" style="align-items:center; flex-wrap:wrap; gap:12px;">
+        <div class="flex gap-3" style="align-items:center;">
+          <span class="icon icon-primary" style="width:26px;height:26px;-webkit-mask-image:url('../images-website/icons/company.png');mask-image:url('../images-website/icons/company.png');"></span>
+          <div>
+            <h3 style="margin:0 0 2px;">${c.name}</h3>
+            <div class="text-muted" style="font-size:0.85rem;">
+              ${c.industry} &middot; ${c.location}${c.createdAt ? ` &middot; Submitted ${new Date(c.createdAt).toLocaleDateString()}` : ""}
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3" style="align-items:center;">
+          <span class="badge badge-warning">Pending</span>
+          <a href="admin-company-review.html?id=${c.id}" class="btn btn-outline btn-sm">
+            ${iconHtml("search", { base: "../", sizePx: 14 })}
+            Review
+          </a>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderReviewed() {
+    const reviewed = Store.getAllCompanies().filter(c => c.status !== "pending");
+    document.getElementById("reviewedTableBody").innerHTML = reviewed.map(c => `
+      <tr>
+        <td>${c.name}</td>
+        <td>${c.crNumber}</td>
+        <td>${c.industry}</td>
+        <td><span class="badge ${c.status === "verified" ? "badge-success" : "badge-danger"}">${c.status}</span></td>
+      </tr>
+    `).join("") || `<tr><td colspan="4" class="text-muted">No reviewed companies yet.</td></tr>`;
+  }
+
+  renderPending();
+  renderReviewed();
+
+  /* ---------- Admin-added opportunities ---------- */
+  function renderOpportunities() {
+    const opps = Store.getOpportunitiesAddedByAdmin();
+    document.getElementById("oppTableCard").classList.toggle("hidden", opps.length === 0);
+    document.getElementById("oppEmptyState").classList.toggle("hidden", opps.length > 0);
+    document.getElementById("oppTableBody").innerHTML = opps.map(o => `
+      <tr>
+        <td>${o.title}</td>
+        <td>${o.companyNameManual || "&mdash;"}</td>
+        <td>${o.type}</td>
+        <td><span class="badge ${o.status === "Open" ? "badge-success" : "badge-neutral"}">${o.status}</span></td>
+        <td class="flex gap-2">
+          <a href="admin-opportunity-form.html?id=${o.id}" class="btn btn-ghost btn-sm" title="Edit">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/edit.png');mask-image:url('../images-website/icons/edit.png');"></span>
+          </a>
+          <button class="btn btn-ghost btn-sm" data-delete-id="${o.id}" title="Delete">
+            <span class="icon icon-danger" style="-webkit-mask-image:url('../images-website/icons/delete.png');mask-image:url('../images-website/icons/delete.png');"></span>
+          </button>
+        </td>
+      </tr>
+    `).join("");
+
+    document.querySelectorAll("[data-delete-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (confirm("Delete this opportunity? This cannot be undone.")) {
+          Store.deleteOpportunity(btn.dataset.deleteId);
+          renderOpportunities();
+        }
+      });
+    });
+  }
+  renderOpportunities();
+</script>
+
+</body>
+</html>

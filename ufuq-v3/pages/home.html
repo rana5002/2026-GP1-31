@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container">
+      <h1 style="margin-bottom:2px; font-size:2rem;">Welcome to Ufuq</h1>
+      <p class="text-muted" style="margin:0;">Your personalized space for opportunities, applications and skill development.</p>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+    <div class="grid grid-2" style="margin-bottom:28px;">
+      <div class="card">
+        <div class="flex-between" style="margin-bottom:8px;">
+          <span class="stat-label" style="text-transform:none; font-weight:600; color:var(--color-text);">Notifications</span>
+          <a href="notifications.html" style="font-size:0.82rem;">View all &rarr;</a>
+        </div>
+        <div id="statNotifications"></div>
+      </div>
+      <a href="dashboard-user.html" class="card card-hover stat-card" style="text-decoration:none;">
+        <span class="stat-num" id="statCompletion">0%</span>
+        <span class="stat-label">Profile Completion &mdash; view profile &rarr;</span>
+      </a>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:12px;">
+      <div class="card">
+        <div class="flex-between" style="margin-bottom:12px;">
+          <h3 style="margin:0;">Recommended Opportunities</h3>
+          <a href="browse.html" style="font-size:0.85rem;">View &rarr;</a>
+        </div>
+        <div class="preview-empty" id="recommendedEmpty">
+          <h3 style="font-size:1rem;">No recommendations yet</h3>
+          <p style="margin:0; font-size:0.88rem;">Complete your field of study and skills to unlock personalized recommendations.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div style="margin-bottom:12px;">
+          <h3 style="margin:0;">Upcoming Deadlines</h3>
+        </div>
+        <div id="deadlinesList"></div>
+        <div class="preview-empty hidden" id="deadlinesEmpty">
+          <h3 style="font-size:1rem;">No upcoming deadlines</h3>
+          <p style="margin:0; font-size:0.88rem;">Deadline reminders will appear here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Opportunities preview (mini, training programs + courses together) -->
+  <section class="preview-section" id="opportunities" style="padding-top:0;">
+    <div class="container">
+      <div class="preview-section-header">
+        <div>
+          <div class="preview-eyebrow">Explore</div>
+          <h2 style="margin:0; font-size:1.5rem;">Opportunities</h2>
+        </div>
+        <a href="browse.html">View all &rarr;</a>
+      </div>
+      <div id="oppPreviewGrid" class="grid grid-3"></div>
+      <div class="preview-empty hidden" id="oppPreviewEmpty">
+        <h3>No opportunities available yet</h3>
+        <p style="margin:0;">Check back soon &mdash; new training programs and courses will appear here once companies start publishing.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "user-home", base: "../" });
+  renderFooter({ base: "../" });
+
+  /* ---------- Stat cards ---------- */
+  const recentNotifs = Store.getNotifications(me.id).slice(0, 2);
+  document.getElementById("statNotifications").innerHTML = recentNotifs.length
+    ? recentNotifs.map(n => `<div style="font-size:0.85rem; padding:4px 0; color:${n.read ? "var(--color-text-muted)" : "var(--color-text)"}; font-weight:${n.read ? 400 : 600};">${n.message}</div>`).join("")
+    : `<p class="text-muted" style="margin:0; font-size:0.85rem;">No notifications yet.</p>`;
+  document.getElementById("statCompletion").textContent = `${Store.getProfileCompletion(me)}%`;
+
+  /* ---------- Upcoming deadlines ---------- */
+  const deadlines = Store.getUpcomingDeadlinesForUser(me.id).slice(0, 4);
+  document.getElementById("deadlinesList").classList.toggle("hidden", deadlines.length === 0);
+  document.getElementById("deadlinesEmpty").classList.toggle("hidden", deadlines.length > 0);
+  document.getElementById("deadlinesList").innerHTML = deadlines.map(a => `
+    <div class="flex-between" style="padding:8px 0; border-bottom:1px solid var(--color-border); font-size:0.88rem;">
+      <a href="opportunity-detail.html?id=${a.opportunity.id}">${a.opportunity.title}</a>
+      <span class="text-muted">${new Date(a.opportunity.applicationDeadline).toLocaleDateString()}</span>
+    </div>
+  `).join("");
+
+  /* ---------- Mini preview sections ---------- */
+  function companyNameFor(o) {
+    if (o.companyId) {
+      const c = Store.getCompanyById(o.companyId);
+      return c ? c.name : "Unknown Company";
+    }
+    return o.companyNameManual || "External Company";
+  }
+  function previewCardHtml(o) {
+    const isFav = Store.isFavorite(me.id, o.id);
+    return `
+      <div class="card opp-card card-hover">
+        <div class="opp-card-top">
+          <div class="flex gap-3" style="align-items:center;">
+            <div class="opp-logo" style="background:${colorFor(companyNameFor(o))};">${companyNameFor(o).slice(0, 1).toUpperCase()}</div>
+            <div>
+              <h3 style="margin:0 0 2px; font-size:1.02rem;">${o.title}</h3>
+              <div class="text-muted" style="font-size:0.82rem;">${companyNameFor(o)}</div>
+            </div>
+          </div>
+          <button type="button" class="opp-fav ${isFav ? "active" : ""}" data-fav-id="${o.id}" title="Save to favorites">
+            ${iconHtml("favorite", { base: "../", sizePx: 18, extraClass: isFav ? "icon-danger" : "icon-muted" })}
+          </button>
+        </div>
+        <div class="opp-meta">
+          <span class="badge ${o.type === "Course" ? "badge-success" : "badge-primary"}">${o.type}</span>
+          <span>${o.location}</span>
+        </div>
+        <div class="opp-footer">
+          <a class="btn btn-outline btn-sm" href="opportunity-detail.html?id=${o.id}">View Details</a>
+        </div>
+      </div>
+    `;
+  }
+
+  const preview = Store.getAllOpportunities().filter(o => o.status === "Open").slice(0, 3);
+
+  function renderPreviews() {
+    document.getElementById("oppPreviewGrid").innerHTML = preview.map(previewCardHtml).join("");
+    document.getElementById("oppPreviewGrid").classList.toggle("hidden", preview.length === 0);
+    document.getElementById("oppPreviewEmpty").classList.toggle("hidden", preview.length > 0);
+
+    document.querySelectorAll("[data-fav-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        Store.toggleFavorite(me.id, btn.dataset.favId);
+        renderPreviews();
+      });
+    });
+  }
+  renderPreviews();
+</script>
+
+</body>
+</html>

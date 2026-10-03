@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opportunity &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-content container" style="max-width: 720px;">
+    <h2 id="pageTitle" style="margin-bottom:4px;">Add Opportunity</h2>
+    <p class="text-muted" style="margin-bottom:24px;">Fill in the details students will see.</p>
+
+    <div id="formBanner" class="form-error" style="display:none; background:#FBE6E7; padding:10px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
+    <form id="oppForm" class="card" novalidate>
+      <div class="form-group">
+        <label class="form-label icon-label">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/externalLink.png');mask-image:url('../images-website/icons/externalLink.png');"></span>
+          Application Method
+        </label>
+        <div class="role-toggle" style="max-width:360px;">
+          <button type="button" class="active" id="methodLinkBtn">Add Link</button>
+          <button type="button" id="methodSystemBtn">Add via the System</button>
+        </div>
+        <input type="hidden" id="applicationMethod" value="Add Link">
+      </div>
+
+      <div class="form-group" id="externalUrlGroup">
+        <label class="form-label icon-label" for="externalUrl">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/externalLink.png');mask-image:url('../images-website/icons/externalLink.png');"></span>
+          External URL
+        </label>
+        <input type="url" id="externalUrl" class="form-control" placeholder="https://">
+        <div class="form-error" id="externalUrlError">Please enter a valid URL.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="title">Title</label>
+        <input type="text" id="title" class="form-control">
+        <div class="form-error" id="titleError">This field is required.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description</label>
+        <textarea id="description" class="form-control" rows="4"></textarea>
+        <div class="form-error" id="descriptionError">This field is required.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Opportunity Photo</label>
+        <div class="flex gap-3" style="align-items:center;">
+          <img id="oppImagePreview" src="../images-website/default-opportunity.jpg" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:var(--radius-md);border:1px solid var(--color-border); flex-shrink:0;">
+          <div>
+            <button type="button" class="btn btn-outline btn-sm" id="oppImageBtn">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/upload.png');mask-image:url('../images-website/icons/upload.png');"></span>
+              Upload Photo
+            </button>
+            <input type="file" id="oppImageInput" class="hidden" accept=".png,.jpg,.jpeg">
+            <div class="form-hint" id="oppImageHint">Optional — a default photo is used if you skip this.</div>
+            <div class="form-error" id="oppImageError">Please upload a PNG, JPG, or JPEG file.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label icon-label" for="type">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>
+          Opportunity Type
+        </label>
+        <select id="type" class="form-control"></select>
+        <div class="form-error" id="typeError">This field is required.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label icon-label">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>
+          Required Skills
+        </label>
+        <div class="flex gap-2" style="margin-bottom:10px;">
+          <input type="text" id="skillInput" class="form-control" placeholder="Type a skill and press Enter">
+          <button type="button" class="btn btn-outline" id="skillAddBtn">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/add.png');mask-image:url('../images-website/icons/add.png');"></span>
+            Add
+          </button>
+        </div>
+        <div id="skillList"></div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label icon-label" for="duration">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/clock.png');mask-image:url('../images-website/icons/clock.png');"></span>
+            Duration
+          </label>
+          <input type="text" id="duration" class="form-control" placeholder="&mdash;" readonly>
+          <div class="form-hint">Calculated automatically from the start and end dates.</div>
+          <div class="form-error" id="durationError">This field is required.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label icon-label" for="location">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/location.png');mask-image:url('../images-website/icons/location.png');"></span>
+            Location
+          </label>
+          <select id="location" class="form-control"></select>
+          <div class="form-error" id="locationError">This field is required.</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label icon-label" for="startDate">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>
+            Start Date
+          </label>
+          <input type="date" id="startDate" class="form-control">
+          <div class="form-error" id="startDateError">This field is required.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label icon-label" for="endDate">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>
+            End Date
+          </label>
+          <input type="date" id="endDate" class="form-control">
+          <div class="form-error" id="endDateError">This field is required.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label icon-label" for="applicationDeadline">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>
+            Application Deadline<span class="required-mark hidden" id="deadlineRequiredMark">*</span>
+          </label>
+          <input type="date" id="applicationDeadline" class="form-control">
+          <div class="form-hint" id="deadlineOptionalHint">Optional when applying via an external link.</div>
+          <div class="form-error" id="applicationDeadlineError">This field is required.</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label icon-label" for="qualifications">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>
+          Qualifications
+        </label>
+        <textarea id="qualifications" class="form-control" rows="2"></textarea>
+        <div class="form-error" id="qualificationsError">This field is required.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label icon-label" for="experience">
+          <span class="icon" style="-webkit-mask-image:url('../images-website/icons/form.png');mask-image:url('../images-website/icons/form.png');"></span>
+          Experience
+        </label>
+        <textarea id="experience" class="form-control" rows="2"></textarea>
+        <div class="form-error" id="experienceError">This field is required.</div>
+      </div>
+
+      <div class="flex-between" style="margin-top:12px;">
+        <a href="dashboard-company.html" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary" id="submitBtn">Publish</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["company"], { base: "" });
+  renderHeader({ active: "opportunities", base: "../" });
+  renderFooter({ base: "../" });
+
+  const params = new URLSearchParams(window.location.search);
+  const editId = params.get("id");
+  const current = Store.getCurrentUser();
+
+  const typeSelect = document.getElementById("type");
+  OPPORTUNITY_TYPES.forEach(t => typeSelect.add(new Option(t, t)));
+  const locationSelect = document.getElementById("location");
+  CITIES.forEach(c => locationSelect.add(new Option(c, c)));
+
+  /* ---------- Duration: auto-calculated from Start/End Date ---------- */
+  function humanizeDuration(startStr, endStr) {
+    if (!startStr || !endStr) return "";
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const diffMs = end - start;
+    if (isNaN(diffMs) || diffMs < 0) return "";
+    const days = Math.round(diffMs / 86400000);
+    if (days < 14) return `${days} day${days === 1 ? "" : "s"}`;
+    if (days < 63) {
+      const weeks = Math.round(days / 7);
+      return `${weeks} week${weeks === 1 ? "" : "s"}`;
+    }
+    const months = Math.round(days / 30);
+    return `${months} month${months === 1 ? "" : "s"}`;
+  }
+  const durationInput = document.getElementById("duration");
+  const startDateInput = document.getElementById("startDate");
+  const endDateInput = document.getElementById("endDate");
+  function updateDuration() {
+    durationInput.value = humanizeDuration(startDateInput.value, endDateInput.value);
+  }
+  startDateInput.addEventListener("change", updateDuration);
+  startDateInput.addEventListener("input", updateDuration);
+  endDateInput.addEventListener("change", updateDuration);
+  endDateInput.addEventListener("input", updateDuration);
+
+  /* ---------- Application Method ---------- */
+  const applicationMethod = document.getElementById("applicationMethod");
+  const methodLinkBtn = document.getElementById("methodLinkBtn");
+  const methodSystemBtn = document.getElementById("methodSystemBtn");
+  const externalUrlGroup = document.getElementById("externalUrlGroup");
+  const deadlineRequiredMark = document.getElementById("deadlineRequiredMark");
+  const deadlineOptionalHint = document.getElementById("deadlineOptionalHint");
+
+  function setMethod(method) {
+    applicationMethod.value = method;
+    methodLinkBtn.classList.toggle("active", method === "Add Link");
+    methodSystemBtn.classList.toggle("active", method === "Add via the System");
+    externalUrlGroup.style.display = method === "Add Link" ? "block" : "none";
+    deadlineRequiredMark.classList.toggle("hidden", method !== "Add via the System");
+    deadlineOptionalHint.style.display = method === "Add via the System" ? "none" : "block";
+  }
+  methodLinkBtn.addEventListener("click", () => setMethod("Add Link"));
+  methodSystemBtn.addEventListener("click", () => setMethod("Add via the System"));
+  setMethod("Add Link");
+
+  /* Application Method is locked once the opportunity exists (edit mode) —
+     `lockedApplicationMethod` (not the possibly-disabled control) is what
+     gets saved. */
+  let lockedApplicationMethod = null;
+  function lockApplicationMethod(method) {
+    lockedApplicationMethod = method;
+    methodLinkBtn.disabled = true;
+    methodSystemBtn.disabled = true;
+    methodLinkBtn.title = "Application method can't be changed after the opportunity is created.";
+    methodSystemBtn.title = methodLinkBtn.title;
+  }
+
+  let skills = [];
+  initChipInput({
+    inputId: "skillInput", addBtnId: "skillAddBtn", listId: "skillList",
+    values: skills, onChange: (v) => { skills = v; }, base: "../"
+  });
+
+  function setInvalid(input, errorEl, isInvalid) {
+    input.classList.toggle("invalid", isInvalid);
+    if (errorEl) errorEl.style.display = isInvalid ? "block" : "none";
+  }
+  function isValidUrl(str) {
+    try { new URL(str); return true; } catch (e) { return false; }
+  }
+  function fileHasExt(file, exts) {
+    const name = file.name.toLowerCase();
+    return exts.some(ext => name.endsWith(ext));
+  }
+
+  let imageFileName = "";
+  const oppImageInput = document.getElementById("oppImageInput");
+  const oppImagePreview = document.getElementById("oppImagePreview");
+  const oppImageHint = document.getElementById("oppImageHint");
+  document.getElementById("oppImageBtn").addEventListener("click", () => oppImageInput.click());
+  oppImageInput.addEventListener("change", () => {
+    const file = oppImageInput.files[0];
+    if (!file) return;
+    const invalid = !fileHasExt(file, [".png", ".jpg", ".jpeg"]);
+    setInvalid(oppImageInput, document.getElementById("oppImageError"), invalid);
+    if (invalid) return;
+    imageFileName = file.name;
+    oppImagePreview.src = URL.createObjectURL(file);
+    oppImageHint.textContent = `Photo selected: ${file.name}`;
+  });
+
+  let editingOpp = null;
+  if (editId) {
+    editingOpp = Store.getOpportunityById(editId);
+    if (!editingOpp || editingOpp.companyId !== current.id) {
+      window.location.href = "dashboard-company.html";
+    } else {
+      document.getElementById("pageTitle").textContent = "Edit Opportunity";
+      document.getElementById("submitBtn").textContent = "Save Changes";
+      document.getElementById("title").value = editingOpp.title;
+      document.getElementById("description").value = editingOpp.description;
+      typeSelect.value = editingOpp.type;
+      skills = (editingOpp.requiredSkills || []).slice();
+      initChipInput({ inputId: "skillInput", addBtnId: "skillAddBtn", listId: "skillList", values: skills, onChange: (v) => { skills = v; }, base: "../" });
+      locationSelect.value = editingOpp.location;
+      document.getElementById("startDate").value = editingOpp.startDate;
+      document.getElementById("endDate").value = editingOpp.endDate;
+      updateDuration();
+      if (!durationInput.value) durationInput.value = editingOpp.duration || "";
+      document.getElementById("applicationDeadline").value = editingOpp.applicationDeadline || "";
+      document.getElementById("qualifications").value = editingOpp.qualifications;
+      document.getElementById("experience").value = editingOpp.experience;
+      setMethod(editingOpp.applicationMethod);
+      lockApplicationMethod(editingOpp.applicationMethod);
+      document.getElementById("externalUrl").value = editingOpp.externalUrl || "";
+      if (editingOpp.imageFileName) {
+        imageFileName = editingOpp.imageFileName;
+        oppImageHint.textContent = `Current photo: ${editingOpp.imageFileName} (showing default preview — actual photo needs a backend to store real files)`;
+      }
+    }
+  }
+
+  const formBanner = document.getElementById("formBanner");
+  function showBanner(msg) { formBanner.textContent = msg; formBanner.style.display = "block"; }
+
+  document.getElementById("oppForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    formBanner.style.display = "none";
+
+    const fields = {
+      title: document.getElementById("title"),
+      description: document.getElementById("description"),
+      type: typeSelect,
+      duration: document.getElementById("duration"),
+      location: locationSelect,
+      startDate: document.getElementById("startDate"),
+      endDate: document.getElementById("endDate"),
+      qualifications: document.getElementById("qualifications"),
+      experience: document.getElementById("experience")
+    };
+
+    let valid = true;
+    Object.entries(fields).forEach(([key, input]) => {
+      const errorEl = document.getElementById(key + "Error");
+      const empty = !input.value.trim();
+      setInvalid(input, errorEl, empty);
+      if (empty) valid = false;
+    });
+
+    const method = lockedApplicationMethod || applicationMethod.value;
+    const externalUrl = document.getElementById("externalUrl").value.trim();
+    if (method === "Add Link") {
+      const urlInvalid = !externalUrl || !isValidUrl(externalUrl);
+      setInvalid(document.getElementById("externalUrl"), document.getElementById("externalUrlError"), urlInvalid);
+      if (urlInvalid) valid = false;
+      setInvalid(document.getElementById("applicationDeadline"), document.getElementById("applicationDeadlineError"), false);
+    } else {
+      setInvalid(document.getElementById("externalUrl"), document.getElementById("externalUrlError"), false);
+      const deadlineInput = document.getElementById("applicationDeadline");
+      const deadlineInvalid = !deadlineInput.value.trim();
+      setInvalid(deadlineInput, document.getElementById("applicationDeadlineError"), deadlineInvalid);
+      if (deadlineInvalid) valid = false;
+    }
+
+    if (!valid) {
+      showBanner("Please fill in all required fields correctly.");
+      return;
+    }
+
+    const payload = {
+      title: fields.title.value.trim(),
+      description: fields.description.value.trim(),
+      type: fields.type.value,
+      requiredSkills: skills,
+      duration: fields.duration.value.trim(),
+      location: fields.location.value,
+      startDate: fields.startDate.value,
+      endDate: fields.endDate.value,
+      applicationDeadline: document.getElementById("applicationDeadline").value,
+      qualifications: fields.qualifications.value.trim(),
+      experience: fields.experience.value.trim(),
+      applicationMethod: method,
+      externalUrl: method === "Add Link" ? externalUrl : "",
+      imageFileName,
+      addedBy: "company",
+      companyId: current.id
+    };
+
+    if (editingOpp) {
+      Store.updateOpportunity(editingOpp.id, payload);
+    } else {
+      Store.createOpportunity(payload);
+    }
+    window.location.href = "dashboard-company.html";
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notifications &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container" style="max-width:720px;">
+      <h2 style="margin-bottom:2px;">Notifications</h2>
+      <p class="text-muted" style="margin:0;">Updates about your applications and account.</p>
+    </div>
+  </div>
+  <div class="page-content container" style="max-width:720px; padding-top:0;">
+    <div class="card" id="listCard" style="padding:0;">
+      <div id="list"></div>
+    </div>
+
+    <div class="empty-state hidden" id="emptyState">
+      <div class="empty-icon">
+        <span class="icon icon-muted" id="emptyIcon" style="width:40px;height:40px;"></span>
+      </div>
+      <h3>No notifications yet</h3>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  const me = Store.getCurrentUser();
+  if (!me) window.location.href = "login.html";
+  renderHeader({ base: "../" });
+  renderFooter({ base: "../" });
+  document.getElementById("emptyIcon").outerHTML = iconHtml("notification", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+
+  const items = Store.getNotifications(me.id);
+  document.getElementById("listCard").classList.toggle("hidden", items.length === 0);
+  document.getElementById("emptyState").classList.toggle("hidden", items.length > 0);
+
+  document.getElementById("list").innerHTML = items.map(n => `
+    <a href="${n.link ? "../" + n.link : "#"}" style="display:block; padding:16px 20px; border-bottom:1px solid var(--color-border); background:${n.read ? "transparent" : "var(--color-primary-tint)"};">
+      <div style="font-size:0.92rem; font-weight:${n.read ? 400 : 600};">${n.message}</div>
+      <div class="text-muted" style="font-size:0.78rem; margin-top:2px;">${new Date(n.createdAt).toLocaleString()}</div>
+    </a>
+  `).join("");
+
+  Store.markAllNotificationsRead(me.id);
+</script>
+
+</body>
+</html>

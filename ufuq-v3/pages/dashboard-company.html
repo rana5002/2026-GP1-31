@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Dashboard &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container">
+      <h2 style="margin:0;">Company Dashboard</h2>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+    <div class="with-sidebar">
+      <div id="site-sidebar"></div>
+
+      <div>
+        <!-- ================= OVERVIEW TAB ================= -->
+        <div class="tab-panel" id="tab-overview">
+          <h3 style="margin-bottom:16px;">Overview</h3>
+          <div class="grid grid-3" style="margin-bottom:28px;">
+            <div class="card stat-card">
+              <span class="stat-num" id="statOpenOpps">0</span>
+              <span class="stat-label">Open Opportunities</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-num" id="statApplicants">0</span>
+              <span class="stat-label">Total Applicants</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-num" id="statRating">&mdash;</span>
+              <span class="stat-label">Average Rating</span>
+            </div>
+          </div>
+          <h3 style="margin-bottom:12px;">Recent Applicants</h3>
+          <div class="card" id="recentCard">
+            <table class="data-table">
+              <thead><tr><th>Applicant</th><th>Opportunity</th><th>Applied</th></tr></thead>
+              <tbody id="recentBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="recentEmpty"><p>No applicants yet.</p></div>
+        </div>
+
+        <!-- ================= OPPORTUNITIES TAB ================= -->
+        <div class="tab-panel" id="tab-opportunities">
+          <div class="flex-between" style="margin-bottom:16px;">
+            <p class="text-muted" style="margin:0;">Training programs and courses you've published.</p>
+            <a href="opportunity-form.html" class="btn btn-primary">
+              <span class="icon" style="-webkit-mask-image:url('../images-website/icons/add.png');mask-image:url('../images-website/icons/add.png');"></span>
+              Add Opportunity
+            </a>
+          </div>
+
+          <div class="card" id="oppTableCard">
+            <table class="data-table">
+              <thead>
+                <tr><th>Title</th><th>Type</th><th>Status</th><th>Application Method</th><th></th></tr>
+              </thead>
+              <tbody id="oppTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="oppEmptyState">
+            <div class="empty-icon">
+              <span class="icon icon-muted" style="width:40px;height:40px;-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>
+            </div>
+            <h3>No opportunities yet</h3>
+            <p>Click "Add Opportunity" to publish your first training program or course.</p>
+          </div>
+        </div>
+
+        <!-- ================= APPLICANTS TAB ================= -->
+        <div class="tab-panel" id="tab-applicants">
+          <p class="text-muted" style="margin:0 0 16px;">Everyone who applied to one of your opportunities through Ufuq.</p>
+          <div class="card" id="applicantsTableCard">
+            <table class="data-table">
+              <thead><tr><th>Applicant</th><th>Opportunity</th><th>Applied On</th><th>Status</th></tr></thead>
+              <tbody id="applicantsTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="applicantsEmptyState">
+            <div class="empty-icon"><span class="icon icon-muted" id="applicantsEmptyIcon" style="width:40px;height:40px;"></span></div>
+            <h3>No applicants yet</h3>
+            <p>Applications submitted directly through Ufuq will appear here. Opportunities that link out to your own site aren't tracked here.</p>
+          </div>
+        </div>
+
+        <!-- ================= ENGAGEMENT TAB ================= -->
+        <div class="tab-panel" id="tab-engagement">
+          <p class="text-muted" style="margin:0 0 16px;">How students are interacting with each of your opportunities.</p>
+          <div class="card" id="engagementTableCard">
+            <table class="data-table">
+              <thead><tr><th>Opportunity</th><th>Views</th><th>Applications</th><th>Favorites</th></tr></thead>
+              <tbody id="engagementTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="engagementEmptyState">
+            <div class="empty-icon"><span class="icon icon-muted" id="engagementEmptyIcon" style="width:40px;height:40px;"></span></div>
+            <h3>No engagement data yet</h3>
+            <p>Publish an opportunity to start tracking views, applications, and favorites.</p>
+          </div>
+        </div>
+
+        <!-- ================= REVIEWS TAB ================= -->
+        <div class="tab-panel" id="tab-reviews">
+          <div class="flex-between" style="margin-bottom:16px;">
+            <p class="text-muted" style="margin:0;">What students are saying about your company.</p>
+            <span class="rating" id="reviewsAvg"></span>
+          </div>
+          <div id="reviewsList"></div>
+          <div class="empty-state hidden" id="reviewsEmptyState">
+            <div class="empty-icon"><span class="icon icon-muted" id="reviewsEmptyIcon" style="width:40px;height:40px;"></span></div>
+            <h3>No reviews yet</h3>
+          </div>
+        </div>
+
+        <!-- ================= PROFILE TAB ================= -->
+        <div class="tab-panel" id="tab-profile">
+          <div style="max-width:640px;">
+            <div id="successBanner" class="card" style="display:none; background:#E4F6ED; border-color: var(--color-success); margin-bottom:20px;">
+              <span class="icon icon-success" style="-webkit-mask-image:url('../images-website/icons/done.png');mask-image:url('../images-website/icons/done.png');"></span>
+              Company profile updated successfully.
+            </div>
+            <div id="formBanner" class="form-error" style="display:none; background:#FBE6E7; padding:10px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
+            <!-- Identity block -->
+            <div class="profile-identity">
+              <div class="profile-avatar-wrap">
+                <span id="identityAvatar"></span>
+                <button type="button" class="profile-avatar-upload" id="logoUploadBtn" title="Change company logo">
+                  <span id="logoUploadIcon"></span>
+                </button>
+                <input type="file" id="logoFileInput" class="hidden" accept=".png,.jpg,.jpeg">
+              </div>
+              <div>
+                <div class="profile-identity-name">
+                  <h2 id="identityName" style="margin:0;"></h2>
+                  <button type="button" class="icon-btn" id="nameEditBtn"><span id="nameEditIcon"></span> Edit</button>
+                </div>
+                <div class="profile-identity-meta" id="identitySubtitle"></div>
+                <div class="profile-identity-line">CR Number: <strong id="identityCr"></strong></div>
+                <div class="form-hint" id="logoFileHint"></div>
+              </div>
+            </div>
+            <div class="card hidden" id="nameEditCard" style="margin-bottom:24px;">
+              <div class="form-group">
+                <label class="form-label" for="nameEditInput">Company Name</label>
+                <input type="text" id="nameEditInput" class="form-control">
+                <div class="form-error" id="nameEditError">This field is required.</div>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" class="btn btn-primary btn-sm" id="nameSaveBtn">Save</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="nameCancelBtn">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Contact Info section -->
+            <div class="card section-card" id="contactCard">
+              <div class="section-card-header">
+                <h3>Contact Info</h3>
+                <button type="button" class="icon-btn" data-edit="contact"><span class="edit-icon"></span> Edit</button>
+              </div>
+              <div id="contactView">
+                <div class="field-view"><div class="field-label">Phone</div><div id="viewPhone"></div></div>
+                <div class="field-view"><div class="field-label">Email</div><div id="viewEmail"></div></div>
+                <div class="field-view"><div class="field-label">Password</div><div>&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div></div>
+              </div>
+              <div class="hidden" id="contactEdit">
+                <div class="form-group">
+                  <label class="form-label" for="cPhone">Phone</label>
+                  <input type="tel" id="cPhone" class="form-control">
+                  <div class="form-error" id="cPhoneError">Please enter a valid phone number.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cEmail">Email</label>
+                  <input type="email" id="cEmail" class="form-control">
+                  <div class="form-error" id="cEmailError">This field is required.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cPassword">Password</label>
+                  <input type="password" id="cPassword" class="form-control" placeholder="Leave blank to keep current password">
+                  <div class="form-error" id="cPasswordError">Password must be at least 8 characters.</div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" class="btn btn-primary btn-sm" data-save="contact">Save</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-cancel="contact">Cancel</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Company Details section -->
+            <div class="card section-card" id="detailsCard">
+              <div class="section-card-header">
+                <h3>Company Details</h3>
+                <button type="button" class="icon-btn" data-edit="details"><span class="edit-icon"></span> Edit</button>
+              </div>
+              <div id="detailsView">
+                <div class="field-view"><div class="field-label">Industry</div><div id="viewIndustry"></div></div>
+                <div class="field-view"><div class="field-label">Description</div><div id="viewDescription"></div></div>
+                <div class="field-view"><div class="field-label">Location</div><div id="viewLocation"></div></div>
+                <div class="field-view"><div class="field-label">Website</div><div id="viewWebsite"></div></div>
+              </div>
+              <div class="hidden" id="detailsEdit">
+                <div class="form-group">
+                  <label class="form-label" for="cIndustry">Industry Sector</label>
+                  <select id="cIndustry" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cDescription">Company Description</label>
+                  <textarea id="cDescription" class="form-control" rows="3"></textarea>
+                  <div class="form-error" id="cDescriptionError">This field is required.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cLocation">Location</label>
+                  <select id="cLocation" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cWebsite">Website URL</label>
+                  <input type="url" id="cWebsite" class="form-control">
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" class="btn btn-primary btn-sm" data-save="details">Save</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-cancel="details">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  const VALID_TABS = ["overview", "opportunities", "applicants", "engagement", "reviews", "profile"];
+  const params = new URLSearchParams(window.location.search);
+  let activeTab = params.get("tab");
+  if (!VALID_TABS.includes(activeTab)) activeTab = "overview";
+
+  requireRole(["company"], { base: "" });
+  renderHeader({ active: activeTab, base: "../" });
+  renderFooter({ base: "../" });
+  renderCompanySidebar({ active: activeTab, base: "../" });
+
+  let current = Store.getCurrentUser();
+
+  /* ---------- Tabs ---------- */
+  function activateTab(tab) {
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + tab));
+  }
+  activateTab(activeTab);
+
+  /* ---------- Overview ---------- */
+  function renderOverview() {
+    const opps = Store.getOpportunitiesByCompany(current.id);
+    const openCount = opps.filter(o => o.status === "Open").length;
+    const apps = Store.getApplicationsForCompany(current.id);
+    const avg = Store.getCompanyAverageRating(current.id);
+
+    document.getElementById("statOpenOpps").textContent = openCount;
+    document.getElementById("statApplicants").textContent = apps.length;
+    document.getElementById("statRating").textContent = avg ? avg.toFixed(1) : "—";
+
+    const recent = apps.slice(0, 5);
+    document.getElementById("recentCard").classList.toggle("hidden", recent.length === 0);
+    document.getElementById("recentEmpty").classList.toggle("hidden", recent.length > 0);
+    document.getElementById("recentBody").innerHTML = recent.map(a => `
+      <tr>
+        <td>${a.user ? a.user.name : "Unknown"}</td>
+        <td>${a.opportunity ? a.opportunity.title : "—"}</td>
+        <td>${new Date(a.appliedAt).toLocaleDateString()}</td>
+      </tr>
+    `).join("");
+  }
+
+  /* ---------- Opportunities table ---------- */
+  function renderOpportunities() {
+    const opps = Store.getOpportunitiesByCompany(current.id);
+    const tbody = document.getElementById("oppTableBody");
+    document.getElementById("oppTableCard").classList.toggle("hidden", opps.length === 0);
+    document.getElementById("oppEmptyState").classList.toggle("hidden", opps.length > 0);
+    tbody.innerHTML = opps.map(o => `
+      <tr>
+        <td>${o.title}</td>
+        <td>${o.type}</td>
+        <td><span class="badge ${o.status === "Open" ? "badge-success" : "badge-neutral"}">${o.status}</span></td>
+        <td>${o.applicationMethod}</td>
+        <td class="flex gap-2">
+          <a href="opportunity-form.html?id=${o.id}" class="btn btn-ghost btn-sm" title="Edit">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/edit.png');mask-image:url('../images-website/icons/edit.png');"></span>
+          </a>
+          <button class="btn btn-ghost btn-sm" data-delete-id="${o.id}" title="Delete">
+            <span class="icon icon-danger" style="-webkit-mask-image:url('../images-website/icons/delete.png');mask-image:url('../images-website/icons/delete.png');"></span>
+          </button>
+        </td>
+      </tr>
+    `).join("");
+
+    tbody.querySelectorAll("[data-delete-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (confirm("Delete this opportunity? This cannot be undone.")) {
+          Store.deleteOpportunity(btn.dataset.deleteId);
+          renderOpportunities();
+        }
+      });
+    });
+  }
+
+  /* ---------- Applicants ---------- */
+  function renderApplicants() {
+    const apps = Store.getApplicationsForCompany(current.id);
+    document.getElementById("applicantsEmptyIcon").outerHTML = iconHtml("userMale", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+    document.getElementById("applicantsTableCard").classList.toggle("hidden", apps.length === 0);
+    document.getElementById("applicantsEmptyState").classList.toggle("hidden", apps.length > 0);
+    document.getElementById("applicantsTableBody").innerHTML = apps.map(a => `
+      <tr>
+        <td>${a.user ? a.user.name : "Unknown"}</td>
+        <td>${a.opportunity ? a.opportunity.title : "—"}</td>
+        <td>${new Date(a.appliedAt).toLocaleDateString()}</td>
+        <td>
+          <select class="form-control" style="padding:6px 10px; font-size:0.85rem;" data-status-id="${a.id}">
+            ${["Submitted", "Under Review", "Accepted", "Rejected"].map(s => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("");
+    document.querySelectorAll("[data-status-id]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        Store.updateApplicationStatus(sel.dataset.statusId, sel.value);
+      });
+    });
+  }
+
+  /* ---------- Engagement ---------- */
+  function renderEngagement() {
+    const rows = Store.getEngagementForCompany(current.id);
+    document.getElementById("engagementEmptyIcon").outerHTML = iconHtml("goal", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+    document.getElementById("engagementTableCard").classList.toggle("hidden", rows.length === 0);
+    document.getElementById("engagementEmptyState").classList.toggle("hidden", rows.length > 0);
+    document.getElementById("engagementTableBody").innerHTML = rows.map(r => `
+      <tr><td>${r.title}</td><td>${r.views}</td><td>${r.applications}</td><td>${r.favorites}</td></tr>
+    `).join("");
+  }
+
+  /* ---------- Reviews ---------- */
+  function renderReviews() {
+    const reviews = Store.getReviewsForCompany(current.id);
+    const avg = Store.getCompanyAverageRating(current.id);
+    document.getElementById("reviewsAvg").textContent = avg ? `★ ${avg.toFixed(1)} / 5 (${reviews.length})` : "";
+    document.getElementById("reviewsEmptyIcon").outerHTML = iconHtml("favorite", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+    document.getElementById("reviewsList").classList.toggle("hidden", reviews.length === 0);
+    document.getElementById("reviewsEmptyState").classList.toggle("hidden", reviews.length > 0);
+    document.getElementById("reviewsList").innerHTML = reviews.map(r => `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="flex-between">
+          <strong>${r.user ? r.user.name : "A user"}</strong>
+          <span class="rating">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span>
+        </div>
+        ${r.comment ? `<p style="margin:6px 0 0;">${r.comment}</p>` : ""}
+      </div>
+    `).join("");
+  }
+
+  renderOverview();
+  renderOpportunities();
+  renderApplicants();
+  renderEngagement();
+  renderReviews();
+
+  /* ---------- Profile: view/edit-per-section ---------- */
+  const cIndustry = document.getElementById("cIndustry");
+  INDUSTRY_SECTORS.forEach(s => cIndustry.add(new Option(s, s)));
+  const cLocation = document.getElementById("cLocation");
+  CITIES.forEach(c => cLocation.add(new Option(c, c)));
+
+  const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
+  function fileHasExt(file, exts) {
+    if (!file) return true;
+    const name = file.name.toLowerCase();
+    return exts.some(ext => name.endsWith(ext));
+  }
+  function setInvalid(input, errorEl, isInvalid) {
+    input.classList.toggle("invalid", isInvalid);
+    if (errorEl) errorEl.style.display = isInvalid ? "block" : "none";
+  }
+
+  const formBanner = document.getElementById("formBanner");
+  const successBanner = document.getElementById("successBanner");
+  function showBanner(msg) { successBanner.style.display = "none"; formBanner.textContent = msg; formBanner.style.display = "block"; }
+  function hideBanners() { formBanner.style.display = "none"; successBanner.style.display = "none"; }
+  function showSuccess() { formBanner.style.display = "none"; successBanner.style.display = "block"; }
+
+  document.querySelectorAll(".edit-icon").forEach(el => { el.outerHTML = iconHtml("edit", { base: "../", sizePx: 14 }); });
+  document.getElementById("nameEditIcon").outerHTML = iconHtml("edit", { base: "../", sizePx: 12 });
+  document.getElementById("logoUploadIcon").outerHTML = iconHtml("upload", { base: "../", sizePx: 12 });
+
+  function renderIdentity() {
+    document.getElementById("identityAvatar").outerHTML = `<span id="identityAvatar">${avatarHtml(current, { base: "../", sizePx: 72, fontPx: 1.4 })}</span>`;
+    document.getElementById("identityName").textContent = current.name;
+    document.getElementById("identitySubtitle").textContent = current.industry || "";
+    document.getElementById("identityCr").textContent = current.crNumber || "";
+    document.getElementById("logoFileHint").textContent = current.logoFileName ? `Logo file: ${current.logoFileName}` : "No logo uploaded yet";
+  }
+  renderIdentity();
+
+  document.getElementById("logoUploadBtn").addEventListener("click", () => document.getElementById("logoFileInput").click());
+  document.getElementById("logoFileInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!fileHasExt(file, [".png", ".jpg", ".jpeg"])) {
+      showBanner("Please upload a PNG or JPG image.");
+      return;
+    }
+    current = Store.updateCompany(current.id, { logoFileName: file.name });
+    renderIdentity();
+    showSuccess();
+  });
+
+  /* Name edit (identity block) */
+  const nameEditCard = document.getElementById("nameEditCard");
+  document.getElementById("nameEditBtn").addEventListener("click", () => {
+    document.getElementById("nameEditInput").value = current.name;
+    nameEditCard.classList.remove("hidden");
+  });
+  document.getElementById("nameCancelBtn").addEventListener("click", () => nameEditCard.classList.add("hidden"));
+  document.getElementById("nameSaveBtn").addEventListener("click", () => {
+    const name = document.getElementById("nameEditInput").value.trim();
+    setInvalid(document.getElementById("nameEditInput"), document.getElementById("nameEditError"), !name);
+    if (!name) return;
+    current = Store.updateCompany(current.id, { name });
+    renderIdentity();
+    nameEditCard.classList.add("hidden");
+    showSuccess();
+  });
+
+  /* Section: Contact Info */
+  function fillContactView() {
+    document.getElementById("viewPhone").textContent = current.phone || "—";
+    document.getElementById("viewEmail").textContent = current.email || "—";
+  }
+  function enterContactEdit() {
+    document.getElementById("cPhone").value = current.phone || "";
+    document.getElementById("cEmail").value = current.email || "";
+    document.getElementById("cPassword").value = "";
+    document.getElementById("contactView").classList.add("hidden");
+    document.getElementById("contactEdit").classList.remove("hidden");
+  }
+  function exitContactEdit() {
+    document.getElementById("contactEdit").classList.add("hidden");
+    document.getElementById("contactView").classList.remove("hidden");
+  }
+  function saveContact() {
+    hideBanners();
+    const phone = document.getElementById("cPhone").value.trim();
+    const email = document.getElementById("cEmail").value.trim();
+    const password = document.getElementById("cPassword").value;
+
+    let valid = true;
+    const phoneInvalid = !phone || !PHONE_REGEX.test(phone);
+    setInvalid(document.getElementById("cPhone"), document.getElementById("cPhoneError"), phoneInvalid);
+    if (phoneInvalid) valid = false;
+    setInvalid(document.getElementById("cEmail"), document.getElementById("cEmailError"), !email);
+    if (!email) valid = false;
+    const pwInvalid = password.length > 0 && password.length < 8;
+    setInvalid(document.getElementById("cPassword"), document.getElementById("cPasswordError"), pwInvalid);
+    if (pwInvalid) valid = false;
+
+    if (!valid) {
+      showBanner("Please fill in all fields correctly.");
+      return;
+    }
+
+    const existing = Store.findCompanyByEmail(email);
+    if (existing && existing.id !== current.id) {
+      showBanner("Email already registered");
+      setInvalid(document.getElementById("cEmail"), document.getElementById("cEmailError"), true);
+      document.getElementById("cEmailError").textContent = "Email already registered";
+      return;
+    }
+
+    const patch = { phone, email };
+    if (password) patch.password = password;
+    current = Store.updateCompany(current.id, patch);
+    fillContactView();
+    exitContactEdit();
+    showSuccess();
+  }
+  fillContactView();
+
+  /* Section: Company Details */
+  function fillDetailsView() {
+    document.getElementById("viewIndustry").textContent = current.industry || "—";
+    document.getElementById("viewDescription").textContent = current.description || "—";
+    document.getElementById("viewLocation").textContent = current.location || "—";
+    document.getElementById("viewWebsite").textContent = current.website || "—";
+  }
+  function enterDetailsEdit() {
+    cIndustry.value = current.industry || "";
+    document.getElementById("cDescription").value = current.description || "";
+    cLocation.value = current.location || "";
+    document.getElementById("cWebsite").value = current.website || "";
+    document.getElementById("detailsView").classList.add("hidden");
+    document.getElementById("detailsEdit").classList.remove("hidden");
+  }
+  function exitDetailsEdit() {
+    document.getElementById("detailsEdit").classList.add("hidden");
+    document.getElementById("detailsView").classList.remove("hidden");
+  }
+  function saveDetails() {
+    hideBanners();
+    const description = document.getElementById("cDescription").value.trim();
+    const descInvalid = !description;
+    setInvalid(document.getElementById("cDescription"), document.getElementById("cDescriptionError"), descInvalid);
+    if (descInvalid) {
+      showBanner("Please fill in all fields correctly.");
+      return;
+    }
+    const patch = {
+      industry: cIndustry.value,
+      description,
+      location: cLocation.value,
+      website: document.getElementById("cWebsite").value.trim()
+    };
+    current = Store.updateCompany(current.id, patch);
+    fillDetailsView();
+    renderIdentity();
+    exitDetailsEdit();
+    showSuccess();
+  }
+  fillDetailsView();
+
+  document.querySelectorAll("[data-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      hideBanners();
+      if (btn.dataset.edit === "contact") enterContactEdit();
+      if (btn.dataset.edit === "details") enterDetailsEdit();
+    });
+  });
+  document.querySelectorAll("[data-cancel]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.cancel === "contact") exitContactEdit();
+      if (btn.dataset.cancel === "details") exitDetailsEdit();
+    });
+  });
+  document.querySelectorAll("[data-save]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.save === "contact") saveContact();
+      if (btn.dataset.save === "details") saveDetails();
+    });
+  });
+</script>
+
+</body>
+</html>

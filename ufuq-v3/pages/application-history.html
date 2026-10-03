@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Application History &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container">
+      <h2 style="margin-bottom:2px;">Application History</h2>
+      <p class="text-muted" style="margin:0;">Opportunities you've applied to through Ufuq.</p>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+    <div class="card" id="tableCard">
+      <table class="data-table">
+        <thead><tr><th>Opportunity</th><th>Company</th><th>Applied On</th><th>Status</th></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="empty-state hidden" id="emptyState">
+      <div class="empty-icon">
+        <span class="icon icon-muted" id="emptyIcon" style="width:40px;height:40px;"></span>
+      </div>
+      <h3>No applications yet</h3>
+      <p>When you apply to an opportunity directly through Ufuq, it will show up here. Opportunities applied to via an external link aren't tracked here.</p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "history", base: "../" });
+  renderFooter({ base: "../" });
+  document.getElementById("emptyIcon").outerHTML = iconHtml("document", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+
+  function companyNameFor(o) {
+    if (!o) return "&mdash;";
+    if (o.companyId) {
+      const c = Store.getCompanyById(o.companyId);
+      return c ? c.name : "Unknown Company";
+    }
+    return o.companyNameManual || "External Company";
+  }
+
+  const apps = Store.getApplicationsForUser(me.id);
+  document.getElementById("tableCard").classList.toggle("hidden", apps.length === 0);
+  document.getElementById("emptyState").classList.toggle("hidden", apps.length > 0);
+
+  document.getElementById("tableBody").innerHTML = apps.map(a => `
+    <tr>
+      <td>${a.opportunity ? `<a href="opportunity-detail.html?id=${a.opportunity.id}">${a.opportunity.title}</a>` : "Opportunity removed"}</td>
+      <td>${companyNameFor(a.opportunity)}</td>
+      <td>${new Date(a.appliedAt).toLocaleDateString()}</td>
+      <td><span class="badge badge-primary">${a.status}</span></td>
+    </tr>
+  `).join("");
+</script>
+
+</body>
+</html>
