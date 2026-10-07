@@ -1,4 +1,4 @@
-Ufuq — Graduation Project (IT496)
+Ufuq — Graduation Project 
 
 Authors 
 -----------------------
