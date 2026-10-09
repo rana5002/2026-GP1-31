@@ -3,8 +3,8 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: 08 OCT 2026  19:05hr
--- Server Version: 5.7.24
+-- Generation Time: 09 أكتوبر 2026 الساعة 13:02
+-- إصدار الخادم: 5.7.24
 -- PHP Version: 8.3.1
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -24,7 +24,7 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
---   `admin`
+-- بنية الجدول `admin`
 --
 
 CREATE TABLE `admin` (
@@ -34,18 +34,19 @@ CREATE TABLE `admin` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `admin`
 --
 
 INSERT INTO `admin` (`AdminID`, `FirstName`, `LastName`) VALUES
-(1, 'Rana', 'Alshehri'),
-(2, 'Hatoun', 'Alzahrani'),
-(3, 'Leena', 'Almutairi'),
-(4, 'Layan', 'Alghamdi');
+(1, 'Rana', 'Almutairi'),
+(2, 'Hatun', 'Alothman'),
+(3, 'Leenh', 'Almarzooq'),
+(4, 'Layan', 'Alshamsan');
 
 -- --------------------------------------------------------
 
 --
--- `application`
+-- بنية الجدول `application`
 --
 
 CREATE TABLE `application` (
@@ -56,20 +57,21 @@ CREATE TABLE `application` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `application`
 --
 
 INSERT INTO `application` (`UserID`, `OpportunityID`, `SubmissionDate`, `ApplicationStatus`) VALUES
 (8, 1, '2026-10-01', 'Pending'),
 (8, 2, '2026-10-02', 'Accepted'),
-(9, 3, '2026-10-03', 'Accepted'),
+(9, 3, '2026-01-20', 'Accepted'),
 (9, 8, '2026-10-04', 'Rejected'),
-(10, 7, '2026-10-05', 'Accepted'),
+(10, 7, '2026-07-05', 'Accepted'),
 (11, 4, '2026-10-06', 'Pending');
 
 -- --------------------------------------------------------
 
 --
--- `company`
+-- بنية الجدول `company`
 --
 
 CREATE TABLE `company` (
@@ -89,18 +91,19 @@ CREATE TABLE `company` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `company`
 --
 
 INSERT INTO `company` (`CompanyID`, `CompanyName`, `CrNumber`, `Phone`, `IndustrySector`, `VerificationDocument`, `Status`, `RejectionReason`, `Description`, `Location`, `WebsiteURL`, `Logo`, `VerifiedByAdminID`) VALUES
-(5, 'FutureTech Solutions', '1010123456', '0112345678', 'Technology', 'docs/futuretech_cr.pdf', 'Verified', NULL, 'Software and data solutions company.', 'Riyadh', 'https://futuretech.example.com', 'logos/futuretech.png', 1),
-(6, 'Business Academy', '1010234567', '0112345679', 'Education & Training', 'docs/businessacademy_cr.pdf', 'Verified', NULL, 'Professional training and business courses.', 'Riyadh', 'https://businessacademy.example.com', 'logos/businessacademy.png', 2),
-(7, 'Horizon Marketing', '1010345678', '0112345680', 'Marketing', 'docs/horizon_cr.pdf', 'Verified', NULL, 'Digital marketing and branding agency.', 'Jeddah', 'https://horizon.example.com', 'logos/horizon.png', 3),
-(12, 'Rawafed Trading', '1010456789', '0112345681', 'Trading', 'docs/rawafed_cr.pdf', 'Rejected', 'The commercial registration document is expired and the CR number does not match the submitted documents.', 'Company is a trading business seeking to post training opportunities.', 'Dammam', 'https://rawafed.example.com', 'logos/rawafed.png', 4);
+(5, 'Tuwaiq Academy', '1010123456', '0112345678', 'Technology & Training', 'docs/tuwaiq_cr.pdf', 'Verified', NULL, 'Saudi national academy offering tech bootcamps and programs in AI, cybersecurity, cloud, UX and more, in partnership with global tech companies.', 'Riyadh', 'https://tuwaiq.edu.sa', 'logos/tuwaiq.png', 1),
+(6, 'SDAIA Academy', '1010234567', '0112345679', 'Data & Artificial Intelligence', 'docs/sdaia_academy_cr.pdf', 'Verified', NULL, 'Training arm of the Saudi Data and AI Authority, delivering data and AI programs through the Athka X platform.', 'Riyadh', 'https://sdaia.gov.sa', 'logos/sdaia.png', 2),
+(7, 'Saudi Aramco', '1010345678', '0112345680', 'Energy', 'docs/aramco_cr.pdf', 'Verified', NULL, 'Integrated energy and chemicals company offering internship programs for Saudi university and vocational college students.', 'Dhahran', 'https://www.aramco.com', 'logos/aramco.png', 3),
+(12, 'Rawafed Trading', '1010456789', '0112345681', 'Trading', 'docs/rawafed_cr.pdf', 'Rejected', 'The commercial registration document is expired and the CR number does not match the submitted documents.', 'Fictional company used to demonstrate the rejection flow.', 'Dammam', 'https://rawafed.example.com', 'logos/rawafed.png', 4);
 
 -- --------------------------------------------------------
 
 --
--- `experience`
+-- بنية الجدول `experience`
 --
 
 CREATE TABLE `experience` (
@@ -113,6 +116,7 @@ CREATE TABLE `experience` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `experience`
 --
 
 INSERT INTO `experience` (`ExperienceID`, `JobTitle`, `Organization`, `StartDate`, `EndDate`) VALUES
@@ -124,7 +128,7 @@ INSERT INTO `experience` (`ExperienceID`, `JobTitle`, `Organization`, `StartDate
 -- --------------------------------------------------------
 
 --
--- `favourite`
+-- بنية الجدول `favourite`
 --
 
 CREATE TABLE `favourite` (
@@ -133,6 +137,7 @@ CREATE TABLE `favourite` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `favourite`
 --
 
 INSERT INTO `favourite` (`UserID`, `OpportunityID`) VALUES
@@ -143,7 +148,7 @@ INSERT INTO `favourite` (`UserID`, `OpportunityID`) VALUES
 -- --------------------------------------------------------
 
 --
--- `member`
+-- بنية الجدول `member`
 --
 
 CREATE TABLE `member` (
@@ -154,26 +159,27 @@ CREATE TABLE `member` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `member`
 --
 
 INSERT INTO `member` (`MemberID`, `Email`, `Password`, `Role`) VALUES
-(1, 'rana@admin.com', '$2b$10$DummyHashForTesting', 'Admin'),
-(2, 'hatoun@admin.com', '$2b$10$DummyHashForTesting', 'Admin'),
-(3, 'leena@admin.com', '$2b$10$DummyHashForTesting', 'Admin'),
-(4, 'layan@admin.com', '$2b$10$DummyHashForTesting', 'Admin'),
-(5, 'info@futuretech.com', '$2b$10$DummyHashForTesting', 'Company'),
-(6, 'info@businessacademy.com', '$2b$10$DummyHashForTesting', 'Company'),
-(7, 'info@horizonmarketing.com', '$2b$10$DummyHashForTesting', 'Company'),
-(8, 'sara@user.com', '$2b$10$DummyHashForTesting', 'User'),
-(9, 'noura@user.com', '$2b$10$DummyHashForTesting', 'User'),
-(10, 'ahmed@user.com', '$2b$10$DummyHashForTesting', 'User'),
-(11, 'khalid@user.com', '$2b$10$DummyHashForTesting', 'User'),
-(12, 'info@rawafed.com', '$2b$10$DummyHashForTesting', 'Company');
+(1, 'rana@gmail.com', '$2y$10$12ybGKaRGYiP6gE2i04iO.p/PnHu4.lX1TM/KXWPpL4cPA2wa7pIO', 'Admin'),
+(2, 'hatun@gmail.com', '$2y$10$PFXusarVUzyJO8rCl8lulemX7TqdHIyF7tVfiPWejGb8i5tv.Th/O', 'Admin'),
+(3, 'leenh@gmail.com', '$2y$10$HTVLLlOotO7mcBRCVsz48.p2C2eIZ3Vgqpr/26xQw6CDUNT2yGPui', 'Admin'),
+(4, 'layan@gmail.com', '$2y$10$ijzaVWwt7K1xHJiP4NVOc.Dfdt0a2rZ6lRoL8scF9DKSe7QIUoY4W', 'Admin'),
+(5, 'tuwaiq.academy@gmail.com', '$2y$10$sCBsPHo9yVGNzzv/U8Iuke.UBxvkKwMx53SaX69hINTUJynU6wM9a', 'Company'),
+(6, 'sdaia.academy@outlook.com', '$2y$10$WbQHeEgR.jRMKs5nk4oIf.Ws.LXus5L3cID.tU6kvUFze2NqedKXO', 'Company'),
+(7, 'aramco.careers@icloud.com', '$2y$10$fBz8GJfZmg4bPSkAgarYEOcyhD5BG1jgwsBpR3XRgJlo6zLAIOerG', 'Company'),
+(8, 'sara@gmail.com', '$2y$10$joKwP6hbKs/2VXsaCWPDTe0vg/.L45JU2TOF7TKvrYYQr80QhuvGi', 'User'),
+(9, 'noura@gmail.com', '$2y$10$lOXsiBLS.QEsmlKhL7BS/O8OxeKzInMBkNGPVcCOqJlxybjJba2Ra', 'User'),
+(10, 'ahmed@gmail.com', '$2y$10$qvlEFEWFXHOWUb5P5OykZuJCWtvcS12p1eh1rAHqfjxg7BointG6m', 'User'),
+(11, 'khalid@gmail.com', '$2y$10$G9jbpS32Tjoq/4WvXWjLE.jGSm5IH3bJ89dSwvEm7EuOmhvbcjcRO', 'User'),
+(12, 'rawafed.trading@gmail.com', '$2y$10$ih2cApaIq7lLR9vMgnfCmuaX7Zv/EaRaopeLtg/QV0GG0sgCfxEjq', 'Company');
 
 -- --------------------------------------------------------
 
 --
--- `notification`
+-- بنية الجدول `notification`
 --
 
 CREATE TABLE `notification` (
@@ -186,18 +192,18 @@ CREATE TABLE `notification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
--- `notification`
+-- إرجاع أو استيراد بيانات الجدول `notification`
 --
 
 INSERT INTO `notification` (`NotificationID`, `Message`, `IsRead`, `CreatedAt`, `Type`, `OpportunityID`) VALUES
-(1, 'A new training opportunity matching your skills was posted: Software Development Training.', 0, '2026-10-01 09:00:00', 'NewOpportunity', 1),
-(2, 'Your application for Data Analysis Training has been accepted.', 0, '2026-10-06 10:00:00', 'ApplicationUpdate', 2),
+(1, 'A new training opportunity matching your skills was posted: Tuwaiq Cybersecurity Bootcamp.', 0, '2026-10-01 09:00:00', 'NewOpportunity', 1),
+(2, 'Your application for SDAIA Professional Training in Generative AI and LLMs has been accepted.', 0, '2026-10-06 10:00:00', 'ApplicationUpdate', 2),
 (3, 'Reminder: the deadline for Introduction to AI is approaching.', 0, '2026-10-07 08:00:00', 'Reminder', 16);
 
 -- --------------------------------------------------------
 
 --
--- `opportunity`
+-- بنية الجدول `opportunity`
 --
 
 CREATE TABLE `opportunity` (
@@ -222,19 +228,20 @@ CREATE TABLE `opportunity` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `opportunity`
 --
 
 INSERT INTO `opportunity` (`OpportunityID`, `Title`, `Description`, `Type`, `ApplicationMethod`, `OpportunityProvider`, `IndustrySector`, `ExternalURL`, `StartDate`, `EndDate`, `ApplicationDeadLine`, `TimeLine`, `Location`, `Status`, `Price`, `CreatedByAdminID`, `CreatedByCompanyID`) VALUES
-(1, 'Software Development Training', 'Hands-on training on web development projects.', 'Training', 'Internal', 'FutureTech Solutions', 'Technology', 'https://futuretech.example.com/t1', '2026-12-01', '2027-02-01', '2026-11-15', 'Sun-Thu, 9AM-3PM', 'Riyadh', 'Open', '0.00', NULL, 5),
-(2, 'Data Analysis Training', 'Work with real datasets using SQL and Excel.', 'Training', 'Internal', 'FutureTech Solutions', 'Technology', 'https://futuretech.example.com/t2', '2026-12-10', '2027-03-10', '2026-11-20', 'Sun-Thu, 10AM-4PM', 'Riyadh', 'Open', '0.00', NULL, 5),
-(3, 'Digital Marketing Training', 'Social media campaigns and analytics.', 'Training', 'Internal', 'Horizon Marketing', 'Marketing', 'https://horizon.example.com/t1', '2026-12-05', '2027-02-05', '2026-11-18', 'Mon-Thu, 9AM-2PM', 'Jeddah', 'Open', '0.00', NULL, 7),
-(4, 'Graphic Design Training', 'Branding and visual identity design.', 'Training', 'Internal', 'Horizon Marketing', 'Marketing', 'https://horizon.example.com/t2', '2027-01-04', '2027-03-04', '2026-12-10', 'Sun-Wed, 10AM-3PM', 'Jeddah', 'Open', '0.00', NULL, 7),
-(5, 'Customer Service Training', 'Learn communication and client handling.', 'Training', 'Internal', 'Business Academy', 'Education & Training', 'https://businessacademy.example.com/t1', '2026-12-15', '2027-01-30', '2026-11-30', 'Sun-Thu, 9AM-1PM', 'Riyadh', 'Open', '0.00', NULL, 6),
-(6, 'Python for Beginners', 'Introductory programming course in Python.', 'Course', 'Internal', 'FutureTech Solutions', 'Technology', 'https://futuretech.example.com/c1', '2026-11-20', '2026-12-20', '2026-11-10', 'Evenings, 4 weeks', 'Online', 'Open', '300.00', NULL, 5),
-(7, 'Excel Essentials', 'Formulas, tables and charts in Excel.', 'Course', 'Internal', 'Business Academy', 'Education & Training', 'https://businessacademy.example.com/c1', '2026-11-25', '2026-12-25', '2026-11-12', 'Weekends, 4 weeks', 'Riyadh', 'Open', '250.00', NULL, 6),
-(8, 'SEO Fundamentals', 'Search engine optimization basics.', 'Course', 'Internal', 'Horizon Marketing', 'Marketing', 'https://horizon.example.com/c1', '2026-12-02', '2026-12-30', '2026-11-15', 'Evenings, 4 weeks', 'Online', 'Open', '200.00', NULL, 7),
-(9, 'Project Management Basics', 'Planning and managing projects.', 'Course', 'Internal', 'Business Academy', 'Education & Training', 'https://businessacademy.example.com/c2', '2027-01-10', '2027-02-10', '2026-12-20', 'Weekends, 5 weeks', 'Riyadh', 'Open', '400.00', NULL, 6),
-(10, 'UI/UX Design Course', 'User interface and experience design with Figma.', 'Course', 'Internal', 'FutureTech Solutions', 'Technology', 'https://futuretech.example.com/c2', '2027-01-15', '2027-02-25', '2026-12-25', 'Evenings, 6 weeks', 'Online', 'Open', '350.00', NULL, 5),
+(1, 'Tuwaiq Cybersecurity Bootcamp', 'Intensive in-person bootcamp in penetration testing and cybersecurity, with employment opportunities for top performers.', 'Training', 'Internal', 'Tuwaiq Academy', 'Technology', 'https://tuwaiq.edu.sa', '2027-01-17', '2027-06-17', '2026-12-20', 'Approx. 5 months, in-person in Riyadh', 'Riyadh', 'Open', '0.00', NULL, 5),
+(2, 'Professional Training in Generative AI and LLMs (NVIDIA)', 'Four-week hands-on program on building and customizing LLMs, preparing for the NVIDIA Certified Associate Gen AI LLMs exam.', 'Training', 'Internal', 'SDAIA Academy', 'Data & Artificial Intelligence', 'https://athkax.sdaia.gov.sa/events/professional-training-in-generative-ai-nvidia', '2026-11-15', '2026-12-13', '2026-11-08', '4 weeks, schedule on Athka X', 'Riyadh', 'Open', '0.00', NULL, 6),
+(3, 'Tuwaiq AI Product-Building Bootcamp (with NTDP)', 'Ten-week bootcamp to build AI products; top projects received incubation support through MVPLAB.', 'Training', 'Internal', 'Tuwaiq Academy', 'Technology', 'https://tuwaiq.edu.sa', '2026-02-01', '2026-04-12', '2026-01-25', '10 weeks, in-person in Riyadh', 'Riyadh', 'Closed', '0.00', NULL, 5),
+(4, 'Modern Data Engineering for AI Systems', 'Professional track on data engineering for AI systems from the SDAIA Academy summer 2026 initiative.', 'Training', 'Internal', 'SDAIA Academy', 'Data & Artificial Intelligence', 'https://athkax.sdaia.gov.sa', '2026-11-22', '2026-12-20', '2026-11-15', 'Bootcamp, schedule on Athka X', 'Riyadh', 'Open', '0.00', NULL, 6),
+(5, 'Saudi Aramco University Internship Program', 'Internship for Saudi students whose universities require practical training before graduation.', 'Internship', 'Internal', 'Saudi Aramco', 'Energy', 'https://www.aramco.com/en/careers/for-saudi-applicants/student-opportunities/university-and-vocational-college-internship-programs/university-internship-program', '2027-01-18', NULL, '2026-11-02', 'Applications 26 Oct - 2 Nov 2026; orientation 17 Jan 2027', 'Saudi Arabia', 'Upcoming', '0.00', NULL, 7),
+(6, 'Saudi Aramco Vocational College Internship Program', 'Practical training for students of vocational and technical colleges.', 'Internship', 'Internal', 'Saudi Aramco', 'Energy', 'https://www.aramco.com/en/careers/for-saudi-applicants/student-opportunities/university-and-vocational-college-internship-programs/vocational-college-internship-program', '2026-08-31', NULL, NULL, 'Orientation 30 Aug 2026; start 31 Aug 2026', 'Saudi Arabia', 'Closed', '0.00', NULL, 7),
+(7, 'Enhancing Productivity and Workflows with AI', 'Beginner course on using AI tools to improve productivity, from the SDAIA Academy summer 2026 initiative.', 'Course', 'Internal', 'SDAIA Academy', 'Data & Artificial Intelligence', 'https://athkax.sdaia.gov.sa', '2026-07-12', '2026-08-06', '2026-07-08', 'Summer 2026 initiative, schedule on Athka X', 'Online', 'Closed', '0.00', NULL, 6),
+(8, 'Apple Developer Academy at Tuwaiq', 'Nine-month app development program for women developers in Riyadh, run with Apple.', 'Training', 'Internal', 'Tuwaiq Academy', 'Technology', 'https://tuwaiq.edu.sa', '2026-11-15', '2027-08-15', '2026-10-31', '9 months, in-person in Riyadh', 'Riyadh', 'Open', '0.00', NULL, 5),
+(9, 'SDAIA Summer of the Future Camps', 'Eighteen specialized data and AI training camps held in August 2026.', 'Course', 'Internal', 'SDAIA Academy', 'Data & Artificial Intelligence', 'https://athkax.sdaia.gov.sa', '2026-08-01', '2026-08-31', '2026-07-25', 'August 2026, 18 camps', 'Online', 'Closed', '0.00', NULL, 6),
+(10, 'Tuwaiq Artificial Intelligence Hackathon', 'One-day AI hackathon using the vibe coding methodology, with 1,500+ participants.', 'Hackathon', 'Internal', 'Tuwaiq Academy', 'Technology', 'https://tuwaiq.edu.sa', '2026-03-08', '2026-03-08', '2026-03-01', '1 day, Riyadh', 'Riyadh', 'Closed', '0.00', NULL, 5),
 (11, 'Administrative Assistant Training', 'Office administration and organization skills.', 'Training', 'Internal', 'Platform Admin', 'Administration', 'https://example.com/a1', '2026-12-01', '2027-01-15', '2026-11-20', 'Sun-Thu, 9AM-2PM', 'Riyadh', 'Open', '0.00', 1, NULL),
 (12, 'Cybersecurity Training', 'Fundamentals of protecting systems and data.', 'Training', 'Internal', 'Platform Admin', 'Technology', 'https://example.com/a2', '2026-12-08', '2027-02-08', '2026-11-25', 'Sun-Thu, 10AM-3PM', 'Riyadh', 'Open', '0.00', 2, NULL),
 (13, 'Content Writing Training', 'Writing for blogs, social media and websites.', 'Training', 'Internal', 'Platform Admin', 'Media', 'https://example.com/a3', '2027-01-05', '2027-02-20', '2026-12-15', 'Mon-Thu, 9AM-1PM', 'Online', 'Open', '0.00', 3, NULL),
@@ -245,6 +252,7 @@ INSERT INTO `opportunity` (`OpportunityID`, `Title`, `Description`, `Type`, `App
 -- --------------------------------------------------------
 
 --
+-- بنية الجدول `opportunityexperience`
 --
 
 CREATE TABLE `opportunityexperience` (
@@ -253,19 +261,17 @@ CREATE TABLE `opportunityexperience` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
--- `opportunityexperience`
+-- إرجاع أو استيراد بيانات الجدول `opportunityexperience`
 --
 
 INSERT INTO `opportunityexperience` (`OpportunityID`, `ExperienceID`) VALUES
-(5, 2),
 (11, 2),
-(1, 3),
-(3, 4);
+(1, 3);
 
 -- --------------------------------------------------------
 
 --
--- `opportunityqualification`
+-- بنية الجدول `opportunityqualification`
 --
 
 CREATE TABLE `opportunityqualification` (
@@ -274,21 +280,28 @@ CREATE TABLE `opportunityqualification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `opportunityqualification`
 --
 
 INSERT INTO `opportunityqualification` (`OpportunityID`, `QualificationID`) VALUES
 (1, 1),
 (2, 1),
+(3, 1),
+(4, 1),
+(5, 1),
 (12, 1),
+(5, 2),
+(7, 2),
 (11, 2),
-(4, 3),
+(1, 3),
+(6, 3),
 (12, 3),
-(3, 4);
+(5, 4);
 
 -- --------------------------------------------------------
 
 --
--- `opportunityskill`
+-- بنية الجدول `opportunityskill`
 --
 
 CREATE TABLE `opportunityskill` (
@@ -297,34 +310,44 @@ CREATE TABLE `opportunityskill` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `opportunityskill`
 --
 
 INSERT INTO `opportunityskill` (`OpportunityID`, `SkillID`) VALUES
 (1, 1),
-(6, 1),
+(2, 1),
+(3, 1),
+(4, 1),
+(9, 1),
+(10, 1),
 (16, 1),
-(1, 2),
 (2, 2),
-(3, 3),
+(4, 2),
 (5, 3),
+(6, 3),
+(7, 3),
 (11, 3),
 (13, 3),
 (14, 3),
 (15, 3),
-(2, 4),
 (7, 4),
 (11, 4),
-(4, 5),
-(10, 5),
-(9, 6),
-(12, 7),
-(3, 8),
-(8, 8);
+(3, 6),
+(5, 6),
+(6, 6),
+(8, 6),
+(10, 6),
+(1, 7),
+(3, 7),
+(5, 7),
+(8, 7),
+(9, 7),
+(12, 7);
 
 -- --------------------------------------------------------
 
 --
--- `qualification`
+-- بنية الجدول `qualification`
 --
 
 CREATE TABLE `qualification` (
@@ -337,6 +360,7 @@ CREATE TABLE `qualification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `qualification`
 --
 
 INSERT INTO `qualification` (`QualificationID`, `FieldOfStudy`, `DegreeLevel`, `Institution`, `YearObtained`, `Duration`) VALUES
@@ -348,7 +372,7 @@ INSERT INTO `qualification` (`QualificationID`, `FieldOfStudy`, `DegreeLevel`, `
 -- --------------------------------------------------------
 
 --
--- `review`
+-- بنية الجدول `review`
 --
 
 CREATE TABLE `review` (
@@ -361,16 +385,17 @@ CREATE TABLE `review` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `review`
 --
 
 INSERT INTO `review` (`ReviewID`, `Rating`, `ReviewText`, `CreatedAt`, `UserID`, `OpportunityID`) VALUES
-(1, 5, 'Great training, very practical and well organized.', '2026-10-06 14:30:00', 9, 3),
-(2, 4, 'Useful course, the instructor explained everything clearly.', '2026-10-07 11:15:00', 10, 7);
+(1, 5, 'Great training, very practical and well organized.', '2026-04-20 14:30:00', 9, 3),
+(2, 4, 'Useful course, the instructor explained everything clearly.', '2026-08-10 11:15:00', 10, 7);
 
 -- --------------------------------------------------------
 
 --
--- `skill`
+-- بنية الجدول `skill`
 --
 
 CREATE TABLE `skill` (
@@ -379,6 +404,7 @@ CREATE TABLE `skill` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `skill`
 --
 
 INSERT INTO `skill` (`SkillID`, `SkillName`) VALUES
@@ -394,7 +420,7 @@ INSERT INTO `skill` (`SkillID`, `SkillName`) VALUES
 -- --------------------------------------------------------
 
 --
--- `user`
+-- بنية الجدول `user`
 --
 
 CREATE TABLE `user` (
@@ -411,6 +437,7 @@ CREATE TABLE `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `user`
 --
 
 INSERT INTO `user` (`UserID`, `FirstName`, `LastName`, `Phone`, `DateOfBirth`, `Age`, `Gender`, `ProfilePicture`, `EducationalStatus`, `FieldOfStudy`) VALUES
@@ -420,6 +447,7 @@ INSERT INTO `user` (`UserID`, `FirstName`, `LastName`, `Phone`, `DateOfBirth`, `
 (11, 'Khalid', 'Aldosari', '0504444444', '2004-06-18', 22, 'Male', 'pics/khalid.png', 'Undergraduate', 'Information Systems');
 
 --
+-- القوادح `user`
 --
 DELIMITER $$
 CREATE TRIGGER `trg_user_age_insert` BEFORE INSERT ON `user` FOR EACH ROW SET NEW.Age = TIMESTAMPDIFF(YEAR, NEW.DateOfBirth, CURDATE())
@@ -433,7 +461,7 @@ DELIMITER ;
 -- --------------------------------------------------------
 
 --
--- `userexperience`
+-- بنية الجدول `userexperience`
 --
 
 CREATE TABLE `userexperience` (
@@ -442,6 +470,7 @@ CREATE TABLE `userexperience` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `userexperience`
 --
 
 INSERT INTO `userexperience` (`UserID`, `ExperienceID`) VALUES
@@ -454,7 +483,7 @@ INSERT INTO `userexperience` (`UserID`, `ExperienceID`) VALUES
 -- --------------------------------------------------------
 
 --
--- `usernotification`
+-- بنية الجدول `usernotification`
 --
 
 CREATE TABLE `usernotification` (
@@ -463,6 +492,7 @@ CREATE TABLE `usernotification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `usernotification`
 --
 
 INSERT INTO `usernotification` (`UserID`, `NotificationID`) VALUES
@@ -475,7 +505,7 @@ INSERT INTO `usernotification` (`UserID`, `NotificationID`) VALUES
 -- --------------------------------------------------------
 
 --
--- `userqualification`
+-- بنية الجدول `userqualification`
 --
 
 CREATE TABLE `userqualification` (
@@ -484,6 +514,7 @@ CREATE TABLE `userqualification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `userqualification`
 --
 
 INSERT INTO `userqualification` (`UserID`, `QualificationID`) VALUES
@@ -495,7 +526,7 @@ INSERT INTO `userqualification` (`UserID`, `QualificationID`) VALUES
 -- --------------------------------------------------------
 
 --
--- `userskill`
+-- بنية الجدول `userskill`
 --
 
 CREATE TABLE `userskill` (
@@ -504,6 +535,7 @@ CREATE TABLE `userskill` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- إرجاع أو استيراد بيانات الجدول `userskill`
 --
 
 INSERT INTO `userskill` (`UserID`, `SkillID`) VALUES
@@ -706,102 +738,102 @@ ALTER TABLE `skill`
 --
 
 --
---   `admin`
+-- القيود للجدول `admin`
 --
 ALTER TABLE `admin`
   ADD CONSTRAINT `admin_ibfk_1` FOREIGN KEY (`AdminID`) REFERENCES `member` (`MemberID`) ON DELETE CASCADE;
 
 --
---  `application`
+-- القيود للجدول `application`
 --
 ALTER TABLE `application`
   ADD CONSTRAINT `application_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `application_ibfk_2` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE;
 
 --
--- `company`
+-- القيود للجدول `company`
 --
 ALTER TABLE `company`
   ADD CONSTRAINT `company_ibfk_1` FOREIGN KEY (`CompanyID`) REFERENCES `member` (`MemberID`) ON DELETE CASCADE,
   ADD CONSTRAINT `company_ibfk_2` FOREIGN KEY (`VerifiedByAdminID`) REFERENCES `admin` (`AdminID`) ON DELETE SET NULL;
 
 --
--- `favourite`
+-- القيود للجدول `favourite`
 --
 ALTER TABLE `favourite`
   ADD CONSTRAINT `favourite_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `favourite_ibfk_2` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE;
 
 --
--- `notification`
+-- القيود للجدول `notification`
 --
 ALTER TABLE `notification`
   ADD CONSTRAINT `notification_ibfk_1` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE;
 
 --
--- `opportunity`
+-- القيود للجدول `opportunity`
 --
 ALTER TABLE `opportunity`
   ADD CONSTRAINT `opportunity_ibfk_1` FOREIGN KEY (`CreatedByAdminID`) REFERENCES `admin` (`AdminID`) ON DELETE SET NULL,
   ADD CONSTRAINT `opportunity_ibfk_2` FOREIGN KEY (`CreatedByCompanyID`) REFERENCES `company` (`CompanyID`) ON DELETE SET NULL;
 
 --
--- `opportunityexperience`
+-- القيود للجدول `opportunityexperience`
 --
 ALTER TABLE `opportunityexperience`
   ADD CONSTRAINT `opportunityexperience_ibfk_1` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE,
   ADD CONSTRAINT `opportunityexperience_ibfk_2` FOREIGN KEY (`ExperienceID`) REFERENCES `experience` (`ExperienceID`) ON DELETE CASCADE;
 
 --
--- `opportunityqualification`
+-- القيود للجدول `opportunityqualification`
 --
 ALTER TABLE `opportunityqualification`
   ADD CONSTRAINT `opportunityqualification_ibfk_1` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE,
   ADD CONSTRAINT `opportunityqualification_ibfk_2` FOREIGN KEY (`QualificationID`) REFERENCES `qualification` (`QualificationID`) ON DELETE CASCADE;
 
 --
--- `opportunityskill`
+-- القيود للجدول `opportunityskill`
 --
 ALTER TABLE `opportunityskill`
   ADD CONSTRAINT `opportunityskill_ibfk_1` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE,
   ADD CONSTRAINT `opportunityskill_ibfk_2` FOREIGN KEY (`SkillID`) REFERENCES `skill` (`SkillID`) ON DELETE CASCADE;
 
 --
--- `review`
+-- القيود للجدول `review`
 --
 ALTER TABLE `review`
   ADD CONSTRAINT `review_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `review_ibfk_2` FOREIGN KEY (`OpportunityID`) REFERENCES `opportunity` (`OpportunityID`) ON DELETE CASCADE;
 
 --
--- `user`
+-- القيود للجدول `user`
 --
 ALTER TABLE `user`
   ADD CONSTRAINT `user_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `member` (`MemberID`) ON DELETE CASCADE;
 
 --
--- `userexperience`
+-- القيود للجدول `userexperience`
 --
 ALTER TABLE `userexperience`
   ADD CONSTRAINT `userexperience_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `userexperience_ibfk_2` FOREIGN KEY (`ExperienceID`) REFERENCES `experience` (`ExperienceID`) ON DELETE CASCADE;
 
 --
--- `usernotification`
+-- القيود للجدول `usernotification`
 --
 ALTER TABLE `usernotification`
   ADD CONSTRAINT `usernotification_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `usernotification_ibfk_2` FOREIGN KEY (`NotificationID`) REFERENCES `notification` (`NotificationID`) ON DELETE CASCADE;
 
 --
--- `userqualification`
+-- القيود للجدول `userqualification`
 --
 ALTER TABLE `userqualification`
   ADD CONSTRAINT `userqualification_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
   ADD CONSTRAINT `userqualification_ibfk_2` FOREIGN KEY (`QualificationID`) REFERENCES `qualification` (`QualificationID`) ON DELETE CASCADE;
 
 --
--- `userskill`
+-- القيود للجدول `userskill`
 --
 ALTER TABLE `userskill`
   ADD CONSTRAINT `userskill_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `user` (`UserID`) ON DELETE CASCADE,
@@ -809,6 +841,7 @@ ALTER TABLE `userskill`
 
 DELIMITER $$
 --
+-- أحداث
 --
 CREATE DEFINER=`root`@`localhost` EVENT `evt_update_user_age` ON SCHEDULE EVERY 1 DAY STARTS '2026-10-09 00:00:00' ON COMPLETION NOT PRESERVE ENABLE DO UPDATE `User` SET Age = TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE())$$
 
