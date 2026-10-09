@@ -20,7 +20,7 @@
 
 /* Builds a mask-based icon span for one of the 25 PNGs in
    images-website/icons/. `base` must match the page's depth:
-   "" from index.html, "../" from anything under /pages. */
+   "" from index.php, "../" from anything under /pages. */
 function iconHtml(name, { sizePx = 18, base = "", extraClass = "" } = {}) {
   const path = `${base}images-website/icons/${name}.png`;
   return `<span class="icon ${extraClass}" style="width:${sizePx}px;height:${sizePx}px;-webkit-mask-image:url('${path}');mask-image:url('${path}');"></span>`;
@@ -29,22 +29,22 @@ function iconHtml(name, { sizePx = 18, base = "", extraClass = "" } = {}) {
 function navLinksFor(role, base) {
   const links = {
     guest: [
-      { label: "Home", href: `${base}index.html`, nav: "home" },
-      { label: "Opportunities", href: `${base}index.html#opportunities`, nav: "" },
-      { label: "About Us", href: `${base}pages/about.html`, nav: "about" }
+      { label: "Home", href: `${base}index.php`, nav: "home" },
+      { label: "Opportunities", href: `${base}index.php#opportunities`, nav: "" },
+      { label: "About Us", href: `${base}pages/about.php`, nav: "about" }
     ],
     user: [
-      { label: "Home", href: `${base}pages/home.html`, nav: "user-home" },
-      { label: "Browse", href: `${base}pages/browse.html`, nav: "browse" },
-      { label: "Skill Gap Analysis", href: `${base}pages/skill-gap.html`, nav: "skill-gap" },
-      { label: "Application History", href: `${base}pages/application-history.html`, nav: "history" }
+      { label: "Home", href: `${base}pages/home.php`, nav: "user-home" },
+      { label: "Browse", href: `${base}pages/browse.php`, nav: "browse" },
+      { label: "Skill Gap Analysis", href: `${base}pages/skill-gap.php`, nav: "skill-gap" },
+      { label: "Application History", href: `${base}pages/application-history.php`, nav: "history" }
     ],
     /* Company navigation lives in the dashboard sidebar now — the header
        stays free for the Ufuq brand + the company's own logo, centered. */
     company: [],
     admin: [
-      { label: "Company Verification", href: `${base}pages/dashboard-admin.html?tab=verification`, nav: "verification" },
-      { label: "Manage Opportunities", href: `${base}pages/dashboard-admin.html?tab=opportunities`, nav: "opportunities" }
+      { label: "Company Verification", href: `${base}pages/dashboard-admin.php?tab=verification`, nav: "verification" },
+      { label: "Manage Opportunities", href: `${base}pages/dashboard-admin.php?tab=opportunities`, nav: "opportunities" }
     ]
   };
   return links[role] || links.guest;
@@ -91,11 +91,11 @@ function renderHeader({ active = "", base = "" } = {}) {
       <a href="${base}pages/signup.php" class="btn btn-primary btn-sm">Sign Up</a>
     `;
   } else {
-    const profileHref = role === "user" ? `${base}pages/dashboard-user.html`
-      : role === "company" ? `${base}pages/dashboard-company.html?tab=profile`
-      : `${base}pages/dashboard-admin.html`;
+    const profileHref = role === "user" ? `${base}pages/dashboard-user.php`
+      : role === "company" ? `${base}pages/dashboard-company.php?tab=profile`
+      : `${base}pages/dashboard-admin.php`;
     const favoriteBtn = role === "user"
-      ? `<a class="btn btn-ghost btn-sm" href="${base}pages/favorites.html" title="Favorites" style="padding:8px;">
+      ? `<a class="btn btn-ghost btn-sm" href="${base}pages/favorites.php" title="Favorites" style="padding:8px;">
           ${iconHtml("favorite", { base })}
         </a>`
       : "";
@@ -134,7 +134,7 @@ function renderHeader({ active = "", base = "" } = {}) {
   mount.innerHTML = `
     <header class="site-header">
       <div class="container">
-        <a href="${base}index.html" class="brand" style="text-decoration:none;">
+        <a href="${base}index.php" class="brand" style="text-decoration:none;">
           <img src="${base}images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent;">
           Ufuq
         </a>
@@ -162,7 +162,7 @@ function renderHeader({ active = "", base = "" } = {}) {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
       Store.logout();
-      window.location.href = `${base}index.html`;
+      window.location.href = `${base}index.php`;
     });
   }
 
@@ -181,7 +181,7 @@ function renderHeader({ active = "", base = "" } = {}) {
             <a href="${n.link ? base + n.link : "#"}" style="display:block;padding:8px 6px;border-bottom:1px solid var(--color-border);font-size:0.85rem;color:${n.read ? "var(--color-text-muted)" : "var(--color-text)"};font-weight:${n.read ? 400 : 600};">
               ${n.message}
             </a>
-          `).join("") + `<a href="${base}pages/notifications.html" style="display:block;text-align:center;padding:8px 0 0;font-size:0.82rem;font-weight:600;">View all</a>`
+          `).join("") + `<a href="${base}pages/notifications.php" style="display:block;text-align:center;padding:8px 0 0;font-size:0.82rem;font-weight:600;">View all</a>`
         : `<div class="text-muted" style="font-size:0.85rem;padding:6px;">No notifications yet.</div>`;
     }
     refreshNotifDot();
@@ -225,7 +225,7 @@ function renderCompanySidebar({ active = "", base = "" } = {}) {
       </button>
       <nav class="sidebar-nav" id="sidebarNav">
         ${items.map(i => `
-          <a href="dashboard-company.html?tab=${i.tab}" class="${i.tab === active ? "active" : ""}">
+          <a href="dashboard-company.php?tab=${i.tab}" class="${i.tab === active ? "active" : ""}">
             ${iconHtml(i.icon, { base, sizePx: 16 })} ${i.label}
           </a>
         `).join("")}
@@ -334,13 +334,13 @@ function initChipInput({ inputId, addBtnId, listId, values, onChange, base = "" 
 
 /* Auth guard for protected pages — call at the top of the page's script,
    AND on `pageshow` so the browser back-button after logout can't show a
-   stale bfcache'd page. Redirects to login.html if the session role
+   stale bfcache'd page. Redirects to login.php if the session role
    doesn't match `allowedRoles`. */
 function requireRole(allowedRoles, { base = "" } = {}) {
   function check() {
     const current = Store.getCurrentUser();
     if (!current || !allowedRoles.includes(current.role)) {
-      window.location.href = `${base}login.html`;
+      window.location.href = `${base}login.php`;
     }
   }
   check();
