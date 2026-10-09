@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="auth-wrapper">
+    <div class="auth-card">
+      <h2 class="text-center">Welcome back</h2>
+      <p class="text-center" style="margin-bottom: 24px;">Log in to your Ufuq account.</p>
+
+      <div id="formBanner" class="form-error" style="display:none; background:#FBE6E7; padding:10px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label class="form-label icon-label" for="email">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/email.png');mask-image:url('../images-website/icons/email.png');"></span>
+            Email
+          </label>
+          <input type="email" id="email" class="form-control">
+          <div class="form-error" id="emailError">This field is required.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="password">
+            <span class="icon" style="-webkit-mask-image:url('../images-website/icons/lock.png');mask-image:url('../images-website/icons/lock.png');"></span>
+            Password
+          </label>
+          <input type="password" id="password" class="form-control">
+          <div class="form-error" id="passwordError">This field is required.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px;">Log In</button>
+      </form>
+
+      <p class="text-center" style="margin-top:20px;">
+        Don't have an account? <a href="signup.html">Sign Up</a>
+      </p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  renderHeader({ active: "", base: "../" });
+  renderFooter({ base: "../" });
+
+  const formBanner = document.getElementById("formBanner");
+  function showBanner(msg) { formBanner.textContent = msg; formBanner.style.display = "block"; }
+  function hideBanner() { formBanner.style.display = "none"; }
+
+  function setInvalid(input, errorEl, isInvalid) {
+    input.classList.toggle("invalid", isInvalid);
+    if (errorEl) errorEl.style.display = isInvalid ? "block" : "none";
+  }
+
+  document.getElementById("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    hideBanner();
+
+    const emailInput = document.getElementById("email");
+    const passwordInput = document.getElementById("password");
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+
+    let valid = true;
+    setInvalid(emailInput, document.getElementById("emailError"), !email);
+    if (!email) valid = false;
+    setInvalid(passwordInput, document.getElementById("passwordError"), !password);
+    if (!password) valid = false;
+
+    if (!valid) {
+      showBanner("Please fill in both fields.");
+      return;
+    }
+
+    const user = Store.findUserByEmail(email);
+    const company = Store.findCompanyByEmail(email);
+    const admin = Store.findAdminByEmail(email);
+
+    const account = user || company || admin;
+    const role = user ? "user" : company ? "company" : admin ? "admin" : null;
+
+    if (!account || account.password !== password) {
+      showBanner("Invalid email or password");
+      return;
+    }
+
+    if (role === "company") {
+      if (account.status === "pending") {
+        showBanner("Your registration is pending review");
+        return;
+      }
+      if (account.status === "rejected") {
+        showBanner(`Your registration was rejected: ${account.rejectionReason || "No reason provided."}`);
+        return;
+      }
+    }
+
+    Store.login(account.id, role);
+    const dest = role === "user" ? "home.html"
+      : role === "company" ? "dashboard-company.html"
+      : "dashboard-admin.html";
+    window.location.href = dest;
+  });
+</script>
+
+</body>
+</html>

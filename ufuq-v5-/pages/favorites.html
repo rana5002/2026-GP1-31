@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Favorites &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container">
+      <h2 style="margin-bottom:2px;">Favorites</h2>
+      <p class="text-muted" style="margin:0;">Opportunities you've saved to come back to later.</p>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+    <div class="grid grid-3" id="favGrid"></div>
+
+    <div class="empty-state hidden" id="emptyState">
+      <div class="empty-icon">
+        <span class="icon icon-muted" id="emptyIcon" style="width:40px;height:40px;"></span>
+      </div>
+      <h3>No favorites yet</h3>
+      <p>Tap the heart icon on any opportunity in Browse to save it here.</p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "browse", base: "../" });
+  renderFooter({ base: "../" });
+  document.getElementById("emptyIcon").outerHTML = iconHtml("favorite", { base: "../", sizePx: 40, extraClass: "icon-muted" });
+
+  function companyNameFor(o) {
+    if (o.companyId) {
+      const c = Store.getCompanyById(o.companyId);
+      return c ? c.name : "Unknown Company";
+    }
+    return o.companyNameManual || "External Company";
+  }
+
+  function render() {
+    const favs = Store.getFavoriteOpportunities(me.id);
+    const grid = document.getElementById("favGrid");
+    grid.classList.toggle("hidden", favs.length === 0);
+    document.getElementById("emptyState").classList.toggle("hidden", favs.length > 0);
+
+    grid.innerHTML = favs.map(o => `
+      <div class="card opp-card card-hover">
+        <div class="opp-card-top">
+          <div class="flex gap-3" style="align-items:center;">
+            <div class="opp-logo" style="background:${colorFor(companyNameFor(o))};">${companyNameFor(o).slice(0, 1).toUpperCase()}</div>
+            <div>
+              <h3 style="margin:0 0 2px; font-size:1.05rem;">${o.title}</h3>
+              <div class="text-muted" style="font-size:0.82rem;">${companyNameFor(o)}</div>
+            </div>
+          </div>
+          <button type="button" class="opp-fav active" data-unfav-id="${o.id}" title="Remove from favorites">
+            ${iconHtml("favorite", { base: "../", sizePx: 18, extraClass: "icon-danger" })}
+          </button>
+        </div>
+        <div class="opp-meta">
+          <span class="badge ${o.type === "Course" ? "badge-success" : "badge-primary"}">${o.type}</span>
+          <span>${o.location}</span>
+          <span>${o.duration}</span>
+        </div>
+        <div class="opp-footer">
+          <span class="badge ${o.status === "Open" ? "badge-success" : "badge-neutral"}">${o.status}</span>
+          <a class="btn btn-primary btn-sm" href="opportunity-detail.html?id=${o.id}">View Details</a>
+        </div>
+      </div>
+    `).join("");
+
+    grid.querySelectorAll("[data-unfav-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        Store.toggleFavorite(me.id, btn.dataset.unfavId);
+        render();
+      });
+    });
+  }
+  render();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Gap Analysis &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container" style="max-width:720px;">
+      <h2 style="margin-bottom:2px;">Skill Gap Analysis</h2>
+      <p class="text-muted" style="margin:0;">
+        Compare your current skills against a target job role and see what to learn next.
+      </p>
+    </div>
+  </div>
+  <div class="page-content container" style="max-width:720px; padding-top:0;">
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label">Your Skills (from your profile)</label>
+        <div id="mySkills"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Job Role</label>
+        <select class="form-control" id="targetRole">
+          <option value="">Select a job role&hellip;</option>
+        </select>
+        <p class="form-hint" id="categoryHint"></p>
+      </div>
+      <button type="button" class="btn btn-primary" id="analyzeBtn" disabled>Analyze Gap</button>
+
+      <div id="resultArea" class="hidden" style="margin-top:20px;">
+        <div class="divider"></div>
+        <h3 style="margin:0 0 4px;">Skills for "<span id="roleEcho"></span>"</h3>
+        <p class="text-muted" style="margin:0 0 14px; font-size:0.88rem;">
+          Based on your profile skills vs. the skills typically expected for this role.
+          <span class="text-muted" style="font-style:italic;">(A simple keyword match for now — a semantic-matching AI model will power this once the backend is connected.)</span>
+        </p>
+
+        <div class="flex-between" style="margin-bottom:10px;">
+          <span class="text-muted" style="font-size:0.85rem;">Match score</span>
+          <span class="badge badge-primary" id="matchScoreBadge">0%</span>
+        </div>
+        <div style="height:8px; background:var(--color-surface-alt); border-radius:var(--radius-pill); overflow:hidden; margin-bottom:20px;">
+          <div id="matchScoreBar" style="height:100%; width:0%; background:var(--color-success); transition:width .3s ease;"></div>
+        </div>
+
+        <div class="grid grid-2">
+          <div>
+            <h4 style="font-size:0.82rem; text-transform:uppercase; letter-spacing:.03em; color:var(--color-success); margin-bottom:10px;">
+              &#10003; Skills you already have
+            </h4>
+            <div id="matchedSkills"></div>
+          </div>
+          <div>
+            <h4 style="font-size:0.82rem; text-transform:uppercase; letter-spacing:.03em; color:var(--color-danger); margin-bottom:10px;">
+              Skills to develop
+            </h4>
+            <div id="missingSkills"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "skill-gap", base: "../" });
+  renderFooter({ base: "../" });
+
+  const skills = me.skills && me.skills.length ? me.skills : [];
+  document.getElementById("mySkills").innerHTML = skills.length
+    ? skills.map(s => `<span class="badge badge-primary" style="margin:0 6px 6px 0; display:inline-block;">${s}</span>`).join("")
+    : `<p class="text-muted" style="font-size:0.88rem; margin:0;">No skills on your profile yet — add some from your <a href="dashboard-user.html">profile page</a> for a better analysis.</p>`;
+
+  /* ---------- Target role select, grouped by category ---------- */
+  const targetRole = document.getElementById("targetRole");
+  const categoryHint = document.getElementById("categoryHint");
+  const categories = [...new Set(IT_JOBS_AND_SKILLS.map(j => j.category))];
+  categories.forEach(cat => {
+    const group = document.createElement("optgroup");
+    group.label = cat;
+    IT_JOBS_AND_SKILLS.filter(j => j.category === cat).forEach(j => {
+      group.appendChild(new Option(j.title, j.title));
+    });
+    targetRole.appendChild(group);
+  });
+
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  targetRole.addEventListener("change", () => {
+    const job = IT_JOBS_AND_SKILLS.find(j => j.title === targetRole.value);
+    analyzeBtn.disabled = !job;
+    categoryHint.textContent = job ? `${job.category} &middot; ${job.skills.length} skills typically expected` : "";
+    document.getElementById("resultArea").classList.add("hidden");
+  });
+
+  /* Normalize for loose matching: lowercase, strip punctuation/parentheses,
+     so "SQL" on the profile still matches "SQL / Databases" on the role. */
+  function normalize(s) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  function skillsOverlap(profileSkill, roleSkill) {
+    const a = normalize(profileSkill), b = normalize(roleSkill);
+    return a === b || a.includes(b) || b.includes(a);
+  }
+
+  analyzeBtn.addEventListener("click", () => {
+    const job = IT_JOBS_AND_SKILLS.find(j => j.title === targetRole.value);
+    if (!job) return;
+
+    document.getElementById("roleEcho").textContent = job.title;
+
+    const matched = job.skills.filter(rs => skills.some(ps => skillsOverlap(ps, rs)));
+    const missing = job.skills.filter(rs => !matched.includes(rs));
+    const score = job.skills.length ? Math.round((matched.length / job.skills.length) * 100) : 0;
+
+    document.getElementById("matchScoreBadge").textContent = `${score}%`;
+    document.getElementById("matchScoreBar").style.width = `${score}%`;
+    document.getElementById("matchScoreBar").style.background = score >= 60 ? "var(--color-success)" : score >= 30 ? "var(--color-warning)" : "var(--color-danger)";
+
+    document.getElementById("matchedSkills").innerHTML = matched.length
+      ? matched.map(s => `<span class="badge badge-success" style="margin:0 6px 6px 0; display:inline-block;">${s}</span>`).join("")
+      : `<p class="text-muted" style="font-size:0.85rem; margin:0;">No overlap yet.</p>`;
+
+    document.getElementById("missingSkills").innerHTML = missing.length
+      ? missing.map(s => `<span class="badge badge-danger" style="margin:0 6px 6px 0; display:inline-block;">${s}</span>`).join("")
+      : `<p class="text-muted" style="font-size:0.85rem; margin:0;">You cover every expected skill &#127881;</p>`;
+
+    document.getElementById("resultArea").classList.remove("hidden");
+  });
+</script>
+
+</body>
+</html>

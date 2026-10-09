@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browse Opportunities &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-banner">
+    <div class="container flex-between" style="flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin-bottom:2px;">Browse Opportunities</h2>
+        <p class="text-muted" style="margin:0;">Training programs and courses from verified companies.</p>
+      </div>
+      <button type="button" class="btn btn-outline" id="filtersToggleBtn">
+        <span id="filtersToggleIcon"></span>
+        Filters
+      </button>
+    </div>
+  </div>
+  <div class="page-content container" style="padding-top:0;">
+
+    <div class="card filter-panel-card hidden" id="filterPanel" style="margin-bottom:24px;">
+      <div class="filter-panel-grid">
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Opportunity Type</h4>
+          <div id="filterType" class="filter-chips"></div>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Location / City</h4>
+          <select class="form-control" id="filterLocation">
+            <option value="">All locations</option>
+          </select>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Industry Sector</h4>
+          <select class="form-control" id="filterIndustry">
+            <option value="">All sectors</option>
+          </select>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Company Name</h4>
+          <input type="text" class="form-control" id="filterCompany" placeholder="Company name">
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Duration</h4>
+          <div id="filterDuration" class="filter-chips"></div>
+        </div>
+        <div class="filter-group" style="margin-bottom:0;">
+          <h4>Application Method</h4>
+          <div id="filterMethod" class="filter-chips"></div>
+        </div>
+      </div>
+      <div class="filter-actions-row">
+        <button type="button" class="btn btn-ghost btn-sm" id="filtersClearBtn">Clear all</button>
+        <button type="button" class="btn btn-primary btn-sm" id="filtersApplyBtn">
+          <span id="filtersApplyIcon"></span>
+          Search
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= OPPORTUNITIES (training programs + courses together) ================= -->
+    <div class="flex-between" style="margin-bottom:14px;">
+      <h3 style="margin:0;">Opportunities</h3>
+      <span class="text-muted" id="resultCount" style="font-size:0.88rem;"></span>
+    </div>
+    <div class="grid grid-3" id="oppGrid" style="margin-bottom:12px;"></div>
+    <div class="empty-state hidden" id="browseEmptyState">
+      <div class="empty-icon"><span class="icon icon-muted" id="emptyStateIcon" style="width:36px;height:36px;"></span></div>
+      <h3 id="emptyStateTitle">No opportunities to show yet</h3>
+      <p id="emptyStateBody">Check back soon &mdash; new training programs and courses will appear here once companies start publishing.</p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "browse", base: "../" });
+  renderFooter({ base: "../" });
+
+  document.getElementById("filtersToggleIcon").outerHTML = iconHtml("filter", { base: "../", sizePx: 16, extraClass: "icon-filter" });
+  document.getElementById("filtersApplyIcon").outerHTML = iconHtml("search", { base: "../", sizePx: 15 });
+  document.getElementById("emptyStateIcon").outerHTML = iconHtml("training", { base: "../", sizePx: 36, extraClass: "icon-muted" });
+
+  /* ---------- Filters panel ---------- */
+  const filterType = document.getElementById("filterType");
+  filterType.innerHTML = OPPORTUNITY_TYPES.map(t => `
+    <label class="filter-option">
+      <input type="checkbox" value="${t}" class="f-type"> ${t}
+    </label>
+  `).join("");
+
+  const filterLocation = document.getElementById("filterLocation");
+  CITIES.forEach(c => filterLocation.add(new Option(c, c)));
+
+  const filterIndustry = document.getElementById("filterIndustry");
+  INDUSTRY_SECTORS.forEach(s => filterIndustry.add(new Option(s, s)));
+
+  const filterDuration = document.getElementById("filterDuration");
+  ["Under 2 weeks", "2–9 weeks", "Over 9 weeks"].forEach(d => {
+    filterDuration.innerHTML += `<label class="filter-option"><input type="radio" name="filterDuration" class="f-duration" value="${d}"> ${d}</label>`;
+  });
+
+  const filterMethod = document.getElementById("filterMethod");
+  filterMethod.innerHTML = APPLICATION_METHODS.map(m => `
+    <label class="filter-option">
+      <input type="checkbox" value="${m}" class="f-method"> ${m}
+    </label>
+  `).join("");
+
+  const filterPanel = document.getElementById("filterPanel");
+  document.getElementById("filtersToggleBtn").addEventListener("click", () => {
+    filterPanel.classList.toggle("hidden");
+  });
+  document.getElementById("filtersClearBtn").addEventListener("click", () => {
+    filterPanel.querySelectorAll("input[type=checkbox]").forEach(cb => cb.checked = false);
+    filterPanel.querySelectorAll("input[type=radio]").forEach(r => r.checked = false);
+    filterPanel.querySelectorAll("select").forEach(s => s.value = "");
+    document.getElementById("filterCompany").value = "";
+    renderGrid();
+  });
+  document.getElementById("filtersApplyBtn").addEventListener("click", renderGrid);
+
+  function companyNameFor(o) {
+    if (o.companyId) {
+      const c = Store.getCompanyById(o.companyId);
+      return c ? c.name : "Unknown Company";
+    }
+    return o.companyNameManual || "External Company";
+  }
+
+  function durationBucket(o) {
+    const start = new Date(o.startDate), end = new Date(o.endDate);
+    const days = Math.round((end - start) / 86400000);
+    if (days < 14) return "Under 2 weeks";
+    if (days < 63) return "2–9 weeks";
+    return "Over 9 weeks";
+  }
+
+  function matchesFilters(o) {
+    const checkedTypes = [...document.querySelectorAll(".f-type:checked")].map(c => c.value);
+    const checkedMethods = [...document.querySelectorAll(".f-method:checked")].map(c => c.value);
+    const durationChecked = document.querySelector(".f-duration:checked");
+    const location = filterLocation.value;
+    const industry = filterIndustry.value;
+    const companyText = document.getElementById("filterCompany").value.trim().toLowerCase();
+
+    if (checkedTypes.length && !checkedTypes.includes(o.type)) return false;
+    if (checkedMethods.length && !checkedMethods.includes(o.applicationMethod)) return false;
+    if (durationChecked && durationBucket(o) !== durationChecked.value) return false;
+    if (location && o.location !== location) return false;
+    if (industry) {
+      const c = o.companyId ? Store.getCompanyById(o.companyId) : null;
+      if (!c || c.industry !== industry) return false;
+    }
+    if (companyText && !companyNameFor(o).toLowerCase().includes(companyText)) return false;
+    return true;
+  }
+
+  function oppCardHtml(o) {
+    const isFav = Store.isFavorite(me.id, o.id);
+    const applied = Store.hasApplied(me.id, o.id);
+    return `
+      <div class="card opp-card card-hover">
+        <div class="opp-card-top">
+          <div class="flex gap-3" style="align-items:center;">
+            <div class="opp-logo" style="background:${colorFor(companyNameFor(o))};">${companyNameFor(o).slice(0, 1).toUpperCase()}</div>
+            <div>
+              <h3 style="margin:0 0 2px; font-size:1.05rem;">${o.title}</h3>
+              <div class="text-muted" style="font-size:0.82rem;">${companyNameFor(o)}</div>
+            </div>
+          </div>
+          <button type="button" class="opp-fav ${isFav ? "active" : ""}" data-fav-id="${o.id}" title="Save to favorites">
+            ${iconHtml("favorite", { base: "../", sizePx: 18, extraClass: isFav ? "icon-danger" : "icon-muted" })}
+          </button>
+        </div>
+        <p style="font-size:0.88rem; margin:4px 0;">${(o.description || "").slice(0, 110)}${o.description && o.description.length > 110 ? "…" : ""}</p>
+        <div class="opp-meta">
+          <span class="badge ${o.type === "Course" ? "badge-success" : "badge-primary"}">${o.type}</span>
+          <span>${o.location}</span>
+          <span>${o.duration}</span>
+        </div>
+        <div class="opp-footer">
+          <span class="badge ${o.status === "Open" ? "badge-success" : "badge-neutral"}">${o.status}</span>
+          <a class="btn btn-primary btn-sm" href="opportunity-detail.html?id=${o.id}">
+            ${applied ? "View / Applied" : "View Details"}
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGrid() {
+    const all = Store.getAllOpportunities().filter(o => o.status === "Open").filter(matchesFilters);
+    const hasAny = Store.getAllOpportunities().length > 0;
+    const grid = document.getElementById("oppGrid");
+
+    document.getElementById("resultCount").textContent = all.length ? `${all.length} result${all.length === 1 ? "" : "s"}` : "";
+    grid.innerHTML = all.map(oppCardHtml).join("");
+    grid.classList.toggle("hidden", all.length === 0);
+    document.getElementById("browseEmptyState").classList.toggle("hidden", all.length > 0);
+
+    if (!hasAny) {
+      document.getElementById("emptyStateTitle").textContent = "No opportunities to show yet";
+      document.getElementById("emptyStateBody").textContent = "Check back soon — new training programs and courses will appear here once companies start publishing.";
+    } else {
+      document.getElementById("emptyStateTitle").textContent = "No opportunities match your filters";
+      document.getElementById("emptyStateBody").textContent = "Try clearing some filters to see more results.";
+    }
+
+    grid.querySelectorAll("[data-fav-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        Store.toggleFavorite(me.id, btn.dataset.favId);
+        renderGrid();
+      });
+    });
+  }
+  renderGrid();
+</script>
+
+</body>
+</html>

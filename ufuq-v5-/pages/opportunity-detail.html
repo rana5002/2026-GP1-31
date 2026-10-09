@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opportunity Details &mdash; Ufuq</title>
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/layout.css">
+<link rel="stylesheet" href="../css/icons.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="page-content container" style="max-width:860px;">
+    <a href="browse.html" class="text-muted" style="font-size:0.88rem;">&larr; Back to Browse</a>
+
+    <div class="card" style="margin-top:16px;" id="oppCard"></div>
+
+    <div class="card" style="margin-top:24px;">
+      <div class="flex-between">
+        <h3 style="margin:0;">Company Reviews</h3>
+        <span id="avgRating" class="rating"></span>
+      </div>
+      <div id="reviewForm" style="margin-top:12px;"></div>
+      <div class="divider"></div>
+      <div id="reviewList"></div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
+<script>
+  requireRole(["user"], { base: "" });
+  const me = Store.getCurrentUser();
+  renderHeader({ active: "browse", base: "../" });
+  renderFooter({ base: "../" });
+
+  const params = new URLSearchParams(window.location.search);
+  const opp = Store.getOpportunityById(params.get("id"));
+
+  if (!opp) {
+    document.getElementById("oppCard").innerHTML = `<p class="text-muted">This opportunity could not be found — it may have been removed.</p>`;
+  } else {
+    Store.recordOpportunityView(opp.id);
+    const company = opp.companyId ? Store.getCompanyById(opp.companyId) : null;
+    const companyName = company ? company.name : (opp.companyNameManual || "External Company");
+    const isFav = Store.isFavorite(me.id, opp.id);
+    const applied = Store.hasApplied(me.id, opp.id);
+
+    document.getElementById("oppCard").innerHTML = `
+      <div class="flex-between" style="align-items:flex-start; flex-wrap:wrap; gap:12px;">
+        <div>
+          <span class="badge badge-neutral">${opp.type}</span>
+          <h2 style="margin:8px 0 2px;">${opp.title}</h2>
+          <div class="text-muted">${companyName} &middot; ${opp.location}</div>
+        </div>
+        <button type="button" class="btn btn-ghost" id="favBtn">
+          ${iconHtml("favorite", { base: "../", sizePx: 20, extraClass: isFav ? "icon-danger" : "icon-muted" })}
+          ${isFav ? "Saved" : "Save"}
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
+      <p>${opp.description || ""}</p>
+
+      <div class="grid grid-2" style="margin:16px 0;">
+        <div class="field-view"><div class="field-label">Duration</div>${opp.duration}</div>
+        <div class="field-view"><div class="field-label">Application Deadline</div>${opp.applicationDeadline || "Not specified"}</div>
+        <div class="field-view"><div class="field-label">Qualifications</div>${opp.qualifications || "Not specified"}</div>
+        <div class="field-view"><div class="field-label">Experience Needed</div>${opp.experience || "Not specified"}</div>
+      </div>
+
+      ${(opp.requiredSkills || []).length ? `
+        <div class="opp-tags" style="margin-bottom:16px;">
+          ${opp.requiredSkills.map(s => `<span class="badge badge-primary">${s}</span>`).join("")}
+        </div>` : ""}
+
+      <div id="applyArea"></div>
+    `;
+
+    document.getElementById("favBtn").addEventListener("click", () => {
+      Store.toggleFavorite(me.id, opp.id);
+      window.location.reload();
+    });
+
+    const applyArea = document.getElementById("applyArea");
+    if (opp.applicationMethod === "Add Link") {
+      applyArea.innerHTML = `
+        <a href="${opp.externalUrl}" target="_blank" rel="noopener" class="btn btn-primary">
+          Apply on Company Website ${iconHtml("externalLink", { base: "../", sizePx: 14 })}
+        </a>
+      `;
+    } else if (applied) {
+      applyArea.innerHTML = `<button class="btn btn-outline" disabled>${iconHtml("done", { base: "../", sizePx: 14 })} Already Applied</button>`;
+    } else {
+      applyArea.innerHTML = `<button class="btn btn-primary" id="applyBtn">Apply Now</button>`;
+      document.getElementById("applyBtn").addEventListener("click", () => {
+        Store.applyToOpportunity(me.id, opp.id);
+        if (company) {
+          Store.createNotification(company.id, "company", `${me.name} applied to "${opp.title}".`, `pages/dashboard-company.html?tab=applicants`);
+        }
+        window.location.reload();
+      });
+    }
+
+    /* ---------- Reviews ---------- */
+    if (company) {
+      const avg = Store.getCompanyAverageRating(company.id);
+      document.getElementById("avgRating").textContent = avg ? `★ ${avg.toFixed(1)} / 5` : "No ratings yet";
+
+      const reviews = Store.getReviewsForCompany(company.id);
+      document.getElementById("reviewList").innerHTML = reviews.length
+        ? reviews.map(r => `
+            <div style="padding:10px 0; border-bottom:1px solid var(--color-border);">
+              <div class="flex-between">
+                <strong style="font-size:0.9rem;">${r.user ? r.user.name : "A user"}</strong>
+                <span class="rating">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span>
+              </div>
+              ${r.comment ? `<p style="margin:4px 0 0; font-size:0.88rem;">${r.comment}</p>` : ""}
+            </div>
+          `).join("")
+        : `<p class="text-muted" style="font-size:0.88rem;">No reviews yet — be the first to share your experience.</p>`;
+
+      const myReview = reviews.find(r => r.userId === me.id);
+      if (myReview) {
+        document.getElementById("reviewForm").innerHTML = `<p class="text-muted" style="font-size:0.85rem;">You already reviewed this company.</p>`;
+      } else {
+        document.getElementById("reviewForm").innerHTML = `
+          <div class="form-group" style="margin-bottom:8px;">
+            <select class="form-control" id="reviewRating" style="max-width:160px; display:inline-block;">
+              <option value="5">★★★★★ (5)</option>
+              <option value="4">★★★★☆ (4)</option>
+              <option value="3">★★★☆☆ (3)</option>
+              <option value="2">★★☆☆☆ (2)</option>
+              <option value="1">★☆☆☆☆ (1)</option>
+            </select>
+          </div>
+          <textarea class="form-control" id="reviewComment" rows="2" placeholder="Share your experience (optional)" style="margin-bottom:8px;"></textarea>
+          <button class="btn btn-primary btn-sm" id="submitReviewBtn">Submit Review</button>
+        `;
+        document.getElementById("submitReviewBtn").addEventListener("click", () => {
+          Store.createReview(me.id, company.id, document.getElementById("reviewRating").value, document.getElementById("reviewComment").value.trim());
+          window.location.reload();
+        });
+      }
+    } else {
+      document.querySelector('[style*="margin-top:24px"]').classList.add("hidden");
+    }
+  }
+</script>
+
+</body>
+</html>
