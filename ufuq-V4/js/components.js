@@ -26,29 +26,34 @@ function iconHtml(name, { sizePx = 18, base = "", extraClass = "" } = {}) {
   return `<span class="icon ${extraClass}" style="width:${sizePx}px;height:${sizePx}px;-webkit-mask-image:url('${path}');mask-image:url('${path}');"></span>`;
 }
 
+
 function navLinksFor(role, base) {
   const links = {
     guest: [
       { label: "Home", href: `${base}index.php`, nav: "home" },
-      { label: "Opportunities", href: `${base}index.php#opportunities`, nav: "" },
-      { label: "About Us", href: `${base}pages/about.php`, nav: "about" }
+      { label: "About Us", href: `${base}pages/about.php`, nav: "about" },
+      { label: "Frequently Asked Questions", href: `${base}pages/faq.php`, nav: "faq" }
     ],
+
     user: [
       { label: "Home", href: `${base}pages/home.php`, nav: "user-home" },
       { label: "Browse", href: `${base}pages/browse.php`, nav: "browse" },
       { label: "Skill Gap Analysis", href: `${base}pages/skill-gap.php`, nav: "skill-gap" },
       { label: "Application History", href: `${base}pages/application-history.php`, nav: "history" }
     ],
-    /* Company navigation lives in the dashboard sidebar now — the header
-       stays free for the Ufuq brand + the company's own logo, centered. */
+
+    /* Company navigation remains in the dashboard sidebar. */
     company: [],
+
     admin: [
       { label: "Company Verification", href: `${base}pages/dashboard-admin.php?tab=verification`, nav: "verification" },
       { label: "Manage Opportunities", href: `${base}pages/dashboard-admin.php?tab=opportunities`, nav: "opportunities" }
     ]
   };
+
   return links[role] || links.guest;
 }
+
 
 /* Picks a consistent accent color for a company/opportunity "logo" chip so
    cards don't all read as one flat lavender block. Same name -> same color. */
@@ -79,10 +84,26 @@ function renderHeader({ active = "", base = "" } = {}) {
 
   const current = Store.getCurrentUser();
   const role = current ? current.role : "guest";
-  const links = navLinksFor(role, base);
+
+  const current = Store.getCurrentUser();
+  const role = current ? current.role : "guest";
+
+  const links = role === "guest"
+    ? [
+        { label: "Home", href: `${base}index.php`, nav: "home" },
+        { label: "About Us", href: `${base}pages/about.php`, nav: "about" },
+        {
+          label: "Frequently Asked Questions",
+          href: `${base}pages/faq.php`,
+          nav: "faq"
+        }
+      ]
+    : navLinksFor(role, base);
+
   const linksHtml = links.map(l =>
     `<a href="${l.href}" class="${l.nav === active ? "active" : ""}">${l.label}</a>`
   ).join("");
+
 
   let actionsHtml = "";
   if (!current) {
@@ -94,11 +115,20 @@ function renderHeader({ active = "", base = "" } = {}) {
     const profileHref = role === "user" ? `${base}pages/dashboard-user.php`
       : role === "company" ? `${base}pages/dashboard-company.php?tab=profile`
       : `${base}pages/dashboard-admin.php`;
-    const favoriteBtn = role === "user"
-      ? `<a class="btn btn-ghost btn-sm" href="${base}pages/favorites.php" title="Favorites" style="padding:8px;">
-          ${iconHtml("favorite", { base })}
-        </a>`
-      : "";
+    const isFavoritesPage = window.location.pathname.endsWith("/favorites.php");
+
+const favoriteBtn = role === "user"
+  ? `<a class="btn btn-ghost btn-sm"
+        href="${base}pages/favorites.php"
+        title="Favorites"
+        aria-label="Favorites"
+        style="padding:8px; color:${isFavoritesPage ? '#8E789F' : 'var(--color-text-muted)'};">
+        ${iconHtml("favorite", {
+          base,
+          extraClass: isFavoritesPage ? "icon-primary" : ""
+        })}
+    </a>`
+  : "";
     actionsHtml = `
       ${favoriteBtn}
       <div style="position:relative;">
@@ -181,7 +211,7 @@ function renderHeader({ active = "", base = "" } = {}) {
             <a href="${n.link ? base + n.link : "#"}" style="display:block;padding:8px 6px;border-bottom:1px solid var(--color-border);font-size:0.85rem;color:${n.read ? "var(--color-text-muted)" : "var(--color-text)"};font-weight:${n.read ? 400 : 600};">
               ${n.message}
             </a>
-          `).join("") + `<a href="${base}pages/notifications.php" style="display:block;text-align:center;padding:8px 0 0;font-size:0.82rem;font-weight:600;">View all</a>`
+          `).join("") + `<a href="${base}pages/notifications.html" style="display:block;text-align:center;padding:8px 0 0;font-size:0.82rem;font-weight:600;">View all</a>`
         : `<div class="text-muted" style="font-size:0.85rem;padding:6px;">No notifications yet.</div>`;
     }
     refreshNotifDot();
@@ -225,7 +255,7 @@ function renderCompanySidebar({ active = "", base = "" } = {}) {
       </button>
       <nav class="sidebar-nav" id="sidebarNav">
         ${items.map(i => `
-          <a href="dashboard-company.php?tab=${i.tab}" class="${i.tab === active ? "active" : ""}">
+          <a href="dashboard-company.html?tab=${i.tab}" class="${i.tab === active ? "active" : ""}">
             ${iconHtml(i.icon, { base, sizePx: 16 })} ${i.label}
           </a>
         `).join("")}

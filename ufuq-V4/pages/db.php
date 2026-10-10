@@ -1,6 +1,5 @@
 <?php
 // db.php — PDO connection to the `ufuq` database
-// عدّل القيم حسب إعدادات جهازك (XAMPP: root بدون باسوورد / MAMP: root + root ومنفذ 8889)
 
 $DB_HOST = 'localhost';
 $DB_PORT = '3306';

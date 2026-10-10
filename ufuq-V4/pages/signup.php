@@ -1,5 +1,10 @@
 <?php
 session_start();
+
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
 require __DIR__ . '/db.php';
 
 /* ================= Config ================= */
@@ -179,12 +184,77 @@ function check_file(string $key, array $exts, array $mimes): string {
     return in_array($mime, $mimes, true) ? 'ok' : 'bad';
 }
 function store_file(string $key, string $sub): string {
-    $ext = strtolower(pathinfo($_FILES[$key]['name'], PATHINFO_EXTENSION));
-    $dir = __DIR__ . '/../uploads/' . $sub;
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $name = bin2hex(random_bytes(12)) . '.' . $ext;
-    move_uploaded_file($_FILES[$key]['tmp_name'], "$dir/$name");
-    return "$sub/$name";
+    if (!isset($_FILES[$key]) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('File upload failed.');
+    }
+
+    $file = $_FILES[$key];
+    $maxSize = 5 * 1024 * 1024; // 5 MB
+
+    if ($file['size'] <= 0 || $file['size'] > $maxSize) {
+        throw new RuntimeException('File exceeds the 5 MB limit or is empty.');
+    }
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowed = [
+        'user-profile' => ['png', 'jpg', 'jpeg'],
+        'docs'         => ['pdf', 'png', 'jpg', 'jpeg'],
+        'logos'        => ['png', 'jpg', 'jpeg'],
+    ];
+    $allowedMimes = [
+        'png'  => 'image/png',
+        'jpg'  => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'pdf'  => 'application/pdf',
+    ];
+
+    if (!isset($allowed[$sub]) || !in_array($ext, $allowed[$sub], true)) {
+        throw new RuntimeException('Invalid file extension.');
+    }
+
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+    if (($allowedMimes[$ext] ?? '') !== $mime) {
+        throw new RuntimeException('File content does not match its extension.');
+    }
+
+    $uploadRoot = __DIR__ . '/../uploads';
+    $dir = $uploadRoot . '/' . $sub;
+
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException('Could not create upload directory.');
+    }
+
+    // Apache/MAMP protection: disable directory listing and block script execution.
+    $rootHtaccess = $uploadRoot . '/.htaccess';
+    if (!is_file($rootHtaccess)) {
+        $rules = <<<'HTACCESS'
+Options -Indexes
+<FilesMatch "\.(php[0-9]?|phtml|phar|cgi|pl|py|sh)$">
+    Require all denied
+</FilesMatch>
+HTACCESS;
+        $rules .= "\n";
+        if (@file_put_contents($rootHtaccess, $rules, LOCK_EX) === false) {
+            throw new RuntimeException('Could not secure upload directory.');
+        }
+    }
+
+    // Company verification documents should not be directly accessible from the web.
+    if ($sub === 'docs') {
+        $docsHtaccess = $dir . '/.htaccess';
+        if (!is_file($docsHtaccess) && @file_put_contents($docsHtaccess, "Require all denied\n", LOCK_EX) === false) {
+            throw new RuntimeException('Could not secure company documents directory.');
+        }
+    }
+
+    $name = bin2hex(random_bytes(16)) . '.' . $ext;
+    $destination = $dir . '/' . $name;
+
+    if (!move_uploaded_file($file['tmp_name'], $destination)) {
+        throw new RuntimeException('Could not save uploaded file.');
+    }
+
+    return $sub . '/' . $name;
 }
 function delete_files(array $paths): void {
     foreach ($paths as $p) { @unlink(__DIR__ . '/../uploads/' . $p); }
@@ -278,7 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saved = [];
             try {
                 $picPath = '';
-                if ($picState === 'ok') { $picPath = store_file('picture', 'pics'); $saved[] = $picPath; }
+                if ($picState === 'ok') { $picPath = store_file('picture', 'user-profile'); $saved[] = $picPath; }
 
                 $pdo->beginTransaction();
 
@@ -337,7 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['role']    = 'User';
                 header('Location: home.php');
                 exit;
-            } catch (PDOException $ex) {
+            } catch (Throwable $ex) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 delete_files($saved);
                 if ($ex->getCode() === '23000') {
@@ -401,8 +471,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dupEmail = (bool)$st->fetchColumn();
             $st = $pdo->prepare('SELECT 1 FROM company WHERE CrNumber = ?');
             $st->execute([$cr]);
-            if ($dupEmail || $st->fetchColumn()) {
-                $errors['email'] = 'Company already registered';
+            $dupCr = (bool)$st->fetchColumn();
+            if ($dupEmail) {
+                $errors['email'] = 'Email already registered';
+                $banner = 'Email already registered';
+            } elseif ($dupCr) {
+                $errors['cr_number'] = 'Company already registered';
                 $banner = 'Company already registered';
             }
         }
@@ -424,12 +498,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
 
                 $pending = true;
-            } catch (PDOException $ex) {
+                $banner = '';
+            } catch (Throwable $ex) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 delete_files($saved);
                 if ($ex->getCode() === '23000') {
-                    $errors['email'] = 'Company already registered';
-                    $banner = 'Company already registered';
+                    $errors['email'] = 'Email already registered';
+                    $banner = 'Email already registered';
                 } else {
                     $banner = 'Something went wrong. Please try again.';
                 }
