@@ -1,11 +1,11 @@
- # Secrets
-   .env
+# Secrets
+.env
 
-   # Composer packages
-   vendor/
+# Composer packages
+vendor/
 
-   # macOS
-   .DS_Store
+# macOS
+.DS_Store
 
-   # User uploads
-   uploads/
+# User uploads
+uploads/
