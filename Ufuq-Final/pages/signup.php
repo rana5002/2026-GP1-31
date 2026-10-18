@@ -5,7 +5,7 @@ ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 
-require __DIR__ . '/db.php';
+require __DIR__ . '/../config/db.php';
 
 /* ================= Config ================= */
 const PHONE_USER  = '/^05[0-9]{8}$/';     // Saudi mobile: 05XXXXXXXX

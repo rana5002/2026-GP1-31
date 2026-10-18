@@ -3,22 +3,19 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-$pdo = new PDO(
-    'mysql:host=localhost;port=3306;dbname=ufuq;charset=utf8mb4',
-    'root',
-    'root',
-    [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]
-);
+
+// One shared database connection ($pdo). Settings come from .env, nothing is hardcoded.
+require_once __DIR__ . '/../config/db.php';
+
+// Email sending through Gmail: send_mail($to, $subject, $htmlBody)
+require_once __DIR__ . '/../includes/mail.php';
 
 const OPPORTUNITY_TYPES = ['Training', 'Course'];
 const CITIES = ['Riyadh','Jeddah','Mecca','Medina','Dammam','Khobar','Dhahran','Taif','Abha','Tabuk','Online','Other'];
 
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-/* Expects login.php to set $_SESSION['member_id'] and $_SESSION['role'] ('Admin'). */
+/* Expects login.php to set $_SESSION['user_id'] and $_SESSION['role'] ('Admin'). */
 function require_admin(): int {
     if (($_SESSION['role'] ?? '') !== 'Admin'
         || !isset($_SESSION['user_id'])) {
@@ -32,14 +29,16 @@ function require_admin(): int {
 function csrf_token(): string {
     return $_SESSION['csrf'] ??= bin2hex(random_bytes(16));
 }
-function csrf_check(): void {
-    if (!hash_equals($_SESSION['csrf'] ?? '', $_POST['csrf'] ?? '')) { http_response_code(400); exit('Invalid request.'); }
-}
 
-/* Uses PHP mail(); configure SMTP in php.ini, or swap the body for PHPMailer. */
-function send_mail(string $to, string $subject, string $body): bool {
-    $headers = "From: Ufuq <no-reply@ufuq.sa>\r\nContent-Type: text/plain; charset=UTF-8";
-    return @mail($to, $subject, $body, $headers);
+function csrf_check(): void {
+    $expected = $_SESSION['csrf'] ?? '';
+    $given    = $_POST['csrf'] ?? '';
+
+    // An empty session token must never match an empty form token.
+    if ($expected === '' || !is_string($given) || !hash_equals($expected, $given)) {
+        http_response_code(400);
+        exit('Invalid request.');
+    }
 }
 
 function admin_header(string $title, string $active): void { ?>

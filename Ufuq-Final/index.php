@@ -21,10 +21,8 @@ $bootstrapPath = __DIR__ . '/pages/bootstrap.php';
 
 if (file_exists($bootstrapPath)) {
     require_once $bootstrapPath;
-} elseif (file_exists(__DIR__ . '/db.php')) {
-    require_once __DIR__ . '/db.php';
-} elseif (file_exists(__DIR__ . '/pages/db.php')) {
-    require_once __DIR__ . '/pages/db.php';
+} else {
+    require_once __DIR__ . '/config/db.php';
 }
 
 /* Redirect signed-in members to their own pages. */
