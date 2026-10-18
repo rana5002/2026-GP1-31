@@ -1,13 +1,15 @@
 <?php
+/* =========================================================
+   Ufuq - Frequently Asked Questions
+   File: pages/faq.php
+   PHP + MySQL
+   ========================================================= */
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-$bootstrapPath = __DIR__ . '/bootstrap.php';
-
-if (file_exists($bootstrapPath)) {
-    require_once $bootstrapPath;
-}
+require_once __DIR__ . '/bootstrap.php';
 
 /* Redirect signed-in members to their own pages. */
 if (!empty($_SESSION['member_id']) || !empty($_SESSION['user_id'])) {
@@ -88,6 +90,22 @@ $faqs = [
         'answer' => 'Review the information on the company’s official page when available. If the information on Ufuq appears incorrect or outdated, contact the platform team through an available support channel.'
     ],
 ];
+
+/* Safe output helper */
+if (!function_exists('faq_escape')) {
+    function faq_escape($value): string
+    {
+        return htmlspecialchars(
+            (string) ($value ?? ''),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+    }
+}
+
+/* Shared PHP header settings */
+$headerBase = '../';
+$headerActive = 'faq';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -112,10 +130,10 @@ html {
 }
 
 /* =========================
-   HERO — PURPLE Ufuq THEME
+   HERO
    ========================= */
 
-.faq-page .faq-hero {
+.faq-hero {
     position: relative;
     isolation: isolate;
     overflow: hidden;
@@ -165,7 +183,7 @@ html {
     animation: faqFadeUp .8s ease both;
 }
 
-.faq-hero-content .hero-eyebrow {
+.faq-eyebrow {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -182,7 +200,7 @@ html {
     text-transform: uppercase;
 }
 
-.faq-hero-content .hero-eyebrow::before {
+.faq-eyebrow::before {
     content: "";
     width: 7px;
     height: 7px;
@@ -191,7 +209,7 @@ html {
     box-shadow: 0 0 0 4px rgba(215, 168, 75, .15);
 }
 
-.faq-hero-content h1 {
+.faq-hero h1 {
     max-width: 780px;
     margin: 0 auto 18px;
     color: #252044;
@@ -201,19 +219,16 @@ html {
 }
 
 .faq-title-highlight {
-    display: inline-block;
     color: #7857ad;
 }
 
-.faq-hero-content > p {
+.faq-hero-description {
     max-width: 640px;
     margin: 0 auto;
     color: #68627c;
     font-size: 1.05rem;
     line-height: 1.85;
 }
-
-/* Floating decorations */
 
 .faq-decoration {
     position: absolute;
@@ -241,7 +256,7 @@ html {
 }
 
 /* =========================
-   SEARCH BAR
+   SEARCH
    ========================= */
 
 .faq-search-wrap {
@@ -310,10 +325,6 @@ html {
     font-weight: 600;
 }
 
-.faq-search-clear:hover {
-    background: #e6daf5;
-}
-
 .faq-search-clear.is-visible {
     display: inline-flex;
 }
@@ -358,15 +369,25 @@ html {
     box-shadow: 0 5px 14px rgba(118, 85, 168, .22);
 }
 
+.faq-category:focus-visible,
+.faq-question:focus-visible,
+.faq-search-clear:focus-visible {
+    outline: 3px solid rgba(120, 87, 173, .35);
+    outline-offset: 4px;
+}
+
 /* =========================
-   QUESTIONS SECTION
+   QUESTIONS
    ========================= */
 
 .faq-questions-section {
-    padding-top: 76px;
-    padding-bottom: 80px;
+    padding: 76px 0 80px;
     background:
-        radial-gradient(ellipse at 0% 15%, rgba(232, 224, 246, .35), transparent 35%),
+        radial-gradient(
+            ellipse at 0% 15%,
+            rgba(232, 224, 246, .35),
+            transparent 35%
+        ),
         #fff;
 }
 
@@ -500,15 +521,6 @@ html {
     color: #fff;
 }
 
-.faq-question:focus-visible,
-.faq-category:focus-visible,
-.faq-search-clear:focus-visible {
-    outline: 3px solid rgba(120, 87, 173, .35);
-    outline-offset: 4px;
-}
-
-/* Answer animation */
-
 .faq-answer {
     display: grid;
     grid-template-rows: 0fr;
@@ -541,13 +553,13 @@ html {
     color: #594080;
 }
 
-.faq-item.is-open .faq-answer {
-    grid-template-rows: 1fr;
-}
-
 .faq-item.is-open {
     border-color: #d8c9eb;
     box-shadow: 0 8px 24px rgba(87, 61, 128, .07);
+}
+
+.faq-item.is-open .faq-answer {
+    grid-template-rows: 1fr;
 }
 
 /* =========================
@@ -595,10 +607,10 @@ html {
 }
 
 /* =========================
-   CONTACT CTA
+   CONTACT SECTION
    ========================= */
 
-.faq-page .faq-contact {
+.faq-contact {
     position: relative;
     overflow: hidden;
     padding: 72px 20px;
@@ -673,7 +685,7 @@ html {
     line-height: 1.85;
 }
 
-.faq-contact .btn {
+.faq-contact-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -690,7 +702,7 @@ html {
                 background .25s ease;
 }
 
-.faq-contact .btn:hover {
+.faq-contact-button:hover {
     transform: translateY(-3px);
     background: #654590;
     box-shadow: 0 11px 25px rgba(118, 85, 168, .28);
@@ -732,19 +744,19 @@ html {
 }
 
 /* =========================
-   RESPONSIVE DESIGN
+   RESPONSIVE
    ========================= */
 
 @media (max-width: 700px) {
-    .faq-page .faq-hero {
+    .faq-hero {
         padding: 65px 18px 48px;
     }
 
-    .faq-hero-content h1 {
+    .faq-hero h1 {
         letter-spacing: -.7px;
     }
 
-    .faq-hero-content > p {
+    .faq-hero-description {
         font-size: .97rem;
     }
 
@@ -799,7 +811,7 @@ html {
         padding-left: 13px;
     }
 
-    .faq-page .faq-contact {
+    .faq-contact {
         padding: 55px 18px;
     }
 }
@@ -825,7 +837,6 @@ html {
     }
 }
 
-/* Accessibility */
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
@@ -850,7 +861,10 @@ html {
 
 <body class="faq-page">
 
-<div id="site-header"></div>
+<?php
+/* Render the shared PHP header directly. */
+require __DIR__ . '/../includes/header.php';
+?>
 
 <main>
 
@@ -860,15 +874,14 @@ html {
         <div class="faq-decoration faq-decoration-two"></div>
 
         <div class="container faq-hero-content">
-
-            <div class="hero-eyebrow">Help Center</div>
+            <div class="faq-eyebrow">Help Center</div>
 
             <h1>
                 Questions? Let's find
                 <span class="faq-title-highlight">your answers.</span>
             </h1>
 
-            <p>
+            <p class="faq-hero-description">
                 Everything you need to know about Ufuq, from discovering
                 training opportunities to managing your account.
             </p>
@@ -896,90 +909,108 @@ html {
                 </div>
             </div>
 
-            <div class="faq-categories" aria-label="Filter questions by category">
-                <button type="button" class="faq-category active"
-                        data-category="all" aria-pressed="true">
+            <div class="faq-categories"
+                 aria-label="Filter questions by category">
+
+                <button type="button"
+                        class="faq-category active"
+                        data-category="all"
+                        aria-pressed="true">
                     All Questions
                 </button>
 
-                <button type="button" class="faq-category"
-                        data-category="account" aria-pressed="false">
+                <button type="button"
+                        class="faq-category"
+                        data-category="account"
+                        aria-pressed="false">
                     Account
                 </button>
 
-                <button type="button" class="faq-category"
-                        data-category="opportunities" aria-pressed="false">
+                <button type="button"
+                        class="faq-category"
+                        data-category="opportunities"
+                        aria-pressed="false">
                     Opportunities
                 </button>
 
-                <button type="button" class="faq-category"
-                        data-category="companies" aria-pressed="false">
+                <button type="button"
+                        class="faq-category"
+                        data-category="companies"
+                        aria-pressed="false">
                     Companies
                 </button>
 
-                <button type="button" class="faq-category"
-                        data-category="platform" aria-pressed="false">
+                <button type="button"
+                        class="faq-category"
+                        data-category="platform"
+                        aria-pressed="false">
                     Platform
                 </button>
             </div>
-
         </div>
     </section>
 
-    <!-- Questions -->
+    <!-- FAQ Questions -->
     <section class="faq-questions-section">
         <div class="container">
 
             <div class="faq-section-heading faq-reveal">
                 <h2>Frequently Asked Questions</h2>
+
                 <p>
                     Browse the questions below or use the search bar
                     to find what you need.
                 </p>
+
                 <span class="faq-heading-line"></span>
             </div>
 
             <div class="faq-list" id="faqList">
 
-                <?php foreach ($faqs as $index => $faq):
+                <?php foreach ($faqs as $index => $faq): ?>
+                    <?php
                     $number = $index + 1;
                     $questionId = 'faq-question-' . $number;
                     $answerId = 'faq-answer-' . $number;
-                ?>
-                    <article class="faq-item"
-                             data-category="<?= htmlspecialchars($faq['category'], ENT_QUOTES, 'UTF-8') ?>">
+                    ?>
 
+                    <article
+                        class="faq-item"
+                        data-category="<?= faq_escape($faq['category']) ?>"
+                    >
                         <button
                             class="faq-question"
-                            id="<?= $questionId ?>"
+                            id="<?= faq_escape($questionId) ?>"
                             type="button"
                             aria-expanded="false"
-                            aria-controls="<?= $answerId ?>"
+                            aria-controls="<?= faq_escape($answerId) ?>"
                         >
                             <span class="faq-number">
                                 <?= sprintf('%02d', $number) ?>
                             </span>
 
                             <span class="faq-question-text">
-                                <?= htmlspecialchars($faq['question'], ENT_QUOTES, 'UTF-8') ?>
+                                <?= faq_escape($faq['question']) ?>
                             </span>
 
                             <span class="faq-chevron" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" fill="none">
-                                    <path d="m6 9 6 6 6-6"
-                                          stroke="currentColor"
-                                          stroke-width="2"
-                                          stroke-linecap="round"
-                                          stroke-linejoin="round"/>
+                                    <path
+                                        d="m6 9 6 6 6-6"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
                                 </svg>
                             </span>
                         </button>
 
                         <div
                             class="faq-answer"
-                            id="<?= $answerId ?>"
+                            id="<?= faq_escape($answerId) ?>"
                             role="region"
-                            aria-labelledby="<?= $questionId ?>"
+                            aria-labelledby="<?= faq_escape($questionId) ?>"
                             aria-hidden="true"
                         >
                             <div class="faq-answer-inner">
@@ -988,7 +1019,6 @@ html {
                                 </div>
                             </div>
                         </div>
-
                     </article>
                 <?php endforeach; ?>
 
@@ -996,7 +1026,9 @@ html {
 
             <div class="faq-empty" id="faqEmpty" aria-live="polite">
                 <div class="faq-empty-symbol" aria-hidden="true">⌕</div>
+
                 <h3>No matching questions found</h3>
+
                 <p>
                     Try a different keyword or choose another category.
                 </p>
@@ -1011,7 +1043,6 @@ html {
         <div class="faq-decoration faq-decoration-two"></div>
 
         <div class="container faq-contact-inner faq-reveal">
-
             <div class="faq-contact-symbol" aria-hidden="true">?</div>
 
             <h2>Still have questions?</h2>
@@ -1021,26 +1052,20 @@ html {
                 Visit Ufuq and explore the available opportunities.
             </p>
 
-            <a href="../index.php" class="btn btn-primary">
+            <a href="../index.php" class="faq-contact-button">
                 Back to Home <span aria-hidden="true">→</span>
             </a>
-
         </div>
     </section>
 
 </main>
 
-<div id="site-footer"></div>
-
-<script src="../js/store.js"></script>
-<script src="../js/constants.js"></script>
-<script src="../js/components.js"></script>
+<?php
+/* Render the shared PHP footer directly. */
+require __DIR__ . '/../includes/footer.php';
+?>
 
 <script>
-/* Keep the existing shared Ufuq header and footer. */
-renderHeader({ active: "faq", base: "../" });
-renderFooter({ base: "../" });
-
 (function () {
     "use strict";
 
@@ -1070,7 +1095,7 @@ renderFooter({ base: "../" });
         answer.setAttribute("aria-hidden", "false");
     }
 
-    /* Accordion: only one answer is open at a time. */
+    /* Accordion: keep only one answer open at a time. */
     faqItems.forEach(function (item) {
         const question = item.querySelector(".faq-question");
 
@@ -1110,7 +1135,10 @@ renderFooter({ base: "../" });
             }
         });
 
-        emptyMessage.classList.toggle("is-visible", visibleCount === 0);
+        emptyMessage.classList.toggle(
+            "is-visible",
+            visibleCount === 0
+        );
 
         clearButton.classList.toggle(
             "is-visible",
@@ -1134,6 +1162,7 @@ renderFooter({ base: "../" });
                 const isActive = categoryButton === button;
 
                 categoryButton.classList.toggle("active", isActive);
+
                 categoryButton.setAttribute(
                     "aria-pressed",
                     isActive ? "true" : "false"
@@ -1144,7 +1173,7 @@ renderFooter({ base: "../" });
         });
     });
 
-    /* Reveal cards and headings as they enter the viewport. */
+    /* Reveal headings and questions on scroll. */
     const animatedElements = document.querySelectorAll(
         ".faq-reveal, .faq-item"
     );

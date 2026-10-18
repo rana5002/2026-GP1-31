@@ -531,6 +531,8 @@ if (!$expView)  $expView[]  = [];
 if (!$qualView) $qualView[] = [];
 $dobMax = date('Y-m-d', strtotime('-15 years'));   // youngest allowed
 $dobMin = date('Y-m-d', strtotime('-100 years'));
+
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -597,7 +599,11 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
 </head>
 <body>
 
-<div id="site-header"></div>
+<?php
+$headerBase = '../';
+$headerActive = 'signup';
+require __DIR__ . '/../includes/header.php';
+?>
 
 <main>
   <div class="auth-wrapper">
@@ -857,7 +863,9 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
   </div>
 </main>
 
-<div id="site-footer"></div>
+<?php
+require __DIR__ . '/../includes/footer.php';
+?>
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
 <script src="../js/store.js"></script>

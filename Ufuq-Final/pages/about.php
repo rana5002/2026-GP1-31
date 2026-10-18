@@ -780,7 +780,11 @@ html {
 
 <body class="about-page">
 
-<div id="site-header"></div>
+<?php
+$headerBase = '../';
+$headerActive = 'about';
+require __DIR__ . '/../includes/header.php';
+?>
 
 <main>
 
@@ -1025,20 +1029,41 @@ html {
 
 </main>
 
-<div id="site-footer"></div>
+<?php
+require __DIR__ . '/../includes/footer.php';
+?>
 
 <script src="../js/store.js"></script>
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
 
 <script>
-/* Preserve the existing shared Ufuq header and footer. */
-renderHeader({ active: "about", base: "../" });
-renderFooter({ base: "../" });
-
 (function () {
     "use strict";
 
+    /* Render the shared header and footer safely. */
+    if (typeof renderHeader === "function") {
+        renderHeader({
+            active: "about",
+            base: "../"
+        });
+    } else {
+        console.error(
+            "renderHeader is not available. Check ../js/components.js"
+        );
+    }
+
+    if (typeof renderFooter === "function") {
+        renderFooter({
+            base: "../"
+        });
+    } else {
+        console.error(
+            "renderFooter is not available. Check ../js/components.js"
+        );
+    }
+
+    /* Reveal content when scrolling. */
     const animatedElements = document.querySelectorAll(
         ".about-reveal, " +
         ".about-reveal-left, " +
@@ -1057,28 +1082,26 @@ renderFooter({ base: "../" });
         animatedElements.forEach(function (element) {
             element.classList.add("is-visible");
         });
+    } else {
+        const observer = new IntersectionObserver(
+            function (entries) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add("is-visible");
+                        observer.unobserve(entry.target);
+                    }
+                });
+            },
+            {
+                threshold: 0.05,
+                rootMargin: "0px 0px -10px 0px"
+            }
+        );
 
-        return;
+        animatedElements.forEach(function (element) {
+            observer.observe(element);
+        });
     }
-
-    const observer = new IntersectionObserver(
-        function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add("is-visible");
-                    observer.unobserve(entry.target);
-                }
-            });
-        },
-        {
-            threshold: 0.12,
-            rootMargin: "0px 0px -25px 0px"
-        }
-    );
-
-    animatedElements.forEach(function (element) {
-        observer.observe(element);
-    });
 })();
 </script>
 

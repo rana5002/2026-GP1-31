@@ -1,22 +1,21 @@
-
 <?php
 /* =========================================================
    Ufuq - Public Home Page
    PHP + MySQL
    ========================================================= */
+
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
+
+/* ---------- Session ---------- */
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-/*
- * Load the existing project bootstrap.
- * The bootstrap is expected to provide the PDO connection
- * through $pdo.
- */
+/* ---------- Load bootstrap and database ---------- */
+
 $bootstrapPath = __DIR__ . '/pages/bootstrap.php';
 
 if (file_exists($bootstrapPath)) {
@@ -25,23 +24,55 @@ if (file_exists($bootstrapPath)) {
     require_once __DIR__ . '/config/db.php';
 }
 
-/* Redirect signed-in members to their own pages. */
-if (!empty($_SESSION['member_id']) || !empty($_SESSION['user_id'])) {
-    $role = strtolower(trim((string) ($_SESSION['role'] ?? '')));
+/* ---------- Redirect signed-in members ---------- */
 
-    $destinations = [
-        'user'    => 'pages/home.php',
-        'company' => 'pages/dashboard-company.php',
-        'admin'   => 'pages/dashboard-admin.php',
-    ];
+$sessionId = $_SESSION['user_id']
+    ?? $_SESSION['member_id']
+    ?? null;
 
-    if (isset($destinations[$role])) {
-        header('Location: ' . $destinations[$role]);
-        exit;
-    }
+$sessionRole = strtolower(
+    trim((string) ($_SESSION['role'] ?? ''))
+);
+
+$destinations = [
+    'user'    => 'pages/home.php',
+    'company' => 'pages/dashboard-company.php',
+    'admin'   => 'pages/dashboard-admin.php',
+];
+
+if ($sessionId !== null && isset($destinations[$sessionRole])) {
+    header('Location: ' . $destinations[$sessionRole]);
+    exit;
 }
 
-/* Escape values before displaying database content. */
+/* ---------- Header session data ---------- */
+
+$headerUser = null;
+
+if (
+    $sessionId !== null
+    && in_array($sessionRole, ['user', 'company', 'admin'], true)
+) {
+    $headerUser = [
+        'id' => (int) $sessionId,
+        'role' => $sessionRole,
+        'name' => (string) (
+            $_SESSION['name']
+            ?? $_SESSION['full_name']
+            ?? $_SESSION['CompanyName']
+            ?? ''
+        ),
+        'gender' => (string) ($_SESSION['gender'] ?? ''),
+        'logoFileName' => (string) (
+            $_SESSION['logoFileName']
+            ?? $_SESSION['logo']
+            ?? ''
+        ),
+    ];
+}
+
+/* ---------- Escape HTML output ---------- */
+
 if (!function_exists('e')) {
     function e($value): string
     {
@@ -53,21 +84,110 @@ if (!function_exists('e')) {
     }
 }
 
-/* Keep the page usable even when no opportunities exist. */
+/* ---------- Company display helpers ---------- */
+
+if (!function_exists('getCompanyName')) {
+    function getCompanyName(array $opportunity): string
+    {
+        $registeredName = trim(
+            (string) ($opportunity['CompanyName'] ?? '')
+        );
+
+        if ($registeredName !== '') {
+            return $registeredName;
+        }
+
+        $provider = trim(
+            (string) ($opportunity['OpportunityProvider'] ?? '')
+        );
+
+        return $provider !== '' ? $provider : 'External Company';
+    }
+}
+
+if (!function_exists('getCompanyColor')) {
+    function getCompanyColor(string $name): string
+    {
+        $palette = [
+            '#3157A4',
+            '#397A76',
+            '#7655A5',
+            '#B47737',
+            '#3F7195',
+        ];
+
+        return $palette[abs(crc32($name)) % count($palette)];
+    }
+}
+
+/* ---------- Render opportunity card ---------- */
+
+if (!function_exists('renderOpportunityCard')) {
+    function renderOpportunityCard(array $opportunity): void
+    {
+        $title = (string) ($opportunity['Title'] ?? '');
+        $company = getCompanyName($opportunity);
+        $type = (string) ($opportunity['Type'] ?? '');
+        $location = (string) ($opportunity['Location'] ?? '');
+
+        $initial = $company !== ''
+            ? strtoupper(substr($company, 0, 1))
+            : 'C';
+
+        $badgeClass = $type === 'Course'
+            ? 'badge-success'
+            : 'badge-primary';
+
+        $color = getCompanyColor($company);
+        ?>
+        <div class="card opp-card card-hover reveal">
+            <div class="opp-card-top">
+                <div class="flex gap-3" style="align-items:center;">
+                    <div
+                        class="opp-logo"
+                        style="background:<?= e($color) ?>;"
+                    ><?= e($initial) ?></div>
+
+                    <div>
+                        <h3 style="margin:0 0 2px;font-size:1.02rem;">
+                            <?= e($title) ?>
+                        </h3>
+
+                        <div class="text-muted" style="font-size:0.82rem;">
+                            <?= e($company) ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="opp-meta">
+                <span class="badge <?= e($badgeClass) ?>">
+                    <?= e($type) ?>
+                </span>
+
+                <span><?= e($location) ?></span>
+            </div>
+
+            <div class="opp-footer">
+                <a class="btn btn-outline btn-sm" href="pages/login.php">
+                    View Details
+                </a>
+            </div>
+        </div>
+        <?php
+    }
+}
+
+/* ---------- Load public opportunities ---------- */
+
 $preview = [];
 $coursesPreview = [];
-$databaseError = false;
 
 try {
     if (!isset($pdo) || !($pdo instanceof PDO)) {
         throw new RuntimeException('Database connection is unavailable.');
     }
 
-    /*
-     * Fetch the latest three open opportunities.
-     * Company opportunities use the registered company name.
-     * Other opportunities can use OpportunityProvider.
-     */
     $sql = "
         SELECT
             o.OpportunityID,
@@ -94,7 +214,6 @@ try {
     $stmt->execute();
     $preview = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    /* Fetch the latest three open courses. */
     $courseSql = "
         SELECT
             o.OpportunityID,
@@ -123,101 +242,25 @@ try {
     $coursesPreview = $courseStmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (Throwable $ex) {
-    /*
-     * Do not expose database details to public visitors.
-     * Check the PHP error log if the database query fails.
-     */
     error_log('Ufuq index.php: ' . $ex->getMessage());
-    $databaseError = true;
 }
 
-/* Determine the company name displayed on each card. */
-function getCompanyName(array $opportunity): string
-{
-    $registeredName = trim(
-        (string) ($opportunity['CompanyName'] ?? '')
-    );
+/* ---------- Safe JSON for JavaScript ---------- */
 
-    if ($registeredName !== '') {
-        return $registeredName;
-    }
+$headerUserJson = json_encode(
+    $headerUser,
+    JSON_HEX_TAG
+    | JSON_HEX_APOS
+    | JSON_HEX_AMP
+    | JSON_HEX_QUOT
+    | JSON_THROW_ON_ERROR
+);
 
-    $provider = trim(
-        (string) ($opportunity['OpportunityProvider'] ?? '')
-    );
+/* ---------- Shared PHP header/footer files ---------- */
 
-    return $provider !== '' ? $provider : 'External Company';
-}
+$headerPath = __DIR__ . '/includes/header.php';
+$footerPath = __DIR__ . '/includes/footer.php';
 
-/* Generate a consistent color for each company initial. */
-function getCompanyColor(string $name): string
-{
-    $palette = [
-        '#3157A4',
-        '#397A76',
-        '#7655A5',
-        '#B47737',
-        '#3F7195',
-    ];
-
-    $index = abs(crc32($name)) % count($palette);
-
-    return $palette[$index];
-}
-
-/* Render one opportunity card without changing its content. */
-function renderOpportunityCard(array $opportunity): void
-{
-    $title = (string) ($opportunity['Title'] ?? '');
-    $company = getCompanyName($opportunity);
-    $type = (string) ($opportunity['Type'] ?? '');
-    $location = (string) ($opportunity['Location'] ?? '');
-    $initial = $company !== ''
-        ? strtoupper(substr($company, 0, 1))
-        : 'C';
-
-    $badgeClass = $type === 'Course'
-        ? 'badge-success'
-        : 'badge-primary';
-
-    $color = getCompanyColor($company);
-    ?>
-    <div class="card opp-card card-hover reveal">
-        <div class="opp-card-top">
-            <div class="flex gap-3" style="align-items:center;">
-                <div
-                    class="opp-logo"
-                    style="background:<?= e($color) ?>;"
-                ><?= e($initial) ?></div>
-
-                <div>
-                    <h3 style="margin:0 0 2px;font-size:1.02rem;">
-                        <?= e($title) ?>
-                    </h3>
-
-                    <div class="text-muted" style="font-size:0.82rem;">
-                        <?= e($company) ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="opp-meta">
-            <span class="badge <?= e($badgeClass) ?>">
-                <?= e($type) ?>
-            </span>
-
-            <span><?= e($location) ?></span>
-        </div>
-
-        <div class="opp-footer">
-            <a class="btn btn-outline btn-sm" href="pages/login.php">
-                View Details
-            </a>
-        </div>
-    </div>
-    <?php
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -232,11 +275,6 @@ function renderOpportunityCard(array $opportunity): void
 <link rel="stylesheet" href="css/icons.css">
 
 <style>
-/* =========================================================
-   Subtle motion effects - original Ufuq content and layout
-   remain unchanged.
-   ========================================================= */
-
 html {
     scroll-behavior: smooth;
 }
@@ -320,7 +358,6 @@ html {
     transform: translateY(0);
 }
 
-/* Gentle stagger for cards. */
 .reveal:nth-child(2) {
     transition-delay: .10s;
 }
@@ -392,7 +429,17 @@ html {
 
 <body>
 
-<div id="site-header"></div>
+<?php
+/*
+ * The header and footer are now included from PHP files.
+ * Create both files under the includes folder before using this page.
+ */
+if (file_exists($headerPath)) {
+    require $headerPath;
+} else {
+    echo '<div id="site-header"></div>';
+}
+?>
 
 <main>
     <!-- Hero -->
@@ -515,7 +562,7 @@ html {
         </div>
     </section>
 
-    <!-- Value props -->
+    <!-- Value propositions -->
     <section class="section section-journey">
         <div class="container">
             <h2 class="text-center" style="margin-bottom:40px;">
@@ -568,7 +615,7 @@ html {
         </div>
     </section>
 
-    <!-- CTA for companies -->
+    <!-- Company CTA -->
     <section class="section section-journey">
         <div class="container">
             <div
@@ -593,20 +640,24 @@ html {
     </section>
 </main>
 
-<div id="site-footer"></div>
+<?php
+if (file_exists($footerPath)) {
+    require $footerPath;
+} else {
+    echo '<div id="site-footer"></div>';
+}
+?>
+
+<!-- Session information for any remaining JavaScript components -->
+<script>
+window.UFUQ_CURRENT_USER = <?= $headerUserJson ?>;
+</script>
 
 <script src="js/store.js"></script>
 <script src="js/constants.js"></script>
 <script src="js/components.js"></script>
 
 <script>
-/*
- * Header and footer use the existing project components.
- * PHP handles authentication and opportunity data.
- */
-renderHeader({ active: "home", base: "" });
-renderFooter({ base: "" });
-
 /* Reveal elements when they enter the viewport. */
 (function () {
     const revealElements = document.querySelectorAll(".reveal");
@@ -635,7 +686,7 @@ renderFooter({ base: "" });
     });
 })();
 
-/* Show server-rendered opportunity cards without a hidden flash. */
+/* Ensure server-rendered opportunity cards are visible. */
 document.querySelectorAll(
     "#oppPreviewGrid .reveal, #coursesPreviewGrid .reveal"
 ).forEach(function (card) {
