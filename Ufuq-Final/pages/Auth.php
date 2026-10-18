@@ -1,4 +1,3 @@
-
 <?php
 
 function req(): string {
@@ -57,12 +56,10 @@ function require_login(?string $role = null): void {
 function is_strong_password(string $p): bool {
     return strlen($p) >= 8
         && preg_match('/[a-z]/', $p)
-        && preg_match('/[A-Z]/', $p)
-        && preg_match('/\d/', $p)
-        && preg_match('/[^A-Za-z0-9]/', $p);
+        && preg_match('/[A-Z]/', $p);
 }
 
-const PW_MSG = 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.';
+const PW_MSG = 'Password must be at least 8 characters and include an uppercase and a lowercase letter.';
 
 /**
  * Password requirements help.
@@ -71,9 +68,7 @@ function pwHelp(string $id): string {
     $items = [
         'len' => 'At least 8 characters',
         'upper' => 'One uppercase letter (A-Z)',
-        'lower' => 'One lowercase letter (a-z)',
-        'num' => 'One number (0-9)',
-        'special' => 'One special character (! @ # $ % ...)'
+        'lower' => 'One lowercase letter (a-z)'
     ];
 
     $li = '';

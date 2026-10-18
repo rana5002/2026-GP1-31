@@ -17,13 +17,16 @@ function member_find_by_id(PDO $pdo, int $id): ?array
     return $row ?: null;
 }
 
+// FLAG-1: the name used in emails comes from a different table for each role
+//         (user -> `user`, admin -> `administrator`, company -> `company`).
+//         If a table or column is renamed, change it in the $queries list below.
 // Name used in emails: first name for users and admins, company name for companies.
 // Falls back to "there" ("Hi there,") if the name cannot be found.
 function member_display_name(PDO $pdo, array $member): string
 {
     $queries = [
         'User'    => 'SELECT FirstName FROM `user` WHERE UserID = ?',
-        'Admin'   => 'SELECT FirstName FROM admin WHERE AdminID = ?',
+        'Admin'   => 'SELECT FirstName FROM administrator WHERE AdminID = ?',
         'Company' => 'SELECT CompanyName FROM company WHERE CompanyID = ?',
     ];
 
@@ -37,7 +40,7 @@ function member_display_name(PDO $pdo, array $member): string
                 return (string) $name;
             }
         } catch (PDOException $e) {
-            // Table not created yet: just use the fallback below.
+            // Table missing or renamed: just use the fallback below.
         }
     }
 

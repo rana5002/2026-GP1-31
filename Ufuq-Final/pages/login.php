@@ -4,13 +4,19 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/members.php';   // member_find_by_email(), member_find_by_id()
 
 no_cache();
 
-// Already logged in -> go to own dashboard
+// Already logged in -> go to own dashboard.
+// If the session points to an account that no longer exists, the old session is wiped instead.
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
-    header('Location: ' . dashboard_for((string)$_SESSION['role']));
-    exit;
+    if (member_find_by_id($pdo, (int)$_SESSION['user_id'])) {
+        header('Location: ' . dashboard_for((string)$_SESSION['role']));
+        exit;
+    }
+    $_SESSION = [];
+    session_regenerate_id(true);
 }
 
 $errors = [];
@@ -21,6 +27,8 @@ $flash  = isset($_GET['reset'])
     : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();   // from bootstrap.php
+
     $email = is_string($_POST['email'] ?? null)
         ? trim($_POST['email'])
         : '';
@@ -42,13 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $banner = 'Please fill in both fields.';
     } else {
         try {
-            $st = $pdo->prepare(
-                'SELECT MemberID, Password, Role
-                 FROM member
-                 WHERE Email = ?'
-            );
-            $st->execute([$email]);
-            $m = $st->fetch();
+            $m = member_find_by_email($pdo, $email);   // from includes/members.php
 
             // Always verify the password to reduce email-existence timing leaks
             $hash = $m['Password']
@@ -74,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$c) {
                         $banner = 'Invalid email or password';
                     } elseif ($c['Status'] === 'Pending') {
-                        $banner = 'Your registration is pending review.';
+                        $banner = 'Your registration is pending.';
                     } elseif ($c['Status'] === 'Rejected') {
                         $banner = 'Your registration was rejected: '
                             . ($c['RejectionReason'] ?: 'No reason provided.');
@@ -104,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($role === 'Admin') {
                         $adminStmt = $pdo->prepare(
                             'SELECT FirstName, LastName
-                             FROM admin
+                             FROM administrator
                              WHERE AdminID = ?'
                         );
 
@@ -273,11 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <body>
 
-<?php
-$headerBase = '../';
-$headerActive = 'login';
-require __DIR__ . '/../includes/header.php';
-?>
+<div id="site-header"></div>
 
 <main>
     <div class="auth-wrapper">
@@ -302,6 +300,7 @@ require __DIR__ . '/../includes/header.php';
             ><?= e($banner) ?></div>
 
             <form id="loginForm" method="post" novalidate>
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
 
                 <div class="form-group">
                     <label class="form-label icon-label" for="email">
@@ -369,11 +368,16 @@ require __DIR__ . '/../includes/header.php';
     </div>
 </main>
 
-<?php
-require __DIR__ . '/../includes/footer.php';
-?>
+<div id="site-footer"></div>
+
+<script src="../js/store.js"></script>
+<script src="../js/constants.js"></script>
+<script src="../js/components.js"></script>
 
 <script>
+renderHeader({ active: "", base: "../" });
+renderFooter({ base: "../" });
+
 const banner = document.getElementById("formBanner");
 
 document.getElementById("loginForm").addEventListener("submit", e => {
