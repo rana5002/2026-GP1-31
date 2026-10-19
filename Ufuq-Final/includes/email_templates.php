@@ -155,7 +155,38 @@ HTML
     ];
 }
 
-// 4) Password reset (link valid 10 minutes, single use)
+
+
+// 4) Company rejected by an admin (the reason is the one the admin typed)
+function email_company_rejected(string $companyName, string $reason): array
+{
+    $n = email_h($companyName);
+    $reason = trim($reason);
+    $shown  = $reason !== '' ? $reason : 'No reason was provided.';
+    $r = email_h($shown);
+
+    $content = email_heading('Your registration was not approved')
+    . <<<HTML
+<p style="margin:0 0 16px;font-size:15px;line-height:24px;">Hello {$n},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:24px;">Thank you for your interest in Ufuq. After reviewing your company registration, we could not approve it at this time.</p>
+<p style="margin:0 0 6px;font-size:14px;line-height:22px;color:#6A5B71;"><strong>Reason</strong></p>
+<p style="margin:0 0 20px;padding:12px 16px;font-size:15px;line-height:24px;background-color:#EEE7F1;border-radius:10px;">{$r}</p>
+<p style="margin:0;font-size:14px;line-height:22px;color:#6A5B71;">If you believe this is a mistake, or you would like to register again with corrected information, you are welcome to do so.</p>
+HTML;
+
+    $text = "Hello {$companyName},\n\nThank you for your interest in Ufuq. After reviewing your company registration, "
+          . "we could not approve it at this time.\n\nReason: {$shown}\n\n"
+          . "You are welcome to register again with corrected information.\n";
+
+    return [
+        'subject' => 'Update on your Ufuq company registration',
+        'html'    => email_layout('Your registration was not approved', $content),
+        'text'    => $text,
+    ];
+}
+
+
+// 5) Password reset (link valid 10 minutes, single use)
 function email_password_reset(string $name, string $resetUrl): array
 {
     $n = email_h($name);
