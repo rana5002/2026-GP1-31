@@ -29,9 +29,10 @@ const MAX_COMPANY     = 100;
 const MAX_DESCRIPTION = 500;
 const MAX_URL         = 255;
 
-$EDU_STATUSES = ['Student', 'Fresh Graduate', 'Employed'];
-$FIELDS       = ['Computer Science', 'Information Systems', 'Business Administration', 'Marketing', 'Engineering',
-                 'Medicine & Health Sciences', 'Law', 'Education', 'Design', 'Other'];
+$EDU_STATUSES = ['Student', 'Fresh Graduate', 'Employed', 'Job Seeker', 'Freelancer'];
+$FIELDS       = ['Computer Science', 'Information Technology', 'Information Systems', 'Software Engineering',
+                 'Computer Engineering', 'Cybersecurity', 'Artificial Intelligence', 'Data Science',
+                 'Networks & Communications', 'Web & Mobile Development', 'Other'];
 $INDUSTRIES   = ['Technology', 'Education & Training', 'Marketing', 'Trading', 'Media', 'Administration',
                  'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 'Other'];
 $CITIES       = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk', 'Online'];
