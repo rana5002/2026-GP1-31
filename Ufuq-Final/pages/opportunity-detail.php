@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
         if ($action === 'toggle_favorite') {
             $check = $pdo->prepare(
                 'SELECT 1
-                 FROM favourite
+                 FROM favorite
                  WHERE UserID = ? AND OpportunityID = ?
                  LIMIT 1'
             );
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
 
             if ($check->fetchColumn()) {
                 $stmt = $pdo->prepare(
-                    'DELETE FROM favourite
+                    'DELETE FROM favorite
                      WHERE UserID = ? AND OpportunityID = ?'
                 );
                 $stmt->execute([$uid, $opportunityId]);
@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
                     'Removed from your favorites.';
             } else {
                 $stmt = $pdo->prepare(
-                    'INSERT INTO favourite (UserID, OpportunityID)
+                    'INSERT INTO favorite (UserID, OpportunityID)
                      VALUES (?, ?)'
                 );
                 $stmt->execute([$uid, $opportunityId]);
@@ -173,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
                     $stmt = $pdo->prepare(
                         "INSERT INTO application
                          (UserID, OpportunityID, SubmissionDate, ApplicationStatus)
-                         VALUES (?, ?, CURDATE(), 'Pending')"
+                         VALUES (?, ?, NOW(), 'Pending')"
                     );
 
                     $stmt->execute([$uid, $opportunityId]);
@@ -202,9 +202,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
             ) {
                 $_SESSION['detail_message'] =
                     'Please select a rating from 1 to 5.';
-            } elseif (mb_strlen($reviewText, 'UTF-8') > 2000) {
+            } elseif (mb_strlen($reviewText, 'UTF-8') > 500) {
                 $_SESSION['detail_message'] =
-                    'Your review must not exceed 2000 characters.';
+                    'Your review must not exceed 500 characters.';
             } else {
                 $check = $pdo->prepare(
                     'SELECT 1
@@ -246,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
 /* ---------- Favorite status ---------- */
 $favStmt = $pdo->prepare(
     'SELECT 1
-     FROM favourite
+     FROM favorite
      WHERE UserID = ? AND OpportunityID = ?
      LIMIT 1'
 );
@@ -290,11 +290,12 @@ $qualifications = [];
 if ($opp) {
     try {
         $stmt = $pdo->prepare(
-            'SELECT q.FieldOfStudy, q.DegreeLevel
+            'SELECT q.QualificationName
              FROM opportunityqualification oq
              INNER JOIN qualification q
                  ON q.QualificationID = oq.QualificationID
-             WHERE oq.OpportunityID = ?'
+             WHERE oq.OpportunityID = ?
+             ORDER BY q.QualificationName'
         );
 
         $stmt->execute([$opportunityId]);
@@ -310,11 +311,12 @@ $experiences = [];
 if ($opp) {
     try {
         $stmt = $pdo->prepare(
-            'SELECT e.*
+            'SELECT e.ExperienceName
              FROM opportunityexperience oe
              INNER JOIN experience e
                  ON e.ExperienceID = oe.ExperienceID
-             WHERE oe.OpportunityID = ?'
+             WHERE oe.OpportunityID = ?
+             ORDER BY e.ExperienceName'
         );
 
         $stmt->execute([$opportunityId]);
@@ -420,29 +422,17 @@ $userName = trim(
 user_header($me, 'Opportunity Details', 'browse');
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title><?= detail_h($title) ?> — Ufuq</title>
-
-    <link rel="stylesheet" href="../css/base.css">
-    <link rel="stylesheet" href="../css/layout.css">
-    <link rel="stylesheet" href="../css/icons.css">
-
     <style>
         :root {
-            --detail-purple: #493477;
-            --detail-purple-dark: #30204f;
-            --detail-purple-light: #f0eafb;
-            --detail-gold: #e2b65d;
-            --detail-bg: #f7f5fb;
+            --detail-purple: #39265f;
+            --detail-purple-dark: #281a46;
+            --detail-purple-light: #f0ebf8;
+            --detail-gold: #e2a94b;
+            --detail-bg: #faf6ef;
             --detail-card: #ffffff;
-            --detail-text: #292438;
-            --detail-muted: #777286;
-            --detail-border: #e9e4f1;
+            --detail-text: #29243a;
+            --detail-muted: #777184;
+            --detail-border: #e9e3ed;
             --detail-green: #25845c;
             --detail-red: #c74755;
         }
@@ -454,9 +444,113 @@ user_header($me, 'Opportunity Details', 'browse');
         }
 
         .detail-page {
-            min-height: 75vh;
-            padding: 28px 0 60px;
+            min-height: 60vh;
+            padding: 0 0 60px;
             background: var(--detail-bg);
+        }
+
+        /* ---------- Banner ---------- */
+        .detail-hero {
+            position: relative;
+            overflow: hidden;
+            padding: 38px 0 42px;
+            margin-bottom: 28px;
+            color: #ffffff;
+            background: linear-gradient(
+                125deg,
+                #281a46 0%,
+                #39265f 55%,
+                #49316f 100%
+            );
+        }
+
+        .detail-hero::before,
+        .detail-hero::after {
+            content: "";
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .detail-hero::before {
+            width: 250px;
+            height: 250px;
+            right: 7%;
+            top: -150px;
+            border: 35px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .detail-hero::after {
+            width: 190px;
+            height: 190px;
+            right: 23%;
+            bottom: -145px;
+            background: rgba(226, 169, 75, 0.10);
+        }
+
+        .detail-hero-inner {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 22px;
+        }
+
+        .detail-hero-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.08);
+            font-size: 0.84rem;
+            letter-spacing: 0.2px;
+        }
+
+        .detail-hero h1 {
+            margin: 0;
+            color: #ffffff;
+            font-size: clamp(1.65rem, 3vw, 2.15rem);
+            font-weight: 750;
+            line-height: 1.5;
+        }
+
+        .detail-hero p {
+            margin: 8px 0 0;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.96rem;
+            line-height: 1.8;
+        }
+
+        .detail-hero-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 78px;
+            height: 78px;
+            flex-shrink: 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 28px rgba(15, 8, 30, 0.16);
+            font-size: 2rem;
+        }
+
+        @media (max-width: 620px) {
+            .detail-hero {
+                padding: 30px 0;
+            }
+
+            .detail-hero-icon {
+                width: 60px;
+                height: 60px;
+                border-radius: 18px;
+                font-size: 1.6rem;
+            }
         }
 
         .detail-container {
@@ -493,8 +587,9 @@ user_header($me, 'Opportunity Details', 'browse');
             padding: 27px;
             background: var(--detail-card);
             border: 1px solid var(--detail-border);
+            border-top: 3px solid var(--detail-gold);
             border-radius: 18px;
-            box-shadow: 0 5px 22px rgba(48, 32, 79, 0.045);
+            box-shadow: 0 5px 22px rgba(40, 26, 70, 0.045);
         }
 
         .detail-page h2,
@@ -795,7 +890,7 @@ user_header($me, 'Opportunity Details', 'browse');
             border-radius: 12px;
             font-size: 13px;
             line-height: 1.65;
-            box-shadow: 0 4px 14px rgba(48, 32, 79, 0.04);
+            box-shadow: 0 4px 14px rgba(40, 26, 70, 0.04);
             opacity: 1;
             transform: translateY(0);
             transition: opacity 0.3s ease, transform 0.3s ease;
@@ -1136,11 +1231,28 @@ user_header($me, 'Opportunity Details', 'browse');
             }
         }
     </style>
-</head>
 
-<body>
+<!-- Page banner (same banner as Home / Browse) -->
+<section class="detail-hero">
+    <div class="container detail-hero-inner">
+        <div>
+            <div class="detail-hero-label">
+                <span aria-hidden="true">✦</span>
+                <span>Ufuq Learning Space</span>
+            </div>
 
-<main class="detail-page">
+            <h1>Opportunity Details</h1>
+
+            <p>
+                Review the opportunity information and apply when you are ready.
+            </p>
+        </div>
+
+        <div class="detail-hero-icon" aria-hidden="true">✦</div>
+    </div>
+</section>
+
+<div class="detail-page">
     <div class="detail-container">
 
         <a href="browse.php" class="detail-back">
@@ -1303,15 +1415,7 @@ user_header($me, 'Opportunity Details', 'browse');
 
                         <ul class="detail-list">
                             <?php foreach ($qualifications as $q): ?>
-                                <li>
-                                    <?= detail_h(
-                                        $q['FieldOfStudy'] ?: 'Field not specified'
-                                    ) ?>
-
-                                    <?php if (!empty($q['DegreeLevel'])): ?>
-                                        — <?= detail_h($q['DegreeLevel']) ?>
-                                    <?php endif; ?>
-                                </li>
+                                <li><?= detail_h($q['QualificationName']) ?></li>
                             <?php endforeach; ?>
                         </ul>
                     </section>
@@ -1326,25 +1430,7 @@ user_header($me, 'Opportunity Details', 'browse');
 
                         <ul class="detail-list">
                             <?php foreach ($experiences as $experience): ?>
-                                <?php
-                                $experienceValues = [];
-
-                                foreach ($experience as $key => $value) {
-                                    if (
-                                        $key !== 'ExperienceID'
-                                        && $value !== null
-                                        && trim((string) $value) !== ''
-                                    ) {
-                                        $experienceValues[] = $value;
-                                    }
-                                }
-                                ?>
-
-                                <?php if ($experienceValues): ?>
-                                    <li><?= detail_h(
-                                        implode(' — ', $experienceValues)
-                                    ) ?></li>
-                                <?php endif; ?>
+                                <li><?= detail_h($experience['ExperienceName']) ?></li>
                             <?php endforeach; ?>
                         </ul>
                     </section>
@@ -1630,13 +1716,13 @@ user_header($me, 'Opportunity Details', 'browse');
                                     name="review_text"
                                     id="review_text"
                                     rows="4"
-                                    maxlength="2000"
+                                    maxlength="500"
                                     placeholder="What did you think about this opportunity?"
                                 ></textarea>
 
                                 <p class="text-muted"
                                    style="margin:6px 0 0; font-size:11px;">
-                                    Maximum 2000 characters.
+                                    Maximum 500 characters.
                                 </p>
                             </div>
 
@@ -1721,16 +1807,7 @@ user_header($me, 'Opportunity Details', 'browse');
         <?php endif; ?>
 
     </div>
-</main>
-
-<div id="site-footer"></div>
-
-<script src="../js/constants.js"></script>
-<script src="../js/components.js"></script>
-
-<script>
-renderFooter({ base: "../" });
-</script>
+</div>
 
 <script>
 /* ---------- Interactive Rating ---------- */
@@ -1893,5 +1970,4 @@ renderFooter({ base: "../" });
 })();
 </script>
 
-</body>
-</html>
+<?php admin_footer(); ?>

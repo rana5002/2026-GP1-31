@@ -43,6 +43,53 @@ $qualificationRows = [];
 $experienceRows = [];
 $errors = [];
 
+/**
+ * skill / qualification / experience are shared lookup tables.
+ * Find the row by name (case-insensitive thanks to the unique key + collation)
+ * or create it, and return its ID. Existing rows are never modified here.
+ */
+function find_or_create_lookup(
+    PDO $pdo,
+    string $table,
+    string $idCol,
+    string $nameCol,
+    string $name
+): int {
+    $find = $pdo->prepare("SELECT `$idCol` FROM `$table` WHERE `$nameCol` = ? LIMIT 1");
+    $find->execute([$name]);
+    $id = $find->fetchColumn();
+
+    if ($id === false) {
+        $pdo->prepare("INSERT IGNORE INTO `$table` (`$nameCol`) VALUES (?)")
+            ->execute([$name]);
+        $find->execute([$name]);
+        $id = $find->fetchColumn();
+    }
+
+    return (int)$id;
+}
+
+/** Trim, drop empties, and remove case-insensitive duplicates. */
+function unique_names(array $names): array
+{
+    $out = [];
+    $seen = [];
+
+    foreach ($names as $name) {
+        $name = trim((string)$name);
+        $key = mb_strtolower($name, 'UTF-8');
+
+        if ($name === '' || isset($seen[$key])) {
+            continue;
+        }
+
+        $seen[$key] = true;
+        $out[] = $name;
+    }
+
+    return $out;
+}
+
 if ($editing) {
     $v = [
         'company_name' => $editing['OpportunityProvider'] ?? '',
@@ -60,71 +107,44 @@ if ($editing) {
         'SELECT s.SkillName
          FROM opportunityskill os
          JOIN skill s ON s.SkillID = os.SkillID
-         WHERE os.OpportunityID = ?'
+         WHERE os.OpportunityID = ?
+         ORDER BY s.SkillName'
     );
     $s->execute([$editId]);
     $skills = $s->fetchAll(PDO::FETCH_COLUMN);
 
     $q = $pdo->prepare(
-        'SELECT q.QualificationID, q.FieldOfStudy, q.DegreeLevel,
-                q.YearObtained, q.Duration
+        'SELECT q.QualificationName
          FROM opportunityqualification oq
-         JOIN qualification q
-           ON q.QualificationID = oq.QualificationID
-         WHERE oq.OpportunityID = ?'
+         JOIN qualification q ON q.QualificationID = oq.QualificationID
+         WHERE oq.OpportunityID = ?
+         ORDER BY q.QualificationName'
     );
     $q->execute([$editId]);
-    $qualificationRows = $q->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $name) {
+        $qualificationRows[] = ['Name' => $name];
+    }
 
     $x = $pdo->prepare(
-        'SELECT ex.ExperienceID, ex.JobTitle, ex.Organization,
-                ex.StartDate, ex.EndDate
+        'SELECT ex.ExperienceName
          FROM opportunityexperience ox
-         JOIN experience ex
-           ON ex.ExperienceID = ox.ExperienceID
-         WHERE ox.OpportunityID = ?'
+         JOIN experience ex ON ex.ExperienceID = ox.ExperienceID
+         WHERE ox.OpportunityID = ?
+         ORDER BY ex.ExperienceName'
     );
     $x->execute([$editId]);
-    $experienceRows = $x->fetchAll(PDO::FETCH_ASSOC);
-}
-
-/* Load existing qualification and experience records if none are linked. */
-if (!$qualificationRows) {
-    $qualificationRows = $pdo->query(
-        'SELECT QualificationID, FieldOfStudy, DegreeLevel,
-                YearObtained, Duration
-         FROM qualification
-         ORDER BY QualificationID DESC'
-    )->fetchAll(PDO::FETCH_ASSOC);
-}
-
-if (!$experienceRows) {
-    $experienceRows = $pdo->query(
-        'SELECT ExperienceID, JobTitle, Organization, StartDate, EndDate
-         FROM experience
-         ORDER BY ExperienceID DESC'
-    )->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $name) {
+        $experienceRows[] = ['Name' => $name];
+    }
 }
 
 /* Ensure each section has at least one row. */
 if (!$qualificationRows) {
-    $qualificationRows = [[
-        'QualificationID' => '',
-        'FieldOfStudy' => '',
-        'DegreeLevel' => '',
-        'YearObtained' => '',
-        'Duration' => ''
-    ]];
+    $qualificationRows = [['Name' => '']];
 }
 
 if (!$experienceRows) {
-    $experienceRows = [[
-        'ExperienceID' => '',
-        'JobTitle' => '',
-        'Organization' => '',
-        'StartDate' => '',
-        'EndDate' => ''
-    ]];
+    $experienceRows = [['Name' => '']];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -135,13 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $decodedSkills = json_decode($_POST['skills'] ?? '[]', true);
-
-    $skills = array_values(array_unique(array_filter(
-        array_map(
-            'trim',
-            is_array($decodedSkills) ? $decodedSkills : []
-        )
-    )));
+    $skills = unique_names(is_array($decodedSkills) ? $decodedSkills : []);
 
     /* Read qualification rows submitted by the form. */
     $qualificationRows = [];
@@ -151,13 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             continue;
         }
 
-        $qualificationRows[] = [
-            'QualificationID' => (int)($row['id'] ?? 0),
-            'FieldOfStudy' => trim((string)($row['field_of_study'] ?? '')),
-            'DegreeLevel' => trim((string)($row['degree_level'] ?? '')),
-            'YearObtained' => trim((string)($row['year_obtained'] ?? '')),
-            'Duration' => trim((string)($row['duration'] ?? ''))
-        ];
+        $qualificationRows[] = ['Name' => trim((string)($row['name'] ?? ''))];
     }
 
     /* Read experience rows submitted by the form. */
@@ -168,34 +176,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             continue;
         }
 
-        $experienceRows[] = [
-            'ExperienceID' => (int)($row['id'] ?? 0),
-            'JobTitle' => trim((string)($row['job_title'] ?? '')),
-            'Organization' => trim((string)($row['organization'] ?? '')),
-            'StartDate' => trim((string)($row['start_date'] ?? '')),
-            'EndDate' => trim((string)($row['end_date'] ?? ''))
-        ];
+        $experienceRows[] = ['Name' => trim((string)($row['name'] ?? ''))];
     }
 
     /* Keep one blank row if the user removes all rows. */
     if (!$qualificationRows) {
-        $qualificationRows = [[
-            'QualificationID' => 0,
-            'FieldOfStudy' => '',
-            'DegreeLevel' => '',
-            'YearObtained' => '',
-            'Duration' => ''
-        ]];
+        $qualificationRows = [['Name' => '']];
     }
 
     if (!$experienceRows) {
-        $experienceRows = [[
-            'ExperienceID' => 0,
-            'JobTitle' => '',
-            'Organization' => '',
-            'StartDate' => '',
-            'EndDate' => ''
-        ]];
+        $experienceRows = [['Name' => '']];
     }
 
     /* Validate required opportunity fields. */
@@ -215,20 +205,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    /* DESCRIPTION: minimum 15 characters. */
-    if (
-        $v['description'] !== '' &&
-        mb_strlen($v['description'], 'UTF-8') < 15
-    ) {
-        $errors['description'] =
-            'Description must be at least 15 characters long.';
+    /* Length limits that match the database columns. */
+    $limits = [
+        'company_name' => 100,
+        'title' => 100,
+        'external_url' => 255
+    ];
+
+    foreach ($limits as $k => $max) {
+        if (empty($errors[$k]) && mb_strlen($v[$k], 'UTF-8') > $max) {
+            $errors[$k] = "Must not exceed $max characters.";
+        }
+    }
+
+    /* DESCRIPTION: minimum 15, maximum 1000 characters. */
+    if (empty($errors['description']) && $v['description'] !== '') {
+        $len = mb_strlen($v['description'], 'UTF-8');
+
+        if ($len < 15) {
+            $errors['description'] =
+                'Description must be at least 15 characters long.';
+        } elseif ($len > 1000) {
+            $errors['description'] =
+                'Description must not exceed 1000 characters.';
+        }
     }
 
     if (!$skills) {
         $errors['skills'] = 'Add at least one required skill.';
+    } else {
+        foreach ($skills as $name) {
+            if (mb_strlen($name, 'UTF-8') > 50) {
+                $errors['skills'] = 'Each skill must not exceed 50 characters.';
+                break;
+            }
+        }
     }
 
     if (
+        empty($errors['external_url']) &&
         $v['external_url'] !== '' &&
         (
             !filter_var($v['external_url'], FILTER_VALIDATE_URL) ||
@@ -261,87 +276,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['end_date'] = 'End date must be after the start date.';
     }
 
-    /* Validate qualification rows. */
+    /* Validate qualification names (optional, max 100 characters). */
     foreach ($qualificationRows as $i => $row) {
-        $fields = [
-            'field_of_study' => $row['FieldOfStudy'],
-            'degree_level' => $row['DegreeLevel'],
-            'year_obtained' => $row['YearObtained'],
-            'duration' => $row['Duration']
-        ];
-
-        $started = count(array_filter(
-            $fields,
-            fn($value) => $value !== ''
-        )) > 0;
-
-        if (!$started) {
-            continue;
-        }
-
-        foreach ($fields as $field => $value) {
-            if ($value === '') {
-                $errors["qualifications.$i.$field"] =
-                    'This field is required.';
-            }
-        }
-
-        if ($row['YearObtained'] !== '') {
-            if (
-                !ctype_digit($row['YearObtained']) ||
-                (int)$row['YearObtained'] < 1900 ||
-                (int)$row['YearObtained'] > (int)date('Y')
-            ) {
-                $errors["qualifications.$i.year_obtained"] =
-                    'Enter a valid year.';
-            }
+        if (mb_strlen($row['Name'], 'UTF-8') > 100) {
+            $errors["qualifications.$i.name"] =
+                'Must not exceed 100 characters.';
         }
     }
 
-    /* Validate experience rows. */
+    /* Validate experience names (optional, max 100 characters). */
     foreach ($experienceRows as $i => $row) {
-        $fields = [
-            'job_title' => $row['JobTitle'],
-            'organization' => $row['Organization'],
-            'start_date' => $row['StartDate'],
-            'end_date' => $row['EndDate']
-        ];
-
-        $started = count(array_filter(
-            $fields,
-            fn($value) => $value !== ''
-        )) > 0;
-
-        if (!$started) {
-            continue;
-        }
-
-        foreach ($fields as $field => $value) {
-            if ($value === '') {
-                $errors["experience.$i.$field"] =
-                    'This field is required.';
-            }
-        }
-
-        if (
-            $row['StartDate'] !== '' &&
-            $row['EndDate'] !== '' &&
-            $row['EndDate'] < $row['StartDate']
-        ) {
-            $errors["experience.$i.end_date"] =
-                'End date must be after the start date.';
-        }
-
-        $today = date('Y-m-d');
-
-        foreach ([
-            'start_date' => $row['StartDate'],
-            'end_date' => $row['EndDate']
-        ] as $field => $date) {
-            if ($date !== '' && $date > $today) {
-                $errors["experience.$i.$field"] =
-                    'Date cannot be in the future.';
-            }
+        if (mb_strlen($row['Name'], 'UTF-8') > 100) {
+            $errors["experience.$i.name"] =
+                'Must not exceed 100 characters.';
         }
     }
 
@@ -364,13 +311,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
 
             if ($editing) {
+                /* Status, price and view count are intentionally untouched. */
                 $pdo->prepare(
                     'UPDATE opportunity
                      SET Title = ?, Description = ?, Type = ?,
                          ApplicationMethod = ?, OpportunityProvider = ?,
                          ExternalURL = ?, StartDate = ?, EndDate = ?,
                          ApplicationDeadLine = ?, Location = ?
-                     WHERE OpportunityID = ?'
+                     WHERE OpportunityID = ? AND CreatedByAdminID IS NOT NULL'
                 )->execute([...$params, $editId]);
 
                 $oppId = $editId;
@@ -386,195 +334,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $oppId = (int)$pdo->lastInsertId();
             }
 
-            /* Sync skills. */
-            $pdo->prepare(
-                'DELETE FROM opportunityskill WHERE OpportunityID = ?'
-            )->execute([$oppId]);
-
-            $insSkill = $pdo->prepare(
-                'INSERT IGNORE INTO skill (SkillName) VALUES (?)'
-            );
-
-            $findSkill = $pdo->prepare(
-                'SELECT SkillID FROM skill WHERE SkillName = ?'
-            );
+            /* Re-link skills / qualifications / experience.
+               Only the link rows are replaced; the shared lookup rows stay. */
+            $pdo->prepare('DELETE FROM opportunityskill WHERE OpportunityID = ?')
+                ->execute([$oppId]);
+            $pdo->prepare('DELETE FROM opportunityqualification WHERE OpportunityID = ?')
+                ->execute([$oppId]);
+            $pdo->prepare('DELETE FROM opportunityexperience WHERE OpportunityID = ?')
+                ->execute([$oppId]);
 
             $linkSkill = $pdo->prepare(
-                'INSERT INTO opportunityskill (OpportunityID, SkillID)
+                'INSERT IGNORE INTO opportunityskill (OpportunityID, SkillID)
                  VALUES (?, ?)'
             );
-
             foreach ($skills as $name) {
-                $insSkill->execute([$name]);
-                $findSkill->execute([$name]);
-                $skillId = $findSkill->fetchColumn();
-
-                if ($skillId !== false) {
-                    $linkSkill->execute([$oppId, (int)$skillId]);
-                }
+                $linkSkill->execute([
+                    $oppId,
+                    find_or_create_lookup($pdo, 'skill', 'SkillID', 'SkillName', $name)
+                ]);
             }
-
-            /* Get qualification IDs already linked to this opportunity. */
-            $existingQ = $pdo->prepare(
-                'SELECT QualificationID
-                 FROM opportunityqualification
-                 WHERE OpportunityID = ?'
-            );
-            $existingQ->execute([$oppId]);
-
-            $existingQIds = array_map(
-                'intval',
-                $existingQ->fetchAll(PDO::FETCH_COLUMN)
-            );
-
-            $pdo->prepare(
-                'DELETE FROM opportunityqualification
-                 WHERE OpportunityID = ?'
-            )->execute([$oppId]);
 
             $linkQ = $pdo->prepare(
-                'INSERT INTO opportunityqualification
-                 (OpportunityID, QualificationID)
-                 VALUES (?, ?)'
+                'INSERT IGNORE INTO opportunityqualification
+                 (OpportunityID, QualificationID) VALUES (?, ?)'
             );
-
-            $insertQ = $pdo->prepare(
-                'INSERT INTO qualification
-                 (FieldOfStudy, DegreeLevel, Institution, YearObtained, Duration)
-                 VALUES (?, ?, ?, ?, ?)'
-            );
-
-            $updateQ = $pdo->prepare(
-                'UPDATE qualification
-                 SET FieldOfStudy = ?, DegreeLevel = ?,
-                     YearObtained = ?, Duration = ?
-                 WHERE QualificationID = ?'
-            );
-
-            foreach ($qualificationRows as $row) {
-                $field = trim($row['FieldOfStudy']);
-                $degree = trim($row['DegreeLevel']);
-                $year = trim($row['YearObtained']);
-                $duration = trim($row['Duration']);
-
-                $started = (
-                    $field !== '' ||
-                    $degree !== '' ||
-                    $year !== '' ||
-                    $duration !== ''
-                );
-
-                if (!$started) {
-                    continue;
-                }
-
-                $qualificationId = (int)$row['QualificationID'];
-
-                if (
-                    $qualificationId > 0 &&
-                    in_array($qualificationId, $existingQIds, true)
-                ) {
-                    $updateQ->execute([
-                        $field,
-                        $degree,
-                        $year,
-                        $duration,
-                        $qualificationId
-                    ]);
-                } else {
-                    $insertQ->execute([
-                        $field,
-                        $degree,
-                        '',
-                        $year,
-                        $duration
-                    ]);
-
-                    $qualificationId = (int)$pdo->lastInsertId();
-                }
-
-                $linkQ->execute([$oppId, $qualificationId]);
+            foreach (unique_names(array_column($qualificationRows, 'Name')) as $name) {
+                $linkQ->execute([
+                    $oppId,
+                    find_or_create_lookup(
+                        $pdo, 'qualification', 'QualificationID', 'QualificationName', $name
+                    )
+                ]);
             }
 
-            /* Sync experience rows. */
-            $existingX = $pdo->prepare(
-                'SELECT ExperienceID
-                 FROM opportunityexperience
-                 WHERE OpportunityID = ?'
-            );
-            $existingX->execute([$oppId]);
-
-            $existingXIds = array_map(
-                'intval',
-                $existingX->fetchAll(PDO::FETCH_COLUMN)
-            );
-
-            $pdo->prepare(
-                'DELETE FROM opportunityexperience
-                 WHERE OpportunityID = ?'
-            )->execute([$oppId]);
-
             $linkX = $pdo->prepare(
-                'INSERT INTO opportunityexperience
-                 (OpportunityID, ExperienceID)
-                 VALUES (?, ?)'
+                'INSERT IGNORE INTO opportunityexperience
+                 (OpportunityID, ExperienceID) VALUES (?, ?)'
             );
-
-            $insertX = $pdo->prepare(
-                'INSERT INTO experience
-                 (JobTitle, Organization, StartDate, EndDate)
-                 VALUES (?, ?, ?, ?)'
-            );
-
-            $updateX = $pdo->prepare(
-                'UPDATE experience
-                 SET JobTitle = ?, Organization = ?,
-                     StartDate = ?, EndDate = ?
-                 WHERE ExperienceID = ?'
-            );
-
-            foreach ($experienceRows as $row) {
-                $job = trim($row['JobTitle']);
-                $organization = trim($row['Organization']);
-                $start = trim($row['StartDate']);
-                $end = trim($row['EndDate']);
-
-                $started = (
-                    $job !== '' ||
-                    $organization !== '' ||
-                    $start !== '' ||
-                    $end !== ''
-                );
-
-                if (!$started) {
-                    continue;
-                }
-
-                $experienceId = (int)$row['ExperienceID'];
-
-                if (
-                    $experienceId > 0 &&
-                    in_array($experienceId, $existingXIds, true)
-                ) {
-                    $updateX->execute([
-                        $job,
-                        $organization,
-                        $start,
-                        $end,
-                        $experienceId
-                    ]);
-                } else {
-                    $insertX->execute([
-                        $job,
-                        $organization,
-                        $start,
-                        $end
-                    ]);
-
-                    $experienceId = (int)$pdo->lastInsertId();
-                }
-
-                $linkX->execute([$oppId, $experienceId]);
+            foreach (unique_names(array_column($experienceRows, 'Name')) as $name) {
+                $linkX->execute([
+                    $oppId,
+                    find_or_create_lookup(
+                        $pdo, 'experience', 'ExperienceID', 'ExperienceName', $name
+                    )
+                ]);
             }
 
             $pdo->commit();
@@ -1148,6 +951,15 @@ admin_header(
       scroll-behavior: auto !important;
     }
   }
+
+  .entry-row.entry-row-single {
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+
+  .entry-row.entry-row-single .entry-remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
 </style>
 
 <div class="page-content container"
@@ -1340,64 +1152,24 @@ admin_header(
       </label>
 
       <p class="entry-section-hint">
-        Optional. If you add a qualification, complete all its fields.
+        Optional. Add each required qualification or certificate as a separate entry.
       </p>
 
       <div class="entry-list" id="qualificationList">
         <?php foreach ($qualificationRows as $i => $q): ?>
-          <div class="entry-row qualification-row">
-            <input type="hidden"
-                   name="qualifications[<?= $i ?>][id]"
-                   value="<?= e((string)($q['QualificationID'] ?? '')) ?>">
-
+          <div class="entry-row entry-row-single qualification-row">
             <div class="form-group">
               <label class="form-label">
-                Field of Study <span class="req">*</span>
+                Qualification Name
               </label>
               <input type="text"
-                     name="qualifications[<?= $i ?>][field_of_study]"
-                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'field_of_study') ?>"
-                     value="<?= e($q['FieldOfStudy'] ?? '') ?>"
+                     maxlength="100"
+                     name="qualifications[<?= $i ?>][name]"
+                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'name') ?>"
+                     value="<?= e($q['Name'] ?? '') ?>"
+                     placeholder="e.g. Google Data Analytics Certificate"
                      data-row-field>
-              <?= rowError($errors, 'qualifications', $i, 'field_of_study') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                Degree Level <span class="req">*</span>
-              </label>
-              <input type="text"
-                     name="qualifications[<?= $i ?>][degree_level]"
-                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'degree_level') ?>"
-                     value="<?= e($q['DegreeLevel'] ?? '') ?>"
-                     placeholder="e.g. Bachelor's"
-                     data-row-field>
-              <?= rowError($errors, 'qualifications', $i, 'degree_level') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                Year Obtained <span class="req">*</span>
-              </label>
-              <input type="number" min="1900" max="<?= date('Y') ?>"
-                     name="qualifications[<?= $i ?>][year_obtained]"
-                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'year_obtained') ?>"
-                     value="<?= e((string)($q['YearObtained'] ?? '')) ?>"
-                     data-row-field>
-              <?= rowError($errors, 'qualifications', $i, 'year_obtained') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                Duration <span class="req">*</span>
-              </label>
-              <input type="text"
-                     name="qualifications[<?= $i ?>][duration]"
-                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'duration') ?>"
-                     value="<?= e((string)($q['Duration'] ?? '')) ?>"
-                     placeholder="e.g. 4 years"
-                     data-row-field>
-              <?= rowError($errors, 'qualifications', $i, 'duration') ?>
+              <?= rowError($errors, 'qualifications', $i, 'name') ?>
             </div>
 
             <button type="button" class="entry-remove"
@@ -1421,64 +1193,24 @@ admin_header(
       </label>
 
       <p class="entry-section-hint">
-        Optional. If you add an experience entry, complete all its fields.
+        Optional. Add each required experience as a separate entry.
       </p>
 
       <div class="entry-list" id="experienceList">
         <?php foreach ($experienceRows as $i => $x): ?>
-          <div class="entry-row experience-row">
-            <input type="hidden"
-                   name="experience[<?= $i ?>][id]"
-                   value="<?= e((string)($x['ExperienceID'] ?? '')) ?>">
-
+          <div class="entry-row entry-row-single experience-row">
             <div class="form-group">
               <label class="form-label">
-                Job Title <span class="req">*</span>
+                Experience Name
               </label>
               <input type="text"
-                     name="experience[<?= $i ?>][job_title]"
-                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'job_title') ?>"
-                     value="<?= e($x['JobTitle'] ?? '') ?>"
+                     maxlength="100"
+                     name="experience[<?= $i ?>][name]"
+                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'name') ?>"
+                     value="<?= e($x['Name'] ?? '') ?>"
+                     placeholder="e.g. Customer Service"
                      data-row-field>
-              <?= rowError($errors, 'experience', $i, 'job_title') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                Organization <span class="req">*</span>
-              </label>
-              <input type="text"
-                     name="experience[<?= $i ?>][organization]"
-                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'organization') ?>"
-                     value="<?= e($x['Organization'] ?? '') ?>"
-                     data-row-field>
-              <?= rowError($errors, 'experience', $i, 'organization') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                Start Date <span class="req">*</span>
-              </label>
-              <input type="date"
-                     name="experience[<?= $i ?>][start_date]"
-                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'start_date') ?>"
-                     value="<?= e($x['StartDate'] ?? '') ?>"
-                     max="<?= date('Y-m-d') ?>"
-                     data-row-field>
-              <?= rowError($errors, 'experience', $i, 'start_date') ?>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                End Date <span class="req">*</span>
-              </label>
-              <input type="date"
-                     name="experience[<?= $i ?>][end_date]"
-                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'end_date') ?>"
-                     value="<?= e($x['EndDate'] ?? '') ?>"
-                     max="<?= date('Y-m-d') ?>"
-                     data-row-field>
-              <?= rowError($errors, 'experience', $i, 'end_date') ?>
+              <?= rowError($errors, 'experience', $i, 'name') ?>
             </div>
 
             <button type="button" class="entry-remove"
@@ -1603,32 +1335,20 @@ admin_header(
   function createEntryRow(type, index) {
     const row = document.createElement("div");
 
-    row.className = "entry-row " +
+    row.className = "entry-row entry-row-single " +
       (type === "qualification" ? "qualification-row" : "experience-row");
 
     const definitions = type === "qualification"
       ? [
-          { key: "field_of_study", label: "Field of Study", type: "text", placeholder: "" },
-          { key: "degree_level", label: "Degree Level", type: "text", placeholder: "e.g. Bachelor's" },
-          { key: "year_obtained", label: "Year Obtained", type: "number", placeholder: "" },
-          { key: "duration", label: "Duration", type: "text", placeholder: "e.g. 4 years" }
+          { key: "name", label: "Qualification Name", type: "text", placeholder: "e.g. Google Data Analytics Certificate" }
         ]
       : [
-          { key: "job_title", label: "Job Title", type: "text", placeholder: "" },
-          { key: "organization", label: "Organization", type: "text", placeholder: "" },
-          { key: "start_date", label: "Start Date", type: "date", placeholder: "" },
-          { key: "end_date", label: "End Date", type: "date", placeholder: "" }
+          { key: "name", label: "Experience Name", type: "text", placeholder: "e.g. Customer Service" }
         ];
 
     const prefix = type === "qualification"
       ? "qualifications"
       : "experience";
-
-    const hiddenId = document.createElement("input");
-    hiddenId.type = "hidden";
-    hiddenId.name = `${prefix}[${index}][id]`;
-    hiddenId.value = "";
-    row.appendChild(hiddenId);
 
     definitions.forEach(def => {
       const group = document.createElement("div");
@@ -1636,12 +1356,7 @@ admin_header(
 
       const label = document.createElement("label");
       label.className = "form-label";
-      label.textContent = def.label + " ";
-
-      const star = document.createElement("span");
-      star.className = "req";
-      star.textContent = "*";
-      label.appendChild(star);
+      label.textContent = def.label;
 
       const field = document.createElement("input");
       field.type = def.type;
@@ -1650,18 +1365,6 @@ admin_header(
       field.dataset.rowField = "";
       field.className = "form-control";
       field.placeholder = def.placeholder;
-
-      if (def.key === "year_obtained") {
-        field.min = "1900";
-        field.max = String(new Date().getFullYear());
-      }
-
-      if (
-        type === "experience" &&
-        (def.key === "start_date" || def.key === "end_date")
-      ) {
-        field.max = new Date().toISOString().slice(0, 10);
-      }
 
       group.appendChild(label);
       group.appendChild(field);
@@ -1688,17 +1391,9 @@ admin_header(
       ? "qualification-row"
       : "experience-row";
 
-    const fields = type === "qualification"
-      ? ["field_of_study", "degree_level", "year_obtained", "duration"]
-      : ["job_title", "organization", "start_date", "end_date"];
+    const fields = ["name"];
 
     container.querySelectorAll("." + className).forEach((row, index) => {
-      const hiddenInput = row.querySelector('input[type="hidden"]');
-
-      if (hiddenInput) {
-        hiddenInput.name = `${prefix}[${index}][id]`;
-      }
-
       fields.forEach(fieldName => {
         const field =
           row.querySelector(`[name*="[${fieldName}]"]`) ||
@@ -1761,15 +1456,10 @@ admin_header(
         field.classList.remove("invalid");
       });
 
-      const idInput = row.querySelector('input[type="hidden"]');
-
-      if (idInput) {
-        idInput.value = "";
-      }
     }
   });
 
-  /* Highlight incomplete rows before submitting. */
+  /* Client-side checks before submitting. */
   document.getElementById("oppForm").addEventListener("submit", event => {
     let firstInvalid = null;
 
@@ -1801,45 +1491,6 @@ admin_header(
         descriptionError.remove();
       }
     }
-
-    document.querySelectorAll(".entry-list").forEach(container => {
-      const rows = container.querySelectorAll(".entry-row");
-
-      rows.forEach(row => {
-        const fields = Array.from(
-          row.querySelectorAll("[data-row-field]")
-        );
-
-        const started = fields.some(
-          field => field.value.trim() !== ""
-        );
-
-        fields.forEach(field => {
-          field.classList.remove("invalid");
-
-          if (started && field.value.trim() === "") {
-            field.classList.add("invalid");
-            firstInvalid ||= field;
-          }
-        });
-
-        if (row.classList.contains("experience-row")) {
-          const start = row.querySelector('[name*="[start_date]"]');
-          const end = row.querySelector('[name*="[end_date]"]');
-
-          if (
-            start &&
-            end &&
-            start.value &&
-            end.value &&
-            end.value < start.value
-          ) {
-            end.classList.add("invalid");
-            firstInvalid ||= end;
-          }
-        }
-      });
-    });
 
     if (firstInvalid) {
       event.preventDefault();

@@ -1,4 +1,3 @@
-
 <?php
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
@@ -86,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
     $check = $pdo->prepare("
         SELECT 1
-        FROM favourite
+        FROM favorite
         WHERE UserID = ? AND OpportunityID = ?
         LIMIT 1
     ");
@@ -94,13 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
     if ($check->fetchColumn()) {
         $delete = $pdo->prepare("
-            DELETE FROM favourite
+            DELETE FROM favorite
             WHERE UserID = ? AND OpportunityID = ?
         ");
         $delete->execute([$userId, $opportunityId]);
     } else {
         $insert = $pdo->prepare("
-            INSERT INTO favourite (UserID, OpportunityID)
+            INSERT INTO favorite (UserID, OpportunityID)
             VALUES (?, ?)
         ");
         $insert->execute([$userId, $opportunityId]);
@@ -132,9 +131,16 @@ if ($userName === '') {
 $profileFields = [
     !empty($me['Phone']),
     !empty($me['EducationalStatus']),
-    !empty($me['FieldOfStudy']),
     !empty($me['ProfilePicture'])
 ];
+
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM userstudy
+    WHERE UserID = ?
+");
+$stmt->execute([$userId]);
+$hasStudy = (int)$stmt->fetchColumn() > 0;
 
 $stmt = $pdo->prepare("
     SELECT COUNT(*)
@@ -160,6 +166,7 @@ $stmt = $pdo->prepare("
 $stmt->execute([$userId]);
 $hasSkills = (int)$stmt->fetchColumn() > 0;
 
+$profileFields[] = $hasStudy;
 $profileFields[] = $hasExperience;
 $profileFields[] = $hasQualifications;
 $profileFields[] = $hasSkills;
@@ -171,7 +178,7 @@ $profileCompletion = (int)round(
 
 /* ---------- Notifications ---------- */
 $stmt = $pdo->prepare("
-    SELECT n.NotificationID, n.Message, n.CreatedAt, n.IsRead
+    SELECT n.NotificationID, n.Message, n.CreatedAt, un.IsRead
     FROM usernotification un
     JOIN notification n
         ON n.NotificationID = un.NotificationID
@@ -182,18 +189,10 @@ $stmt = $pdo->prepare("
 $stmt->execute([$userId]);
 $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$unreadNotifications = 0;
-
-foreach ($notifications as $notification) {
-    if (empty($notification['IsRead'])) {
-        $unreadNotifications++;
-    }
-}
-
 /* ---------- Favorite opportunity IDs ---------- */
 $stmt = $pdo->prepare("
     SELECT OpportunityID
-    FROM favourite
+    FROM favorite
     WHERE UserID = ?
 ");
 $stmt->execute([$userId]);
@@ -215,7 +214,7 @@ $stmt = $pdo->prepare("
         o.Title,
         o.ApplicationDeadLine,
         o.OpportunityProvider
-    FROM favourite f
+    FROM favorite f
     JOIN opportunity o
         ON o.OpportunityID = f.OpportunityID
     WHERE f.UserID = ?
@@ -233,52 +232,6 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$userId]);
 $deadlines = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-/* ---------- Recommended opportunities ---------- */
-/*
- * Rank open opportunities by the number of matching skills.
- * Opportunities without a skill match may still appear after
- * opportunities with matching skills.
- */
-$stmt = $pdo->prepare("
-    SELECT
-        o.OpportunityID,
-        o.Title,
-        o.OpportunityProvider,
-        o.Type,
-        o.Location,
-        o.ApplicationDeadLine,
-        COUNT(DISTINCT us.SkillID) AS MatchingSkills
-    FROM opportunity o
-    LEFT JOIN opportunityskill os
-        ON os.OpportunityID = o.OpportunityID
-    LEFT JOIN userskill us
-        ON us.SkillID = os.SkillID
-       AND us.UserID = ?
-    WHERE o.Status = 'Open'
-      AND (
-          o.ApplicationDeadLine IS NULL
-          OR o.ApplicationDeadLine >= CURDATE()
-      )
-    GROUP BY
-        o.OpportunityID,
-        o.Title,
-        o.OpportunityProvider,
-        o.Type,
-        o.Location,
-        o.ApplicationDeadLine
-    ORDER BY
-        MatchingSkills DESC,
-        CASE
-            WHEN o.ApplicationDeadLine IS NULL THEN 1
-            ELSE 0
-        END ASC,
-        o.ApplicationDeadLine ASC,
-        o.OpportunityID DESC
-    LIMIT 3
-");
-$stmt->execute([$userId]);
-$recommended = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ---------- Opportunity preview ---------- */
 $stmt = $pdo->prepare("
@@ -532,6 +485,11 @@ user_header($me, 'Home', 'user-home');
     font-size: 2rem;
     font-weight: 800;
     line-height: 1.3;
+}
+
+.user-dashboard .stat-number.coming-soon-text {
+    font-size: 1.35rem;
+    line-height: 1.5;
 }
 
 .user-dashboard .stat-note {
@@ -1132,29 +1090,29 @@ user_header($me, 'Home', 'user-home');
         <!-- Statistics -->
         <section class="stat-grid" aria-label="Dashboard overview">
 
-            <div class="dashboard-card stat-card">
+            <a href="skill-gap.php" class="dashboard-card stat-card">
                 <div class="stat-top">
-                    <span class="stat-title">Notifications</span>
+                    <span class="stat-title">Skill Gap</span>
 
-                    <span class="stat-icon" aria-hidden="true">♧</span>
+                    <span class="stat-icon" aria-hidden="true">◈</span>
                 </div>
 
                 <div>
-                    <span class="stat-number">
-                        <?= $unreadNotifications ?>
+                    <span class="stat-number coming-soon-text">
+                        Coming Soon
                     </span>
 
                     <span class="stat-note">
-                        Unread notifications
+                        Skill gap analysis will be activated soon.
                     </span>
                 </div>
 
                 <div style="margin-top:14px;">
-                    <a class="dashboard-link" href="notifications.php">
-                        View notifications &rarr;
-                    </a>
+                    <span class="dashboard-link">
+                        View skill gap &rarr;
+                    </span>
                 </div>
-            </div>
+            </a>
 
             <a href="dashboard-user.php"
                class="dashboard-card stat-card">
@@ -1208,142 +1166,17 @@ user_header($me, 'Home', 'user-home');
                         <span class="ai-badge">AI</span>
                         <h2>Recommended Opportunities</h2>
                     </div>
-
-                    <a href="recommended.php" class="dashboard-link">
-                        View all &rarr;
-                    </a>
                 </div>
 
-                <p class="recommendation-note">
-                    Opportunities ranked by how well their required skills
-                    match the skills in your profile.
-                </p>
+                <div class="empty-state">
+                    <div class="empty-icon" aria-hidden="true">✦</div>
 
-                <?php if (!$hasSkills): ?>
+                    <h3>Coming soon</h3>
 
-                    <div class="dashboard-notice" style="margin-bottom:16px;">
-                        <span aria-hidden="true">✦</span>
-                        <span>
-                            Add your skills to your profile to get more relevant
-                            skill-based recommendations.
-                        </span>
-                    </div>
-
-                <?php endif; ?>
-
-                <?php if ($recommended): ?>
-
-                    <div class="recommendation-list">
-
-                        <?php foreach ($recommended as $o): ?>
-
-                            <?php
-                            $oppId = (int)$o['OpportunityID'];
-                            $isFavorite = in_array($oppId, $favoriteIds, true);
-                            $companyName = dashboard_company_name($o);
-                            ?>
-
-                            <article class="opportunity-card">
-
-                                <div class="opportunity-top">
-
-                                    <div class="company-info">
-
-                                        <div class="company-logo"
-                                             aria-hidden="true">
-                                            <?= e(mb_strtoupper(
-                                                mb_substr($companyName, 0, 1, 'UTF-8'),
-                                                'UTF-8'
-                                            )) ?>
-                                        </div>
-
-                                        <div class="company-details">
-                                            <h3 class="opportunity-title">
-                                                <?= e($o['Title']) ?>
-                                            </h3>
-
-                                            <div class="company-name">
-                                                <?= e($companyName) ?>
-                                            </div>
-                                        </div>
-
-                                    </div>
-
-                                    <form method="post" class="favorite-form">
-
-                                        <input type="hidden" name="csrf"
-                                               value="<?= e(csrf_token()) ?>">
-
-                                        <input type="hidden" name="action"
-                                               value="toggle_favorite">
-
-                                        <input type="hidden" name="opportunity_id"
-                                               value="<?= $oppId ?>">
-
-                                        <input type="hidden" name="return_to"
-                                               value="home.php">
-
-                                        <button type="submit"
-                                                class="favorite-button <?= $isFavorite ? 'is-favorite' : '' ?>"
-                                                aria-label="<?= $isFavorite ? 'Remove from favorites' : 'Add to favorites' ?>"
-                                                title="<?= $isFavorite ? 'Remove from favorites' : 'Save to favorites' ?>">
-
-                                            <span aria-hidden="true">
-                                                <?= $isFavorite ? '♥' : '♡' ?>
-                                            </span>
-
-                                        </button>
-                                    </form>
-
-                                </div>
-
-                                <?php if ((int)$o['MatchingSkills'] > 0): ?>
-                                    <div class="match-label">
-                                        <span aria-hidden="true">✓</span>
-                                        Matches <?= (int)$o['MatchingSkills'] ?>
-                                        of your skills
-                                    </div>
-                                <?php endif; ?>
-
-                                <div class="opportunity-meta">
-
-                                    <span class="badge <?= ($o['Type'] ?? '') === 'Course' ? 'badge-course' : 'badge-program' ?>">
-                                        <?= e($o['Type'] ?? 'Opportunity') ?>
-                                    </span>
-
-                                    <span>
-                                        <?= e($o['Location'] ?: 'Location not specified') ?>
-                                    </span>
-
-                                </div>
-
-                                <div class="opportunity-footer">
-                                    <a class="btn btn-outline btn-sm"
-                                       href="opportunity-detail.php?id=<?= $oppId ?>">
-                                        View Details
-                                    </a>
-                                </div>
-
-                            </article>
-
-                        <?php endforeach; ?>
-
-                    </div>
-
-                <?php else: ?>
-
-                    <div class="empty-state">
-                        <div class="empty-icon" aria-hidden="true">✦</div>
-
-                        <h3>No recommendations available yet</h3>
-
-                        <p>
-                            New opportunities will appear here when they become
-                            available.
-                        </p>
-                    </div>
-
-                <?php endif; ?>
+                    <p>
+                        Personalized recommendations will be activated soon.
+                    </p>
+                </div>
 
             </div>
         </section>

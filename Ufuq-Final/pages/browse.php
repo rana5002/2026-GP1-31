@@ -1,4 +1,3 @@
-
 <?php
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
@@ -98,6 +97,25 @@ function browse_initial($name): string
     return strtoupper(substr($name, 0, 1));
 }
 
+/* Clean a list of IDs coming from the query string. */
+function browse_int_list($value): array
+{
+    if (!is_array($value)) {
+        return [];
+    }
+
+    $ids = [];
+
+    foreach ($value as $item) {
+        $id = filter_var($item, FILTER_VALIDATE_INT);
+        if ($id !== false && $id > 0) {
+            $ids[$id] = $id;
+        }
+    }
+
+    return array_values($ids);
+}
+
 /* ---------- Handle favorite button ---------- */
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST'
@@ -137,7 +155,7 @@ if (
         // Check whether the opportunity is already a favorite.
         $favoriteCheck = $pdo->prepare(
             'SELECT 1
-             FROM favourite
+             FROM favorite
              WHERE UserID = ?
                AND OpportunityID = ?
              LIMIT 1'
@@ -146,7 +164,7 @@ if (
 
         if ($favoriteCheck->fetchColumn()) {
             $delete = $pdo->prepare(
-                'DELETE FROM favourite
+                'DELETE FROM favorite
                  WHERE UserID = ?
                    AND OpportunityID = ?'
             );
@@ -154,7 +172,7 @@ if (
 
         } else {
             $insert = $pdo->prepare(
-                'INSERT INTO favourite (UserID, OpportunityID)
+                'INSERT INTO favorite (UserID, OpportunityID)
                  VALUES (?, ?)'
             );
             $insert->execute([$uid, $opportunityId]);
@@ -190,6 +208,13 @@ if (
         }
     }
 
+    foreach (['skill', 'experience', 'qualification'] as $key) {
+        $ids = browse_int_list($_GET[$key] ?? []);
+        if ($ids) {
+            $returnFilters[$key] = $ids;
+        }
+    }
+
     $returnFilters['msg'] = 'favorite_updated';
 
     header('Location: browse.php?' . http_build_query($returnFilters));
@@ -211,6 +236,10 @@ $duration = isset($_GET['duration']) && is_string($_GET['duration'])
 
 $company = isset($_GET['company']) && is_string($_GET['company'])
     ? trim($_GET['company']) : '';
+
+$skillIds = browse_int_list($_GET['skill'] ?? []);
+$experienceIds = browse_int_list($_GET['experience'] ?? []);
+$qualificationIds = browse_int_list($_GET['qualification'] ?? []);
 
 $allowedDurations = [
     'Under 2 weeks',
@@ -244,6 +273,25 @@ if ($method !== '') {
 if ($company !== '') {
     $where[] = 'o.OpportunityProvider LIKE ?';
     $params[] = '%' . $company . '%';
+}
+
+/* Skills / experience / qualifications: match ANY of the selected items. */
+$relationFilters = [
+    ['ids' => $skillIds,         'table' => 'opportunityskill',         'column' => 'SkillID'],
+    ['ids' => $experienceIds,    'table' => 'opportunityexperience',    'column' => 'ExperienceID'],
+    ['ids' => $qualificationIds, 'table' => 'opportunityqualification', 'column' => 'QualificationID'],
+];
+
+foreach ($relationFilters as $rf) {
+    if ($rf['ids']) {
+        $marks = implode(',', array_fill(0, count($rf['ids']), '?'));
+        $where[] = 'EXISTS (SELECT 1 FROM ' . $rf['table'] . ' rel
+                            WHERE rel.OpportunityID = o.OpportunityID
+                              AND rel.' . $rf['column'] . ' IN (' . $marks . '))';
+        foreach ($rf['ids'] as $id) {
+            $params[] = $id;
+        }
+    }
 }
 
 /*
@@ -303,10 +351,22 @@ $methods = $pdo->query(
      ORDER BY ApplicationMethod"
 )->fetchAll(PDO::FETCH_COLUMN);
 
+$skillOptions = $pdo->query(
+    'SELECT SkillID AS id, SkillName AS name FROM skill ORDER BY SkillName'
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$experienceOptions = $pdo->query(
+    'SELECT ExperienceID AS id, ExperienceName AS name FROM experience ORDER BY ExperienceName'
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$qualificationOptions = $pdo->query(
+    'SELECT QualificationID AS id, QualificationName AS name FROM qualification ORDER BY QualificationName'
+)->fetchAll(PDO::FETCH_ASSOC);
+
 /* ---------- Current user's favorites ---------- */
 $favStmt = $pdo->prepare(
     'SELECT OpportunityID
-     FROM favourite
+     FROM favorite
      WHERE UserID = ?'
 );
 $favStmt->execute([$uid]);
@@ -322,6 +382,9 @@ $hasFilters = (
     || $method !== ''
     || $duration !== ''
     || $company !== ''
+    || $skillIds
+    || $experienceIds
+    || $qualificationIds
 );
 
 /* ---------- Safe filter query string ---------- */
@@ -333,10 +396,58 @@ foreach (['type', 'location', 'method', 'duration', 'company'] as $key) {
     }
 }
 
+if ($skillIds) {
+    $filterQuery['skill'] = $skillIds;
+}
+if ($experienceIds) {
+    $filterQuery['experience'] = $experienceIds;
+}
+if ($qualificationIds) {
+    $filterQuery['qualification'] = $qualificationIds;
+}
+
 $filterAction = 'browse.php';
 
 if ($filterQuery) {
     $filterAction .= '?' . http_build_query($filterQuery);
+}
+
+/* Searchable multi-select dropdown (same look as the other filters). */
+function browse_multi_dropdown(string $name, string $label, array $options, array $selectedIds): void
+{
+    $selectedNames = [];
+    foreach ($options as $opt) {
+        if (in_array((int)$opt['id'], $selectedIds, true)) {
+            $selectedNames[] = $opt['name'];
+        }
+    }
+    $summary = $selectedNames
+        ? (count($selectedNames) === 1 ? $selectedNames[0] : count($selectedNames) . ' selected')
+        : 'Any ' . $label;
+    ?>
+    <div class="multi-dropdown" data-multi-dropdown data-placeholder="<?= browse_h('Any ' . $label) ?>">
+        <button type="button" class="form-control multi-dropdown-toggle" aria-haspopup="listbox" aria-expanded="false">
+            <span class="multi-dropdown-label <?= $selectedNames ? '' : 'is-placeholder' ?>"><?= browse_h($summary) ?></span>
+            <span class="multi-dropdown-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="multi-dropdown-panel" hidden>
+            <input type="text" class="form-control multi-dropdown-search"
+                   placeholder="Search <?= browse_h($label) ?>..." autocomplete="off">
+            <div class="multi-dropdown-list" role="listbox" aria-multiselectable="true">
+                <?php foreach ($options as $opt): ?>
+                    <label class="multi-dropdown-option" data-text="<?= browse_h(mb_strtolower($opt['name'], 'UTF-8')) ?>">
+                        <input type="checkbox" name="<?= browse_h($name) ?>[]"
+                               value="<?= (int)$opt['id'] ?>"
+                               data-name="<?= browse_h($opt['name']) ?>"
+                               <?= in_array((int)$opt['id'], $selectedIds, true) ? 'checked' : '' ?>>
+                        <span><?= browse_h($opt['name']) ?></span>
+                    </label>
+                <?php endforeach; ?>
+                <div class="multi-dropdown-empty" hidden>No matches found</div>
+            </div>
+        </div>
+    </div>
+    <?php
 }
 
 /* ---------- Header ---------- */
@@ -945,6 +1056,101 @@ user_header($me, 'Browse', 'browse');
     }
 }
 
+/* ===== Searchable multi-select dropdowns ===== */
+.user-browse .multi-dropdown {
+    position: relative;
+}
+
+.user-browse .multi-dropdown-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.user-browse .multi-dropdown-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-browse .multi-dropdown-label.is-placeholder {
+    color: var(--browse-muted);
+}
+
+.user-browse .multi-dropdown-caret {
+    flex-shrink: 0;
+    color: var(--browse-muted);
+    font-size: .8rem;
+    transition: transform .18s ease;
+}
+
+.user-browse .multi-dropdown.is-open .multi-dropdown-caret {
+    transform: rotate(180deg);
+}
+
+.user-browse .multi-dropdown-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    padding: 10px;
+    border: 1px solid var(--browse-border);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(40,26,70,.14);
+}
+
+.user-browse .multi-dropdown-panel[hidden] {
+    display: none !important;
+}
+
+.user-browse .multi-dropdown-list {
+    max-height: 210px;
+    margin-top: 8px;
+    overflow-y: auto;
+}
+
+.user-browse .multi-dropdown-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 8px;
+    border-radius: 8px;
+    color: #514b5d;
+    font-size: .87rem;
+    line-height: 1.5;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.user-browse .multi-dropdown-option:hover {
+    background: var(--browse-lavender);
+}
+
+.user-browse .multi-dropdown-option[hidden] {
+    display: none !important;
+}
+
+.user-browse .multi-dropdown-option input {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin: 3px 0 0;
+    accent-color: var(--browse-purple);
+    cursor: pointer;
+}
+
+.user-browse .multi-dropdown-empty {
+    padding: 10px 8px;
+    color: var(--browse-muted);
+    font-size: .85rem;
+    text-align: center;
+}
+
 @media (max-width: 950px) {
     .user-browse .opportunity-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1221,6 +1427,23 @@ user_header($me, 'Browse', 'browse');
                     >
                 </div>
 
+                <!-- Skills -->
+                <div class="filter-group">
+                    <h3>Skills</h3>
+                    <?php browse_multi_dropdown('skill', 'skills', $skillOptions, $skillIds); ?>
+                </div>
+
+                <!-- Experience -->
+                <div class="filter-group">
+                    <h3>Experience</h3>
+                    <?php browse_multi_dropdown('experience', 'experience', $experienceOptions, $experienceIds); ?>
+                </div>
+
+                <!-- Qualifications -->
+                <div class="filter-group">
+                    <h3>Qualifications</h3>
+                    <?php browse_multi_dropdown('qualification', 'qualifications', $qualificationOptions, $qualificationIds); ?>
+                </div>
             </div>
 
             <div class="filter-actions">
@@ -1484,6 +1707,77 @@ user_header($me, 'Browse', 'browse');
         toggleText.textContent = willOpen
             ? 'Hide Filters'
             : 'Show Filters';
+    });
+})();
+(function () {
+    const dropdowns = document.querySelectorAll('[data-multi-dropdown]');
+
+    function closeAll(except) {
+        dropdowns.forEach(function (dd) {
+            if (dd === except) return;
+            dd.querySelector('.multi-dropdown-panel').hidden = true;
+            dd.classList.remove('is-open');
+            dd.querySelector('.multi-dropdown-toggle').setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    dropdowns.forEach(function (dd) {
+        const toggle = dd.querySelector('.multi-dropdown-toggle');
+        const panel = dd.querySelector('.multi-dropdown-panel');
+        const search = dd.querySelector('.multi-dropdown-search');
+        const label = dd.querySelector('.multi-dropdown-label');
+        const options = dd.querySelectorAll('.multi-dropdown-option');
+        const empty = dd.querySelector('.multi-dropdown-empty');
+
+        function updateLabel() {
+            const checked = dd.querySelectorAll('input[type="checkbox"]:checked');
+            if (checked.length === 0) {
+                label.textContent = dd.dataset.placeholder;
+                label.classList.add('is-placeholder');
+            } else {
+                label.textContent = checked.length === 1
+                    ? checked[0].dataset.name
+                    : checked.length + ' selected';
+                label.classList.remove('is-placeholder');
+            }
+        }
+
+        toggle.addEventListener('click', function () {
+            const willOpen = panel.hidden;
+            closeAll(dd);
+            panel.hidden = !willOpen;
+            dd.classList.toggle('is-open', willOpen);
+            toggle.setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) search.focus();
+        });
+
+        search.addEventListener('input', function () {
+            const q = search.value.trim().toLowerCase();
+            let visible = 0;
+            options.forEach(function (opt) {
+                const match = opt.dataset.text.indexOf(q) !== -1;
+                opt.hidden = !match;
+                if (match) visible++;
+            });
+            empty.hidden = visible !== 0;
+        });
+
+        search.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') e.preventDefault();
+        });
+
+        dd.addEventListener('change', updateLabel);
+
+        dd.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeAll(null);
+                toggle.focus();
+            }
+        });
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('[data-multi-dropdown]')) closeAll(null);
     });
 })();
 </script>

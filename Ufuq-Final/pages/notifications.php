@@ -24,13 +24,14 @@ if (!$me) {
     exit('User profile was not found.');
 }
 
-/* Get notifications for this user */
+/* Get notifications for this user.
+   IsRead belongs to the usernotification relationship table. */
 $stmt = $pdo->prepare(
     'SELECT
         n.NotificationID,
         n.Message,
         n.CreatedAt,
-        n.IsRead,
+        un.IsRead,
         n.Type,
         n.OpportunityID,
         o.Title AS OpportunityTitle
@@ -52,6 +53,18 @@ foreach ($notifications as $notification) {
     if ((int) $notification['IsRead'] === 0) {
         $unreadCount++;
     }
+}
+
+/* Opening this page marks everything as read.
+   $notifications above was loaded first, so the cards still show which
+   ones were new on this visit; the bell badge in the header is cleared. */
+if ($unreadCount > 0) {
+    $stmt = $pdo->prepare(
+        'UPDATE usernotification
+         SET IsRead = 1
+         WHERE UserID = ? AND IsRead = 0'
+    );
+    $stmt->execute([$uid]);
 }
 
 /* Notification type labels and icons */
@@ -110,86 +123,158 @@ user_header($me, 'Notifications', '');
    Ufuq Notifications Page
 ============================ */
 
-.notifications-page {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 34px 24px 64px;
-    color: var(--color-text, #253047);
+.user-notifications {
+    --user-purple: #39265f;
+    --user-purple-dark: #281a46;
+    --user-lavender: #f0ebf8;
+    --user-gold: #e2a94b;
+    --user-bg: #faf6ef;
+    --user-text: #29243a;
+    --user-muted: #777184;
+    --user-border: #e9e3ed;
+
+    color: var(--user-text);
+    padding-bottom: 56px;
+    background: var(--user-bg);
+    min-height: 70vh;
 }
 
-.notifications-heading {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 24px;
+.user-notifications *,
+.user-notifications *::before,
+.user-notifications *::after {
+    box-sizing: border-box;
+}
+
+/* ----- Banner ----- */
+.user-notifications .notifications-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 38px 0 42px;
     margin-bottom: 28px;
+    background: linear-gradient(125deg, #281a46 0%, #39265f 55%, #49316f 100%);
+    color: #fff;
 }
 
-.notifications-heading h1 {
-    margin: 0 0 8px;
-    font-size: clamp(1.65rem, 3vw, 2.1rem);
-    font-weight: 750;
-    letter-spacing: -0.6px;
+.user-notifications .notifications-hero::before,
+.user-notifications .notifications-hero::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
 }
 
-.notifications-heading p {
-    margin: 0;
-    color: var(--color-muted, #747d8d);
-    font-size: 0.96rem;
-    line-height: 1.7;
+.user-notifications .notifications-hero::before {
+    width: 250px;
+    height: 250px;
+    right: 7%;
+    top: -150px;
+    border: 35px solid rgba(255,255,255,.07);
 }
 
-.notifications-count {
+.user-notifications .notifications-hero::after {
+    width: 190px;
+    height: 190px;
+    right: 23%;
+    bottom: -145px;
+    background: rgba(226,169,75,.10);
+}
+
+.user-notifications .notifications-hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 22px;
+}
+
+.user-notifications .hero-label {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 15px;
-    border: 1px solid var(--color-border, #e4e8ef);
-    border-radius: 12px;
-    background: var(--color-surface, #fff);
-    white-space: nowrap;
-    font-size: 0.88rem;
-    color: var(--color-text, #253047);
+    padding: 6px 12px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 30px;
+    background: rgba(255,255,255,.08);
+    font-size: .84rem;
+    letter-spacing: .2px;
 }
 
-.notifications-count strong {
+.user-notifications .notifications-hero h1 {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(1.65rem, 3vw, 2.15rem);
+    font-weight: 750;
+    line-height: 1.5;
+}
+
+.user-notifications .notifications-hero p {
+    margin: 8px 0 0;
+    color: rgba(255,255,255,.82);
+    font-size: .96rem;
+    line-height: 1.8;
+}
+
+.user-notifications .notifications-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 14px;
+    background: rgba(255,255,255,.08);
+    color: #fff;
+    white-space: nowrap;
+    font-size: .88rem;
+}
+
+.user-notifications .notifications-count strong {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 25px;
-    height: 25px;
-    padding: 0 7px;
-    border-radius: 8px;
-    background: var(--color-primary-tint, #edf1fa);
-    color: var(--color-primary, #263b70);
-    font-size: 0.8rem;
+    min-width: 27px;
+    height: 27px;
+    padding: 0 8px;
+    border-radius: 9px;
+    background: var(--user-gold);
+    color: #3a2a0a;
+    font-size: .82rem;
+    font-weight: 800;
 }
 
-.notifications-count strong.zero {
-    background: #edf7f0;
-    color: #36734c;
+.user-notifications .notifications-count strong.zero {
+    background: rgba(255,255,255,.2);
+    color: #fff;
 }
 
-.notifications-summary {
+.user-notifications .notifications-content {
+    max-width: 1000px;
+    animation: notifFadeUp .5s ease both;
+}
+
+/* ----- Summary cards ----- */
+.user-notifications .notifications-summary {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
     margin-bottom: 28px;
 }
 
-.notification-stat {
+.user-notifications .notification-stat {
     display: flex;
     align-items: center;
     gap: 15px;
     min-width: 0;
     padding: 20px;
-    border: 1px solid var(--color-border, #e4e8ef);
+    border: 1px solid var(--user-border);
     border-radius: 16px;
-    background: var(--color-surface, #fff);
-    box-shadow: 0 3px 12px rgba(24, 39, 75, 0.035);
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
 }
 
-.notification-stat-icon {
+.user-notifications .notification-stat-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -197,93 +282,104 @@ user_header($me, 'Notifications', '');
     width: 48px;
     height: 48px;
     border-radius: 14px;
-    background: var(--color-primary-tint, #edf1fa);
-    color: var(--color-primary, #263b70);
+    background: var(--user-lavender);
+    color: var(--user-purple);
 }
 
-.notification-stat-icon.unread-icon {
-    background: #fff3e7;
-    color: #a76523;
+.user-notifications .notification-stat-icon.unread-icon {
+    background: #fbf1dc;
+    color: #8a5d12;
 }
 
-.notification-stat-label {
+.user-notifications .notification-stat-label {
     margin-bottom: 5px;
-    color: var(--color-muted, #747d8d);
-    font-size: 0.84rem;
+    color: var(--user-muted);
+    font-size: .84rem;
 }
 
-.notification-stat-value {
-    font-size: 1.45rem;
-    font-weight: 750;
+.user-notifications .notification-stat-value {
+    color: var(--user-purple);
+    font-size: 1.5rem;
+    font-weight: 800;
     line-height: 1.2;
 }
 
-.notifications-list-heading {
+/* ----- List ----- */
+.user-notifications .notifications-list-heading {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
 }
 
-.notifications-list-heading h2 {
+.user-notifications .notifications-list-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin: 0;
-    font-size: 1.12rem;
-    font-weight: 700;
+    color: var(--user-text);
+    font-size: 1.18rem;
+    font-weight: 750;
 }
 
-.notifications-list-heading span {
-    color: var(--color-muted, #747d8d);
-    font-size: 0.83rem;
+.user-notifications .notifications-list-heading h2::before {
+    content: "";
+    display: block;
+    width: 5px;
+    height: 23px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    background: var(--user-gold);
 }
 
-.notifications-list {
+.user-notifications .notifications-list-heading span {
+    color: var(--user-muted);
+    font-size: .83rem;
+}
+
+.user-notifications .notifications-list {
     display: flex;
     flex-direction: column;
     gap: 13px;
 }
 
-.notification-card {
+.user-notifications .notification-card {
     position: relative;
     display: flex;
     align-items: flex-start;
     gap: 16px;
     padding: 21px 22px;
     overflow: hidden;
-    border: 1px solid var(--color-border, #e4e8ef);
+    border: 1px solid var(--user-border);
     border-radius: 16px;
-    background: var(--color-surface, #fff);
-    box-shadow: 0 3px 12px rgba(24, 39, 75, 0.035);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease,
-                transform 0.2s ease;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40,26,70,.04);
+    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 
-.notification-card:hover {
-    border-color: #cbd4e7;
-    box-shadow: 0 7px 20px rgba(24, 39, 75, 0.07);
+.user-notifications .notification-card:hover {
+    border-color: #cfc1e2;
+    box-shadow: 0 10px 26px rgba(40,26,70,.08);
     transform: translateY(-2px);
 }
 
-.notification-card.unread {
-    background: linear-gradient(
-        110deg,
-        var(--color-primary-tint, #edf1fa) 0%,
-        var(--color-surface, #fff) 65%
-    );
-    border-color: #d8dfef;
+.user-notifications .notification-card.unread {
+    background: linear-gradient(110deg, #f4effb 0%, #fff 65%);
+    border-color: #ddd0ee;
 }
 
-.notification-card.unread::before {
+.user-notifications .notification-card.unread::before {
     content: "";
     position: absolute;
     top: 0;
     bottom: 0;
     left: 0;
     width: 4px;
-    background: var(--color-primary, #263b70);
+    background: var(--user-gold);
 }
 
-.notification-type-icon {
+.user-notifications .notification-type-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -293,32 +389,32 @@ user_header($me, 'Notifications', '');
     border-radius: 14px;
 }
 
-.notification-type-icon.opportunity {
-    color: #326b53;
-    background: #e9f5ed;
+.user-notifications .notification-type-icon.opportunity {
+    color: #24653c;
+    background: #e8f5ec;
 }
 
-.notification-type-icon.application {
-    color: #365c9a;
-    background: #eaf0fb;
+.user-notifications .notification-type-icon.application {
+    color: var(--user-purple);
+    background: #eee8f8;
 }
 
-.notification-type-icon.reminder {
-    color: #9a6724;
-    background: #fff2df;
+.user-notifications .notification-type-icon.reminder {
+    color: #8a5d12;
+    background: #fbf1dc;
 }
 
-.notification-type-icon.general {
+.user-notifications .notification-type-icon.general {
     color: #6f5b94;
-    background: #f0ebf8;
+    background: var(--user-lavender);
 }
 
-.notification-content {
+.user-notifications .notification-content {
     flex: 1;
     min-width: 0;
 }
 
-.notification-topline {
+.user-notifications .notification-topline {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -327,81 +423,83 @@ user_header($me, 'Notifications', '');
     margin-bottom: 9px;
 }
 
-.notification-type-label {
+.user-notifications .notification-type-label {
     display: inline-flex;
     align-items: center;
-    padding: 5px 9px;
-    border-radius: 7px;
-    background: #f0f2f6;
-    color: #5c6678;
-    font-size: 0.73rem;
-    font-weight: 650;
+    padding: 5px 10px;
+    border-radius: 30px;
+    background: #f3f0f7;
+    color: #62597a;
+    font-size: .74rem;
+    font-weight: 700;
 }
 
-.notification-card.unread .notification-type-label {
-    background: #e1e8f8;
-    color: var(--color-primary, #263b70);
+.user-notifications .notification-card.unread .notification-type-label {
+    background: #e9e0f6;
+    color: var(--user-purple);
 }
 
-.notification-unread-label {
+.user-notifications .notification-unread-label {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--color-primary, #263b70);
-    font-size: 0.74rem;
-    font-weight: 650;
+    color: #8a5d12;
+    font-size: .75rem;
+    font-weight: 700;
 }
 
-.notification-unread-label::before {
+.user-notifications .notification-unread-label::before {
     content: "";
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: currentColor;
+    background: var(--user-gold);
+    box-shadow: 0 0 0 4px #fbf4e7;
 }
 
-.notification-message {
+.user-notifications .notification-message {
     margin: 0;
-    color: var(--color-text, #253047);
-    font-size: 0.94rem;
+    color: var(--user-text);
+    font-size: .94rem;
     font-weight: 450;
     line-height: 1.75;
     overflow-wrap: anywhere;
 }
 
-.notification-card.unread .notification-message {
-    font-weight: 650;
+.user-notifications .notification-card.unread .notification-message {
+    font-weight: 700;
 }
 
-.notification-opportunity {
+.user-notifications .notification-opportunity {
     display: flex;
     align-items: center;
     gap: 7px;
     margin-top: 10px;
-    color: var(--color-primary, #263b70);
-    font-size: 0.83rem;
-    font-weight: 600;
+    color: var(--user-purple);
+    font-size: .83rem;
+    font-weight: 700;
     overflow-wrap: anywhere;
 }
 
-.notification-date {
+.user-notifications .notification-date {
     display: flex;
     align-items: center;
     gap: 7px;
     margin-top: 12px;
-    color: var(--color-muted, #747d8d);
-    font-size: 0.78rem;
+    color: var(--user-muted);
+    font-size: .78rem;
 }
 
-.notifications-empty {
+/* ----- Empty state ----- */
+.user-notifications .notifications-empty {
     padding: 58px 24px;
     text-align: center;
-    border: 1px dashed var(--color-border, #dce2eb);
+    border: 1px dashed #d8cde7;
     border-radius: 18px;
-    background: var(--color-surface, #fff);
+    background: #fbf9fd;
 }
 
-.notifications-empty-icon {
+.user-notifications .notifications-empty-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -409,99 +507,113 @@ user_header($me, 'Notifications', '');
     height: 76px;
     margin: 0 auto 19px;
     border-radius: 23px;
-    background: var(--color-primary-tint, #edf1fa);
-    color: var(--color-primary, #263b70);
+    background: var(--user-lavender);
+    color: var(--user-purple);
 }
 
-.notifications-empty h3 {
+.user-notifications .notifications-empty h3 {
     margin: 0 0 9px;
+    color: var(--user-text);
     font-size: 1.15rem;
-    font-weight: 700;
+    font-weight: 750;
 }
 
-.notifications-empty p {
+.user-notifications .notifications-empty p {
     max-width: 360px;
     margin: 0 auto;
-    color: var(--color-muted, #747d8d);
-    font-size: 0.9rem;
+    color: var(--user-muted);
+    font-size: .9rem;
     line-height: 1.75;
 }
 
+@keyframes notifFadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 640px) {
-    .notifications-page {
-        padding: 26px 16px 44px;
+    .user-notifications .notifications-hero {
+        padding: 30px 0;
     }
 
-    .notifications-heading {
-        flex-direction: column;
-        gap: 15px;
-        margin-bottom: 22px;
-    }
-
-    .notifications-summary {
+    .user-notifications .notifications-summary {
         gap: 10px;
         margin-bottom: 24px;
     }
 
-    .notification-stat {
+    .user-notifications .notification-stat {
         align-items: flex-start;
         flex-direction: column;
         gap: 11px;
         padding: 15px;
     }
 
-    .notification-stat-icon {
+    .user-notifications .notification-stat-icon {
         width: 42px;
         height: 42px;
         flex-basis: 42px;
     }
 
-    .notification-stat-value {
+    .user-notifications .notification-stat-value {
         font-size: 1.3rem;
     }
 
-    .notification-card {
+    .user-notifications .notification-card {
         gap: 12px;
         padding: 17px 15px;
     }
 
-    .notification-type-icon {
+    .user-notifications .notification-type-icon {
         width: 40px;
         height: 40px;
         flex-basis: 40px;
         border-radius: 12px;
     }
 
-    .notification-topline {
+    .user-notifications .notification-topline {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .notification-message {
-        font-size: 0.89rem;
+    .user-notifications .notification-message {
+        font-size: .89rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .user-notifications *,
+    .user-notifications *::before,
+    .user-notifications *::after {
+        animation: none !important;
+        transition: none !important;
     }
 }
 </style>
 
-<div class="notifications-page">
+<div class="user-notifications">
 
-    <!-- Page heading -->
-    <section class="notifications-heading">
-        <div>
-            <h1>Notifications</h1>
-            <p>
-                Stay updated on training opportunities, application updates,
-                and important reminders.
-            </p>
-        </div>
+    <!-- Page banner -->
+    <section class="notifications-hero">
+        <div class="container notifications-hero-inner">
 
-        <div class="notifications-count">
-            <span>Unread notifications</span>
-            <strong class="<?= $unreadCount === 0 ? 'zero' : '' ?>">
-                <?= $unreadCount ?>
-            </strong>
+            <div>
+                <div class="hero-label">
+                    <span aria-hidden="true">✦</span>
+                    <span>Ufuq Learning Space</span>
+                </div>
+
+                <h1>Notifications</h1>
+
+                <p>
+                    Stay updated on training opportunities, application updates,
+                    and important reminders.
+                </p>
+            </div>
+
         </div>
     </section>
+
+    <div class="container notifications-content">
 
     <!-- Summary cards -->
     <section class="notifications-summary">
@@ -630,6 +742,7 @@ user_header($me, 'Notifications', '');
 
     </section>
 
+    </div>
 </div>
 
 <?php admin_footer(); ?>

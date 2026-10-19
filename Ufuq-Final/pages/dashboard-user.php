@@ -9,6 +9,10 @@ require __DIR__ . '/auth.php';
 
 $uid = require_user();
 
+/* Allowed values (must match the CHECK constraints in the database) */
+const PROFILE_EDU_STATUSES = ['Student', 'Fresh Graduate', 'Graduate', 'Employee'];
+const PROFILE_DEGREES      = ['High School', 'Diploma', "Bachelor's Degree", "Master's Degree", 'Doctoral Degree'];
+
 function profile_escape($value): string
 {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8');
@@ -40,12 +44,38 @@ function profile_date(?string $date): string
     }
 }
 
+function profile_gender_label(?string $g): string
+{
+    return $g === 'M' ? 'Male' : ($g === 'F' ? 'Female' : '—');
+}
+
+function profile_duration(?string $start, ?string $end): string
+{
+    if (!$start) return '';
+    try {
+        $d = (new DateTime($start))->diff($end ? new DateTime($end) : new DateTime('today'));
+        if ($d->y > 0) return $d->y . ' year(s)';
+        if ($d->m > 0) return $d->m . ' month(s)';
+        return 'Less than a month';
+    } catch (Exception $e) {
+        return '';
+    }
+}
+
+function profile_valid_date(string $value): ?DateTime
+{
+    $d = DateTime::createFromFormat('!Y-m-d', $value);
+    $errors = DateTime::getLastErrors();
+    if (!$d || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) return null;
+    return $d->format('Y-m-d') === $value ? $d : null;
+}
+
 function profile_flash(string $type, string $message): void
 {
     $_SESSION['profile_flash'] = ['type' => $type, 'message' => $message];
 }
 
-/* Load profile */
+/* Load profile (user + member) */
 $stmt = $pdo->prepare(
     'SELECT u.*, m.Email
      FROM `user` u
@@ -73,28 +103,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $gender = $_POST['Gender'] ?? '';
             $password = $_POST['Password'] ?? '';
 
-            if ($phone === '' || !preg_match('/^\+?[0-9]{8,15}$/', $phone)) {
+            if ($phone === '' || strlen($phone) > 15 || !preg_match('/^\+?[0-9]{8,15}$/', $phone)) {
                 throw new RuntimeException('Please enter a valid phone number.');
             }
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 throw new RuntimeException('Please enter a valid email address.');
             }
-            if (!in_array($gender, ['Male', 'Female'], true)) {
+            if (!in_array($gender, ['M', 'F'], true)) {
                 throw new RuntimeException('Please select your gender.');
             }
             if ($dob === '') {
                 throw new RuntimeException('Please enter your date of birth.');
             }
 
-            $birthDate = DateTime::createFromFormat('!Y-m-d', $dob);
-            $dateErrors = DateTime::getLastErrors();
+            $birthDate = profile_valid_date($dob);
+            $today = new DateTime('today');
             if (
                 !$birthDate ||
-                ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0)) ||
-                $birthDate->format('Y-m-d') !== $dob ||
-                $birthDate > new DateTime('today') ||
-                (int)$birthDate->diff(new DateTime('today'))->y < 15 ||
-                (int)$birthDate->diff(new DateTime('today'))->y > 100
+                $birthDate > $today ||
+                (int)$birthDate->diff($today)->y < 15 ||
+                (int)$birthDate->diff($today)->y > 100
             ) {
                 throw new RuntimeException('Date of birth must correspond to an age between 15 and 100.');
             }
@@ -109,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $pdo->beginTransaction();
+            // Age is recalculated automatically by the database trigger (trg_user_age_update)
             $stmt = $pdo->prepare('UPDATE `user` SET Phone = ?, DateOfBirth = ?, Gender = ? WHERE UserID = ?');
             $stmt->execute([$phone, $dob, $gender, $uid]);
 
@@ -130,25 +159,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($firstName === '' || $lastName === '') {
                 throw new RuntimeException('First name and last name are required.');
             }
+            if (mb_strlen($firstName) > 30 || mb_strlen($lastName) > 30) {
+                throw new RuntimeException('First name and last name must be 30 characters or fewer.');
+            }
             $stmt = $pdo->prepare('UPDATE `user` SET FirstName = ?, LastName = ? WHERE UserID = ?');
             $stmt->execute([$firstName, $lastName, $uid]);
             profile_flash('success', 'Name updated successfully.');
             profile_redirect();
         }
 
+        /* Educational status (user.EducationalStatus) */
         if ($action === 'education') {
             $status = trim($_POST['EducationalStatus'] ?? '');
-            $field = trim($_POST['FieldOfStudy'] ?? '');
-            $allowedStatuses = ['Student', 'Fresh Graduate', 'Employed'];
-            if (!in_array($status, $allowedStatuses, true)) {
+            if (!in_array($status, PROFILE_EDU_STATUSES, true)) {
                 throw new RuntimeException('Please select a valid educational status.');
             }
-            if ($field === '') {
-                throw new RuntimeException('Field of study is required.');
+            $stmt = $pdo->prepare('UPDATE `user` SET EducationalStatus = ? WHERE UserID = ?');
+            $stmt->execute([$status, $uid]);
+            profile_flash('success', 'Educational status updated successfully.');
+            profile_redirect();
+        }
+
+        /* Studies (userstudy table) */
+        if ($action === 'add_study') {
+            $field = trim($_POST['FieldOfStudy'] ?? '');
+            $degree = trim($_POST['DegreeLevel'] ?? '');
+            $university = trim($_POST['UniversityName'] ?? '');
+            $year = (int)($_POST['GraduationYear'] ?? 0);
+
+            if ($field === '' || $degree === '' || $university === '') {
+                throw new RuntimeException('Please complete the study fields.');
             }
-            $stmt = $pdo->prepare('UPDATE `user` SET EducationalStatus = ?, FieldOfStudy = ? WHERE UserID = ?');
-            $stmt->execute([$status, $field, $uid]);
-            profile_flash('success', 'Education information updated successfully.');
+            if (mb_strlen($field) > 100 || mb_strlen($university) > 100) {
+                throw new RuntimeException('Field of study and university name must be 100 characters or fewer.');
+            }
+            if (!in_array($degree, PROFILE_DEGREES, true)) {
+                throw new RuntimeException('Please select a valid degree level.');
+            }
+            if ($year < 1900 || $year > 2100) {
+                throw new RuntimeException('Please enter a valid graduation year.');
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO userstudy (UserID, FieldOfStudy, DegreeLevel, UniversityName, GraduationYear)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([$uid, $field, $degree, $university, $year]);
+            profile_flash('success', 'Study added successfully.');
+            profile_redirect();
+        }
+
+        if ($action === 'delete_study') {
+            $fieldId = (int)($_POST['FieldID'] ?? 0);
+            $stmt = $pdo->prepare('DELETE FROM userstudy WHERE FieldID = ? AND UserID = ?');
+            $stmt->execute([$fieldId, $uid]);
+            profile_flash('success', 'Study removed from your profile.');
             profile_redirect();
         }
 
@@ -204,62 +269,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_redirect();
         }
 
+        /* Experience: `experience` is a lookup table; the details live in `userexperience` */
         if ($action === 'add_experience') {
+            $experienceId = (int)($_POST['ExperienceID'] ?? 0);
             $jobTitle = trim($_POST['JobTitle'] ?? '');
             $organization = trim($_POST['Organization'] ?? '');
             $startDate = trim($_POST['StartDate'] ?? '');
             $endDate = trim($_POST['EndDate'] ?? '');
 
-            if ($jobTitle === '' || $organization === '' || $startDate === '') {
+            if ($experienceId <= 0 || $jobTitle === '' || $organization === '' || $startDate === '') {
                 throw new RuntimeException('Please fill in the required experience fields.');
             }
-            if ($endDate !== '' && $endDate < $startDate) {
-                throw new RuntimeException('End date cannot be earlier than start date.');
+            if (mb_strlen($jobTitle) > 50) {
+                throw new RuntimeException('Job title must be 50 characters or fewer.');
             }
-            $start = DateTime::createFromFormat('!Y-m-d', $startDate);
-            $end = $endDate !== '' ? DateTime::createFromFormat('!Y-m-d', $endDate) : null;
+            if (mb_strlen($organization) > 100) {
+                throw new RuntimeException('Organization must be 100 characters or fewer.');
+            }
+
+            $start = profile_valid_date($startDate);
+            $end = $endDate !== '' ? profile_valid_date($endDate) : null;
             if (!$start || ($endDate !== '' && !$end)) {
                 throw new RuntimeException('Please enter valid experience dates.');
             }
+            if ($end && $end < $start) {
+                throw new RuntimeException('End date cannot be earlier than start date.');
+            }
 
-            $duration = $start->diff($end ?? new DateTime('today'));
-            $durationText = $duration->y > 0 ? $duration->y . ' year(s)' :
-                ($duration->m > 0 ? $duration->m . ' month(s)' : 'Less than a month');
+            $stmt = $pdo->prepare('SELECT 1 FROM experience WHERE ExperienceID = ?');
+            $stmt->execute([$experienceId]);
+            if (!$stmt->fetchColumn()) {
+                throw new RuntimeException('Please select a valid experience type.');
+            }
 
-            $pdo->beginTransaction();
-            $stmt = $pdo->prepare(
-                'INSERT INTO experience (JobTitle, Organization, StartDate, EndDate, Duration)
-                 VALUES (?, ?, ?, ?, ?)'
-            );
-            $stmt->execute([$jobTitle, $organization, $startDate, $endDate !== '' ? $endDate : null, $durationText]);
-            $experienceId = (int)$pdo->lastInsertId();
-            $stmt = $pdo->prepare('INSERT INTO userexperience (UserID, ExperienceID) VALUES (?, ?)');
+            $stmt = $pdo->prepare('SELECT 1 FROM userexperience WHERE UserID = ? AND ExperienceID = ?');
             $stmt->execute([$uid, $experienceId]);
-            $pdo->commit();
+            if ($stmt->fetchColumn()) {
+                throw new RuntimeException('You have already added this experience type.');
+            }
+
+            // Duration is a generated column in the database, so it is not inserted
+            $stmt = $pdo->prepare(
+                'INSERT INTO userexperience (UserID, ExperienceID, JobTitle, Organization, StartDate, EndDate)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([$uid, $experienceId, $jobTitle, $organization, $startDate, $endDate !== '' ? $endDate : null]);
             profile_flash('success', 'Experience added successfully.');
             profile_redirect();
         }
 
+        /* Qualifications: `qualification` is a lookup table; the details live in `userqualification` */
         if ($action === 'add_qualification') {
-            $degree = trim($_POST['DegreeLevel'] ?? '');
+            $qualificationId = (int)($_POST['QualificationID'] ?? 0);
             $institution = trim($_POST['Institution'] ?? '');
             $year = (int)($_POST['YearObtained'] ?? 0);
-            $field = trim($_POST['QualificationField'] ?? '');
-            if ($degree === '' || $institution === '' || $field === '') {
+            $durationRaw = trim($_POST['Duration'] ?? '');
+
+            if ($qualificationId <= 0 || $institution === '') {
                 throw new RuntimeException('Please complete the qualification fields.');
+            }
+            if (mb_strlen($institution) > 100) {
+                throw new RuntimeException('Institution must be 100 characters or fewer.');
             }
             if ($year < 1900 || $year > (int)date('Y')) {
                 throw new RuntimeException('Please enter a valid year obtained.');
             }
+            $duration = null;
+            if ($durationRaw !== '') {
+                $duration = (int)$durationRaw;
+                if ($duration < 1 || $duration > 120) {
+                    throw new RuntimeException('Duration must be between 1 and 120 months.');
+                }
+            }
+
+            $stmt = $pdo->prepare('SELECT 1 FROM qualification WHERE QualificationID = ?');
+            $stmt->execute([$qualificationId]);
+            if (!$stmt->fetchColumn()) {
+                throw new RuntimeException('Please select a valid qualification.');
+            }
+
+            $stmt = $pdo->prepare('SELECT 1 FROM userqualification WHERE UserID = ? AND QualificationID = ?');
+            $stmt->execute([$uid, $qualificationId]);
+            if ($stmt->fetchColumn()) {
+                throw new RuntimeException('You have already added this qualification.');
+            }
 
             $stmt = $pdo->prepare(
-                'INSERT INTO qualification (FieldOfStudy, DegreeLevel, Institution, YearObtained, Duration)
+                'INSERT INTO userqualification (UserID, QualificationID, Institution, YearObtained, Duration)
                  VALUES (?, ?, ?, ?, ?)'
             );
-            $stmt->execute([$field, $degree, $institution, $year, null]);
-            $qualificationId = (int)$pdo->lastInsertId();
-            $stmt = $pdo->prepare('INSERT INTO userqualification (UserID, QualificationID) VALUES (?, ?)');
-            $stmt->execute([$uid, $qualificationId]);
+            $stmt->execute([$uid, $qualificationId, $institution, $year, $duration]);
             profile_flash('success', 'Qualification added successfully.');
             profile_redirect();
         }
@@ -295,24 +394,40 @@ $stmt = $pdo->prepare('SELECT u.*, m.Email FROM `user` u JOIN member m ON m.Memb
 $stmt->execute([$uid]);
 $me = $stmt->fetch(PDO::FETCH_ASSOC);
 
+/* Read studies */
+$stmt = $pdo->prepare('SELECT * FROM userstudy WHERE UserID = ? ORDER BY GraduationYear DESC, FieldID DESC');
+$stmt->execute([$uid]);
+$studies = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 /* Read experience records */
 $stmt = $pdo->prepare(
-    'SELECT e.* FROM userexperience ue
+    'SELECT ue.ExperienceID, ue.JobTitle, ue.Organization, ue.StartDate, ue.EndDate, e.ExperienceName
+     FROM userexperience ue
      JOIN experience e ON e.ExperienceID = ue.ExperienceID
-     WHERE ue.UserID = ? ORDER BY e.StartDate DESC'
+     WHERE ue.UserID = ? ORDER BY ue.StartDate DESC'
 );
 $stmt->execute([$uid]);
 $experiences = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$usedExperienceIds = array_map('intval', array_column($experiences, 'ExperienceID'));
+
+$allExperienceTypes = $pdo->query('SELECT ExperienceID, ExperienceName FROM experience ORDER BY ExperienceName')->fetchAll(PDO::FETCH_ASSOC);
+$experienceOptions = array_values(array_filter($allExperienceTypes, fn($e) => !in_array((int)$e['ExperienceID'], $usedExperienceIds, true)));
 
 /* Read qualifications */
 $stmt = $pdo->prepare(
-    'SELECT q.* FROM userqualification uq
+    'SELECT uq.QualificationID, uq.Institution, uq.YearObtained, uq.Duration, q.QualificationName
+     FROM userqualification uq
      JOIN qualification q ON q.QualificationID = uq.QualificationID
-     WHERE uq.UserID = ? ORDER BY q.YearObtained DESC'
+     WHERE uq.UserID = ? ORDER BY uq.YearObtained DESC'
 );
 $stmt->execute([$uid]);
 $qualifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$usedQualificationIds = array_map('intval', array_column($qualifications, 'QualificationID'));
 
+$allQualificationTypes = $pdo->query('SELECT QualificationID, QualificationName FROM qualification ORDER BY QualificationName')->fetchAll(PDO::FETCH_ASSOC);
+$qualificationOptions = array_values(array_filter($allQualificationTypes, fn($q) => !in_array((int)$q['QualificationID'], $usedQualificationIds, true)));
+
+/* Skills */
 $skills = $pdo->query('SELECT SkillID, SkillName FROM skill ORDER BY SkillName')->fetchAll(PDO::FETCH_ASSOC);
 $stmt = $pdo->prepare('SELECT s.SkillID FROM userskill us JOIN skill s ON s.SkillID = us.SkillID WHERE us.UserID = ?');
 $stmt->execute([$uid]);
@@ -324,6 +439,9 @@ unset($_SESSION['profile_flash']);
 $fullName = trim(($me['FirstName'] ?? '') . ' ' . ($me['LastName'] ?? ''));
 $firstInitial = mb_substr($me['FirstName'] ?? '', 0, 1);
 $lastInitial = mb_substr($me['LastName'] ?? '', 0, 1);
+
+/* Main field of study = most recent study record */
+$mainField = $studies[0]['FieldOfStudy'] ?? '';
 
 user_header($me, 'My Profile', '');
 ?>
@@ -338,8 +456,11 @@ user_header($me, 'My Profile', '');
     --profile-gold: #e2a94b;
     --profile-text: #29243a;
     --profile-muted: #777184;
+    --profile-bg: #faf6ef;
     color: var(--profile-text);
     padding-bottom: 50px;
+    background: var(--profile-bg);
+    min-height: 70vh;
 }
 .profile-dashboard * { box-sizing: border-box; }
 .profile-dashboard .profile-hero {
@@ -437,6 +558,7 @@ user_header($me, 'My Profile', '');
 .profile-dashboard .profile-section-header h2::before {
     content: ""; display: block; width: 5px; height: 23px; border-radius: 5px; background: var(--profile-gold);
 }
+.profile-dashboard .profile-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .profile-dashboard .profile-view-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 21px 25px; }
 .profile-dashboard .profile-field { min-width: 0; }
 .profile-dashboard .profile-field-label { margin-bottom: 7px; color: var(--profile-muted); font-size: .82rem; }
@@ -474,6 +596,7 @@ user_header($me, 'My Profile', '');
 .profile-dashboard .profile-skill-option input { accent-color: var(--profile-purple); }
 .profile-dashboard .profile-empty { color: var(--profile-muted); font-size: .9rem; line-height: 1.7; }
 .profile-dashboard .profile-inline-form { padding-top: 17px; margin-top: 20px; border-top: 1px solid #e9e4ef; }
+.profile-dashboard .profile-subheading { margin: 24px 0 14px; color: var(--profile-muted); font-size: .82rem; font-weight: 650; letter-spacing: .02em; }
 .profile-dashboard .profile-danger-btn { border: 0; padding: 5px 8px; border-radius: 7px; background: transparent; color: #a43c45; font-size: .82rem; cursor: pointer; }
 .profile-dashboard .profile-danger-btn:hover { background: #fff0f1; }
 .profile-dashboard .icon-btn { border-radius: 9px; transition: background .18s ease, color .18s ease; }
@@ -533,11 +656,11 @@ user_header($me, 'My Profile', '');
                     <h2><?= profile_escape($fullName) ?></h2>
                     <button type="button" class="icon-btn" onclick="toggleProfileForm('nameForm')"><?= icon('edit', 14) ?> Edit</button>
                 </div>
-                <div class="profile-subtitle"><?= profile_escape($me['FieldOfStudy'] ?: 'Field of study not specified') ?></div>
+                <div class="profile-subtitle"><?= profile_escape($mainField ?: 'Field of study not specified') ?></div>
                 <div class="profile-meta">
                     <?= profile_escape($me['EducationalStatus'] ?: 'Educational status not specified') ?>
                     · <?= profile_escape(profile_age($me['DateOfBirth'] ?? null)) ?> years old
-                    <?php if (!empty($me['Gender'])): ?> · <?= profile_escape($me['Gender']) ?><?php endif; ?>
+                    <?php if (!empty($me['Gender'])): ?> · <?= profile_escape(profile_gender_label($me['Gender'])) ?><?php endif; ?>
                 </div>
             </div>
         </section>
@@ -554,11 +677,11 @@ user_header($me, 'My Profile', '');
                 <div class="profile-view-grid">
                     <div class="form-group">
                         <label class="form-label" for="FirstName">First Name</label>
-                        <input class="form-control" id="FirstName" name="FirstName" required maxlength="100" value="<?= profile_escape($me['FirstName']) ?>">
+                        <input class="form-control" id="FirstName" name="FirstName" required maxlength="30" value="<?= profile_escape($me['FirstName']) ?>">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="LastName">Last Name</label>
-                        <input class="form-control" id="LastName" name="LastName" required maxlength="100" value="<?= profile_escape($me['LastName']) ?>">
+                        <input class="form-control" id="LastName" name="LastName" required maxlength="30" value="<?= profile_escape($me['LastName']) ?>">
                     </div>
                 </div>
                 <div class="profile-form-actions">
@@ -578,7 +701,7 @@ user_header($me, 'My Profile', '');
                 <div class="profile-field"><div class="profile-field-label">Email Address</div><div class="profile-field-value"><?= profile_escape($me['Email'] ?: '—') ?></div></div>
                 <div class="profile-field"><div class="profile-field-label">Date of Birth</div><div class="profile-field-value"><?= profile_escape(profile_date($me['DateOfBirth'] ?? null)) ?></div></div>
                 <div class="profile-field"><div class="profile-field-label">Age</div><div class="profile-field-value"><?= profile_escape(profile_age($me['DateOfBirth'] ?? null)) ?></div></div>
-                <div class="profile-field"><div class="profile-field-label">Gender</div><div class="profile-field-value"><?= profile_escape($me['Gender'] ?: '—') ?></div></div>
+                <div class="profile-field"><div class="profile-field-label">Gender</div><div class="profile-field-value"><?= profile_escape(profile_gender_label($me['Gender'] ?? null)) ?></div></div>
                 <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
             </div>
             <div id="contactForm" class="profile-hidden">
@@ -587,11 +710,11 @@ user_header($me, 'My Profile', '');
                     <div class="profile-view-grid">
                         <div class="form-group">
                             <label class="form-label" for="Phone">Phone Number</label>
-                            <input class="form-control" id="Phone" name="Phone" type="tel" required pattern="\+?[0-9]{8,15}" value="<?= profile_escape($me['Phone']) ?>">
+                            <input class="form-control" id="Phone" name="Phone" type="tel" required maxlength="15" pattern="\+?[0-9]{8,15}" value="<?= profile_escape($me['Phone']) ?>">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="Email">Email Address</label>
-                            <input class="form-control" id="Email" name="Email" type="email" required value="<?= profile_escape($me['Email']) ?>">
+                            <input class="form-control" id="Email" name="Email" type="email" required maxlength="100" value="<?= profile_escape($me['Email']) ?>">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="DateOfBirth">Date of Birth</label>
@@ -601,8 +724,8 @@ user_header($me, 'My Profile', '');
                             <label class="form-label" for="Gender">Gender</label>
                             <select class="form-control" id="Gender" name="Gender" required>
                                 <option value="">Select gender</option>
-                                <option value="Male" <?= $me['Gender'] === 'Male' ? 'selected' : '' ?>>Male</option>
-                                <option value="Female" <?= $me['Gender'] === 'Female' ? 'selected' : '' ?>>Female</option>
+                                <option value="M" <?= $me['Gender'] === 'M' ? 'selected' : '' ?>>Male</option>
+                                <option value="F" <?= $me['Gender'] === 'F' ? 'selected' : '' ?>>Female</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -622,32 +745,82 @@ user_header($me, 'My Profile', '');
         <section class="profile-section">
             <div class="profile-section-header">
                 <h2>Education</h2>
-                <button type="button" class="icon-btn" onclick="toggleProfileForm('educationForm')"><?= icon('edit', 14) ?> Edit</button>
+                <div class="profile-header-actions">
+                    <button type="button" class="icon-btn" onclick="toggleProfileForm('educationForm')"><?= icon('edit', 14) ?> Edit Status</button>
+                    <button type="button" class="icon-btn" onclick="toggleProfileForm('studyForm')">+ Add Study</button>
+                </div>
             </div>
+
             <div class="profile-view-grid" id="educationView">
                 <div class="profile-field"><div class="profile-field-label">Educational Status</div><div class="profile-field-value"><?= profile_escape($me['EducationalStatus'] ?: '—') ?></div></div>
-                <div class="profile-field"><div class="profile-field-label">Field of Study</div><div class="profile-field-value"><?= profile_escape($me['FieldOfStudy'] ?: '—') ?></div></div>
             </div>
+
             <div id="educationForm" class="profile-hidden">
                 <form method="post" class="profile-form">
                     <input type="hidden" name="action" value="education">
-                    <div class="profile-view-grid">
-                        <div class="form-group">
-                            <label class="form-label" for="EducationalStatus">Educational Status</label>
-                            <select class="form-control" id="EducationalStatus" name="EducationalStatus" required>
-                                <?php foreach (['Student', 'Fresh Graduate', 'Employed'] as $status): ?>
-                                    <option value="<?= profile_escape($status) ?>" <?= $me['EducationalStatus'] === $status ? 'selected' : '' ?>><?= profile_escape($status) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="FieldOfStudy">Field of Study</label>
-                            <input class="form-control" id="FieldOfStudy" name="FieldOfStudy" required maxlength="150" value="<?= profile_escape($me['FieldOfStudy']) ?>">
-                        </div>
+                    <div class="form-group">
+                        <label class="form-label" for="EducationalStatus">Educational Status</label>
+                        <select class="form-control" id="EducationalStatus" name="EducationalStatus" required>
+                            <?php foreach (PROFILE_EDU_STATUSES as $status): ?>
+                                <option value="<?= profile_escape($status) ?>" <?= $me['EducationalStatus'] === $status ? 'selected' : '' ?>><?= profile_escape($status) ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <div class="profile-form-actions">
                         <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('educationForm')">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="profile-subheading">Studies</div>
+            <?php if (!$studies): ?>
+                <p class="profile-empty">No studies have been added yet.</p>
+            <?php else: foreach ($studies as $study): ?>
+                <div class="profile-record">
+                    <h3 class="profile-record-title"><?= profile_escape($study['DegreeLevel']) ?> — <?= profile_escape($study['FieldOfStudy']) ?></h3>
+                    <div class="profile-record-subtitle">
+                        <?= profile_escape($study['UniversityName']) ?> · <?= (int)$study['GraduationYear'] ?>
+                    </div>
+                    <div class="profile-record-actions">
+                        <form method="post" onsubmit="return confirm('Remove this study from your profile?')">
+                            <input type="hidden" name="action" value="delete_study">
+                            <input type="hidden" name="FieldID" value="<?= (int)$study['FieldID'] ?>">
+                            <button class="profile-danger-btn" type="submit">Remove</button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; endif; ?>
+
+            <div id="studyForm" class="profile-inline-form profile-hidden">
+                <form method="post" class="profile-form">
+                    <input type="hidden" name="action" value="add_study">
+                    <div class="profile-view-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="StudyDegree">Degree Level</label>
+                            <select class="form-control" id="StudyDegree" name="DegreeLevel" required>
+                                <option value="">Select degree level</option>
+                                <?php foreach (PROFILE_DEGREES as $degree): ?>
+                                    <option value="<?= profile_escape($degree) ?>"><?= profile_escape($degree) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="StudyField">Field of Study</label>
+                            <input class="form-control" id="StudyField" name="FieldOfStudy" required maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="UniversityName">University / Institution</label>
+                            <input class="form-control" id="UniversityName" name="UniversityName" required maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="GraduationYear">Graduation Year</label>
+                            <input class="form-control" id="GraduationYear" name="GraduationYear" type="number" min="1900" max="2100" required>
+                        </div>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">Add Study</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('studyForm')">Cancel</button>
                     </div>
                 </form>
             </div>
@@ -664,9 +837,10 @@ user_header($me, 'My Profile', '');
                 <div class="profile-record">
                     <h3 class="profile-record-title"><?= profile_escape($experience['JobTitle']) ?></h3>
                     <div class="profile-record-subtitle">
-                        <?= profile_escape($experience['Organization']) ?><br>
-                        <?= profile_escape(profile_date($experience['StartDate'] ?? null)) ?> – <?= profile_escape(profile_date($experience['EndDate'] ?? null)) ?>
-                        <?php if (!empty($experience['Duration'])): ?> · <?= profile_escape($experience['Duration']) ?><?php endif; ?>
+                        <?= profile_escape($experience['ExperienceName']) ?> · <?= profile_escape($experience['Organization']) ?><br>
+                        <?= profile_escape(profile_date($experience['StartDate'] ?? null)) ?> – <?= !empty($experience['EndDate']) ? profile_escape(profile_date($experience['EndDate'])) : 'Present' ?>
+                        <?php $durationText = profile_duration($experience['StartDate'] ?? null, $experience['EndDate'] ?? null); ?>
+                        <?php if ($durationText !== ''): ?> · <?= profile_escape($durationText) ?><?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
                         <form method="post" onsubmit="return confirm('Remove this experience from your profile?')">
@@ -679,10 +853,25 @@ user_header($me, 'My Profile', '');
             <?php endforeach; endif; ?>
 
             <div id="experienceForm" class="profile-inline-form profile-hidden">
+                <?php if (!$experienceOptions): ?>
+                    <p class="profile-empty">You have already added every available experience type.</p>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('experienceForm')">Close</button>
+                    </div>
+                <?php else: ?>
                 <form method="post" class="profile-form">
                     <input type="hidden" name="action" value="add_experience">
-                    <div class="form-group"><label class="form-label" for="JobTitle">Job Title</label><input class="form-control" id="JobTitle" name="JobTitle" required maxlength="150"></div>
-                    <div class="form-group"><label class="form-label" for="Organization">Organization</label><input class="form-control" id="Organization" name="Organization" required maxlength="150"></div>
+                    <div class="form-group">
+                        <label class="form-label" for="ExperienceID">Experience Type</label>
+                        <select class="form-control" id="ExperienceID" name="ExperienceID" required>
+                            <option value="">Select experience type</option>
+                            <?php foreach ($experienceOptions as $opt): ?>
+                                <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group"><label class="form-label" for="JobTitle">Job Title</label><input class="form-control" id="JobTitle" name="JobTitle" required maxlength="50"></div>
+                    <div class="form-group"><label class="form-label" for="Organization">Organization</label><input class="form-control" id="Organization" name="Organization" required maxlength="100"></div>
                     <div class="profile-view-grid">
                         <div class="form-group"><label class="form-label" for="StartDate">Start Date</label><input class="form-control" id="StartDate" name="StartDate" type="date" required></div>
                         <div class="form-group"><label class="form-label" for="EndDate">End Date</label><input class="form-control" id="EndDate" name="EndDate" type="date"><small class="profile-empty">Leave blank if this experience is ongoing.</small></div>
@@ -692,6 +881,7 @@ user_header($me, 'My Profile', '');
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('experienceForm')">Cancel</button>
                     </div>
                 </form>
+                <?php endif; ?>
             </div>
         </section>
 
@@ -704,13 +894,11 @@ user_header($me, 'My Profile', '');
                 <p class="profile-empty">No qualifications have been added yet.</p>
             <?php else: foreach ($qualifications as $qualification): ?>
                 <div class="profile-record">
-                    <h3 class="profile-record-title">
-                        <?= profile_escape($qualification['DegreeLevel']) ?>
-                        <?php if (!empty($qualification['FieldOfStudy'])): ?> — <?= profile_escape($qualification['FieldOfStudy']) ?><?php endif; ?>
-                    </h3>
+                    <h3 class="profile-record-title"><?= profile_escape($qualification['QualificationName']) ?></h3>
                     <div class="profile-record-subtitle">
                         <?= profile_escape($qualification['Institution']) ?>
                         <?php if (!empty($qualification['YearObtained'])): ?> · <?= (int)$qualification['YearObtained'] ?><?php endif; ?>
+                        <?php if (!empty($qualification['Duration'])): ?> · <?= (int)$qualification['Duration'] ?> month(s)<?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
                         <form method="post" onsubmit="return confirm('Remove this qualification from your profile?')">
@@ -723,17 +911,34 @@ user_header($me, 'My Profile', '');
             <?php endforeach; endif; ?>
 
             <div id="qualificationForm" class="profile-inline-form profile-hidden">
+                <?php if (!$qualificationOptions): ?>
+                    <p class="profile-empty">You have already added every available qualification.</p>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('qualificationForm')">Close</button>
+                    </div>
+                <?php else: ?>
                 <form method="post" class="profile-form">
                     <input type="hidden" name="action" value="add_qualification">
-                    <div class="form-group"><label class="form-label" for="DegreeLevel">Degree Level</label><input class="form-control" id="DegreeLevel" name="DegreeLevel" required maxlength="100" placeholder="e.g. Bachelor's Degree"></div>
-                    <div class="form-group"><label class="form-label" for="QualificationField">Field of Study</label><input class="form-control" id="QualificationField" name="QualificationField" required maxlength="150"></div>
-                    <div class="form-group"><label class="form-label" for="Institution">Institution</label><input class="form-control" id="Institution" name="Institution" required maxlength="150"></div>
-                    <div class="form-group"><label class="form-label" for="YearObtained">Year Obtained</label><input class="form-control" id="YearObtained" name="YearObtained" type="number" min="1900" max="<?= date('Y') ?>" required></div>
+                    <div class="form-group">
+                        <label class="form-label" for="QualificationID">Qualification</label>
+                        <select class="form-control" id="QualificationID" name="QualificationID" required>
+                            <option value="">Select qualification</option>
+                            <?php foreach ($qualificationOptions as $opt): ?>
+                                <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group"><label class="form-label" for="Institution">Institution</label><input class="form-control" id="Institution" name="Institution" required maxlength="100"></div>
+                    <div class="profile-view-grid">
+                        <div class="form-group"><label class="form-label" for="YearObtained">Year Obtained</label><input class="form-control" id="YearObtained" name="YearObtained" type="number" min="1900" max="<?= date('Y') ?>" required></div>
+                        <div class="form-group"><label class="form-label" for="Duration">Duration (months)</label><input class="form-control" id="Duration" name="Duration" type="number" min="1" max="120"><small class="profile-empty">Optional (1–120 months).</small></div>
+                    </div>
                     <div class="profile-form-actions">
                         <button class="btn btn-primary btn-sm" type="submit">Add Qualification</button>
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('qualificationForm')">Cancel</button>
                     </div>
                 </form>
+                <?php endif; ?>
             </div>
         </section>
 
@@ -793,4 +998,4 @@ function toggleProfileForm(id) {
 }
 </script>
 
-<?php user_footer(); ?>
+<?php admin_footer(); ?>

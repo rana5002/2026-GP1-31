@@ -41,11 +41,11 @@ function user_header(array $me, string $title, string $active): void {
         'history'     => ['Application History', 'application-history.php'],
     ];
 
+    /* IsRead is stored on the usernotification relationship table. */
     $st = $pdo->prepare(
         'SELECT COUNT(*)
-         FROM usernotification un
-         JOIN notification n ON n.NotificationID = un.NotificationID
-         WHERE un.UserID = ? AND n.IsRead = 0'
+         FROM usernotification
+         WHERE UserID = ? AND IsRead = 0'
     );
     $st->execute([$me['UserID']]);
     $unread = (int) $st->fetchColumn();
@@ -59,11 +59,12 @@ function user_header(array $me, string $title, string $active): void {
         mb_substr($lastName, 0, 1)
     );
 
-    $gender = $me['Gender'] ?? '';
+    /* Gender is stored as 'M' or 'F' in the database. */
+    $gender = strtoupper(substr((string) ($me['Gender'] ?? ''), 0, 1));
 
-    $pic = $gender === 'Male'
+    $pic = $gender === 'M'
         ? 'default-avatar-male.png'
-        : ($gender === 'Female' ? 'default-avatar-female.png' : null);
+        : ($gender === 'F' ? 'default-avatar-female.png' : null);
 
     /* Detect whether the current page is Favorites */
     $isFavoritesPage = basename($_SERVER['PHP_SELF'] ?? '') === 'favorites.php';
@@ -143,8 +144,9 @@ function user_header(array $me, string $title, string $active): void {
 
                 <?php if ($unread > 0): ?>
                     <span
-                        style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--color-danger);"
-                    ></span>
+                        aria-label="<?= $unread ?> unread notifications"
+                        style="position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--color-danger);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;"
+                    ><?= $unread > 99 ? '99+' : $unread ?></span>
                 <?php endif; ?>
             </a>
 

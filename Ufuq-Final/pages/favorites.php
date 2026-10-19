@@ -8,9 +8,7 @@ require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
 
 /* ---------- Authentication ---------- */
-require_login('User');
-
-$uid = (int) $_SESSION['user_id'];
+$uid = require_user();
 
 /* ---------- Helpers ---------- */
 function fav_e($value): string
@@ -75,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($opportunityId) {
             $deleteStmt = $pdo->prepare(
-                "DELETE FROM favourite
+                "DELETE FROM favorite
                  WHERE UserID = ?
                    AND OpportunityID = ?"
             );
@@ -113,17 +111,23 @@ $flashMessage = $_SESSION['favorites_message'] ?? null;
 unset($_SESSION['favorites_message']);
 
 /* ---------- Load Favorites ---------- */
+/*
+ * The provider name is stored on the opportunity itself, so it also works
+ * for opportunities created by an admin (no company). The company name is
+ * only a fallback.
+ */
 $stmt = $pdo->prepare(
     "SELECT
         o.*,
-        c.CompanyName
-     FROM favourite f
+        COALESCE(NULLIF(TRIM(o.OpportunityProvider), ''), c.CompanyName)
+            AS CompanyName
+     FROM favorite f
      JOIN opportunity o
        ON o.OpportunityID = f.OpportunityID
      LEFT JOIN company c
        ON c.CompanyID = o.CreatedByCompanyID
      WHERE f.UserID = ?
-     ORDER BY f.OpportunityID DESC"
+     ORDER BY f.DateAdded DESC, f.OpportunityID DESC"
 );
 
 $stmt->execute([$uid]);
@@ -135,255 +139,250 @@ user_header($me, 'Favorites', 'favorites');
 ?>
 
 <style>
-:root {
-    --fav-purple: #493477;
-    --fav-purple-dark: #30204f;
-    --fav-gold: #e2b65d;
-    --fav-bg: #f7f5fb;
+/* ===== Ufuq Favorites (same theme as Home / Browse) ===== */
+
+.user-favorites {
+    --fav-purple: #39265f;
+    --fav-purple-dark: #281a46;
+    --fav-gold: #e2a94b;
+    --fav-lavender: #f0ebf8;
+    --fav-bg: #faf6ef;
     --fav-card: #ffffff;
-    --fav-text: #292438;
-    --fav-muted: #777286;
-    --fav-border: #e9e4f1;
+    --fav-text: #29243a;
+    --fav-muted: #777184;
+    --fav-border: #e9e3ed;
     --fav-danger: #c74755;
     --fav-success: #25845c;
-}
 
-/* ---------- Main Page ---------- */
-.favorites-page {
-    width: 100%;
-    min-height: 75vh;
-    padding: 0 0 60px;
+    min-height: 70vh;
+    padding-bottom: 56px;
     background: var(--fav-bg);
-    overflow: hidden;
+    color: var(--fav-text);
+}
+
+.user-favorites *,
+.user-favorites *::before,
+.user-favorites *::after {
     box-sizing: border-box;
 }
 
-.favorites-page *,
-.favorites-page *::before,
-.favorites-page *::after {
-    box-sizing: border-box;
-}
-
-/* ---------- Full-Width Hero ---------- */
-.favorites-hero {
+/* ---------- Banner ---------- */
+.user-favorites .favorites-hero {
     position: relative;
-    isolation: isolate;
+    overflow: hidden;
+    padding: 38px 0 42px;
+    margin-bottom: 28px;
+    color: #fff;
+    background: linear-gradient(125deg, #281a46 0%, #39265f 55%, #49316f 100%);
+}
+
+.user-favorites .favorites-hero::before,
+.user-favorites .favorites-hero::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.user-favorites .favorites-hero::before {
+    width: 250px;
+    height: 250px;
+    right: 7%;
+    top: -150px;
+    border: 35px solid rgba(255,255,255,.07);
+}
+
+.user-favorites .favorites-hero::after {
+    width: 190px;
+    height: 190px;
+    right: 23%;
+    bottom: -145px;
+    background: rgba(226,169,75,.10);
+}
+
+.user-favorites .favorites-hero-inner {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 30px;
-
-    width: 100%;
-    margin: 0 0 30px;
-    padding: 38px max(30px, calc((100% - 1120px) / 2));
-
-    color: #ffffff;
-    background: linear-gradient(
-        115deg,
-        var(--fav-purple-dark) 0%,
-        var(--fav-purple) 60%,
-        #654c91 100%
-    );
-
-    border-radius: 0;
-    overflow: hidden;
+    flex-wrap: wrap;
+    gap: 22px;
 }
 
-.favorites-hero::before {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    width: 300px;
-    height: 300px;
-    right: 8%;
-    top: -190px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 50%;
+.user-favorites .favorites-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 30px;
+    background: rgba(255,255,255,.08);
+    font-size: .84rem;
+    letter-spacing: .2px;
 }
 
-.favorites-hero::after {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    width: 230px;
-    height: 230px;
-    right: 17%;
-    bottom: -180px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 50%;
-}
-
-.favorites-hero-content {
-    position: relative;
-    z-index: 1;
-    min-width: 0;
-}
-
-.favorites-eyebrow {
-    margin: 0 0 10px;
-    color: var(--fav-gold);
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 2.2px;
-    text-transform: uppercase;
-}
-
-.favorites-hero h1 {
-    margin: 0 0 10px;
-    color: #ffffff;
-    font-size: clamp(28px, 3vw, 38px);
-    font-weight: 800;
-    line-height: 1.25;
-}
-
-.favorites-hero-description {
-    max-width: 560px;
+.user-favorites .favorites-hero h1 {
     margin: 0;
-    color: rgba(255, 255, 255, 0.82);
-    font-size: 15px;
+    color: #fff;
+    font-size: clamp(1.65rem, 3vw, 2.15rem);
+    font-weight: 750;
+    line-height: 1.5;
+}
+
+.user-favorites .favorites-hero-description {
+    max-width: 560px;
+    margin: 8px 0 0;
+    color: rgba(255,255,255,.82);
+    font-size: .96rem;
     line-height: 1.8;
 }
 
-/* Keep the original heart character */
-.favorites-hero-icon {
-    position: relative;
-    z-index: 1;
+.user-favorites .favorites-hero-icon {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 78px;
+    height: 78px;
     flex-shrink: 0;
-
-    width: 76px;
-    height: 76px;
-
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 24px;
+    background: rgba(255,255,255,.08);
+    box-shadow: 0 10px 28px rgba(15,8,30,.16);
     color: var(--fav-gold);
-    background: rgba(255, 255, 255, 0.09);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 20px;
-
-    font-size: 33px;
+    font-size: 2rem;
+    animation: favFloat 4s ease-in-out infinite;
 }
 
-/* ---------- Content Container ---------- */
-.favorites-container {
-    width: min(1120px, calc(100% - 40px));
-    margin: 0 auto;
+.user-favorites .favorites-container {
+    animation: favFadeUp .5s ease both;
+}
+
+@keyframes favFadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes favFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
 }
 
 /* ---------- Flash Message ---------- */
-.favorites-alert {
+.user-favorites .favorites-alert {
     display: flex;
     align-items: center;
     gap: 10px;
-
     margin: 0 0 22px;
     padding: 14px 17px;
-
     border: 1px solid transparent;
     border-radius: 12px;
-
-    font-size: 14px;
+    font-size: .9rem;
     line-height: 1.6;
 }
 
-.favorites-alert.success {
+.user-favorites .favorites-alert.success {
     color: var(--fav-success);
     background: #edf8f1;
     border-color: #d2eddb;
 }
 
-.favorites-alert.error {
+.user-favorites .favorites-alert.error {
     color: var(--fav-danger);
     background: #fff0f1;
     border-color: #f6d5d8;
 }
 
 /* ---------- Summary ---------- */
-.favorites-summary {
+.user-favorites .favorites-summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
-
     margin-bottom: 28px;
     padding: 20px 23px;
-
     background: var(--fav-card);
     border: 1px solid var(--fav-border);
+    border-top: 3px solid var(--fav-gold);
     border-radius: 16px;
-
-    box-shadow: 0 5px 20px rgba(48, 32, 79, 0.035);
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
 }
 
-.favorites-summary-label {
+.user-favorites .favorites-summary-label {
     margin: 0 0 5px;
     color: var(--fav-muted);
-    font-size: 13px;
+    font-size: .83rem;
     font-weight: 600;
 }
 
-.favorites-summary-title {
+.user-favorites .favorites-summary-title {
     margin: 0;
     color: var(--fav-text);
-    font-size: 19px;
+    font-size: 1.18rem;
     font-weight: 800;
 }
 
-.favorites-count {
+.user-favorites .favorites-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-
     min-width: 48px;
     height: 48px;
     padding: 0 12px;
-
     color: var(--fav-purple);
-    background: #f0eafb;
+    background: var(--fav-lavender);
     border-radius: 14px;
-
-    font-size: 18px;
+    font-size: 1.1rem;
     font-weight: 800;
 }
 
 /* ---------- Section Heading ---------- */
-.favorites-section-heading {
+.user-favorites .favorites-section-heading {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 15px;
-
     margin: 0 0 18px;
 }
 
-.favorites-section-heading h2 {
+.user-favorites .favorites-section-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin: 0;
     color: var(--fav-text);
-    font-size: 21px;
-    font-weight: 800;
+    font-size: 1.2rem;
+    font-weight: 750;
 }
 
-.favorites-section-heading p {
-    margin: 5px 0 0;
+.user-favorites .favorites-section-heading h2::before {
+    content: "";
+    width: 5px;
+    height: 23px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    background: var(--fav-gold);
+}
+
+.user-favorites .favorites-section-heading p {
+    margin: 6px 0 0;
     color: var(--fav-muted);
-    font-size: 13px;
+    font-size: .85rem;
     line-height: 1.6;
 }
 
 /* ---------- Horizontal Favorites Row ---------- */
-.favorites-grid {
+.user-favorites .favorites-grid {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: stretch;
     gap: 20px;
-
     width: 100%;
     padding: 3px 2px 18px;
-
     overflow-x: auto;
     overflow-y: hidden;
-
     scroll-snap-type: x proximity;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
@@ -391,387 +390,330 @@ user_header($me, 'Favorites', 'favorites');
     scrollbar-color: #c7b8df #eee9f5;
 }
 
-.favorites-grid::-webkit-scrollbar {
+.user-favorites .favorites-grid::-webkit-scrollbar {
     height: 8px;
 }
 
-.favorites-grid::-webkit-scrollbar-track {
+.user-favorites .favorites-grid::-webkit-scrollbar-track {
     background: #eee9f5;
     border-radius: 10px;
 }
 
-.favorites-grid::-webkit-scrollbar-thumb {
+.user-favorites .favorites-grid::-webkit-scrollbar-thumb {
     background: #c7b8df;
     border-radius: 10px;
 }
 
-.favorites-grid::-webkit-scrollbar-thumb:hover {
+.user-favorites .favorites-grid::-webkit-scrollbar-thumb:hover {
     background: #a994c9;
 }
 
 /* ---------- Favorite Card ---------- */
-.favorite-card {
+.user-favorites .favorite-card {
     position: relative;
     display: flex;
     flex-direction: column;
     flex: 0 0 320px;
-
     width: 320px;
     min-width: 0;
     min-height: 330px;
     padding: 21px;
-
     background: var(--fav-card);
-    border: 1px solid var(--fav-border);
-    border-radius: 17px;
-
-    box-shadow: 0 5px 18px rgba(48, 32, 79, 0.04);
-
+    border: 1px solid #ece7f2;
+    border-radius: 16px;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
     scroll-snap-align: start;
-    transition:
-        transform 0.2s ease,
-        box-shadow 0.2s ease,
-        border-color 0.2s ease;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
 
-.favorite-card:hover {
+.user-favorites .favorite-card:hover {
     transform: translateY(-3px);
-    border-color: #d7c9eb;
-    box-shadow: 0 12px 28px rgba(48, 32, 79, 0.09);
+    border-color: #cfc1e2;
+    box-shadow: 0 12px 28px rgba(40,26,70,.1);
 }
 
-.favorite-card-top {
+.user-favorites .favorite-card-top {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-
     margin-bottom: 18px;
 }
 
-.favorite-company {
+.user-favorites .favorite-company {
     display: flex;
     align-items: center;
     gap: 11px;
     min-width: 0;
 }
 
-.favorite-company-logo {
+.user-favorites .favorite-company-logo {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-
     width: 46px;
     height: 46px;
-
-    color: #ffffff;
+    color: #fff;
     background: var(--fav-purple);
     border-radius: 13px;
-
-    font-size: 17px;
+    font-size: 1.05rem;
     font-weight: 800;
 }
 
-.favorite-company-info {
+.user-favorites .favorite-company-info {
     min-width: 0;
 }
 
-.favorite-company-name {
+.user-favorites .favorite-company-name {
     margin: 0;
     color: var(--fav-muted);
-    font-size: 12px;
+    font-size: .8rem;
     font-weight: 600;
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
 
-.favorite-type {
+.user-favorites .favorite-type {
     display: inline-block;
     margin-top: 4px;
-    padding: 4px 9px;
-
+    padding: 4px 10px;
     color: var(--fav-purple);
-    background: #f0eafb;
-    border-radius: 6px;
-
-    font-size: 10px;
-    font-weight: 700;
+    background: var(--fav-lavender);
+    border-radius: 30px;
+    font-size: .72rem;
+    font-weight: 750;
 }
 
-.favorite-remove-form {
+.user-favorites .favorite-remove-form {
     flex-shrink: 0;
     margin: 0;
 }
 
-.favorite-remove-btn {
+.user-favorites .favorite-remove-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-
     width: 36px;
     height: 36px;
     padding: 0;
-
-    color: #cf5361;
+    color: #bd334d;
     background: #fff1f2;
-    border: 1px solid #f7dce0;
-    border-radius: 10px;
-
-    font-size: 20px;
+    border: 1px solid #f1d4d8;
+    border-radius: 11px;
+    font-size: 1.2rem;
     line-height: 1;
     cursor: pointer;
-
-    transition:
-        color 0.2s ease,
-        background 0.2s ease,
-        transform 0.2s ease;
+    transition: color .2s ease, background .2s ease, transform .2s ease;
 }
 
-.favorite-remove-btn:hover {
-    color: #ffffff;
+.user-favorites .favorite-remove-btn:hover {
+    color: #fff;
     background: var(--fav-danger);
     transform: scale(1.04);
 }
 
-.favorite-title {
+.user-favorites .favorite-title {
     margin: 0 0 10px;
     color: var(--fav-text);
-    font-size: 18px;
-    font-weight: 800;
+    font-size: 1.05rem;
+    font-weight: 750;
     line-height: 1.55;
     overflow-wrap: anywhere;
 }
 
-.favorite-description {
+.user-favorites .favorite-description {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     overflow: hidden;
-
     min-height: 66px;
     margin: 0 0 18px;
-
-    color: var(--fav-muted);
-    font-size: 13px;
-    line-height: 1.7;
+    color: #625b6d;
+    font-size: .85rem;
+    line-height: 1.75;
     overflow-wrap: anywhere;
 }
 
-.favorite-meta {
+.user-favorites .favorite-meta {
     display: flex;
     flex-direction: column;
     gap: 10px;
-
     margin: 0 0 20px;
 }
 
-.favorite-meta-item {
+.user-favorites .favorite-meta-item {
     display: flex;
     align-items: flex-start;
     gap: 9px;
-
     color: #625c70;
-    font-size: 12px;
+    font-size: .8rem;
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
 
-.favorite-meta-icon {
+.user-favorites .favorite-meta-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-
     width: 22px;
     height: 22px;
-
     color: var(--fav-purple);
-    background: #f3effa;
+    background: var(--fav-lavender);
     border-radius: 7px;
-
-    font-size: 12px;
+    font-size: .75rem;
 }
 
-.favorite-card-footer {
+.user-favorites .favorite-card-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-
     margin-top: auto;
     padding-top: 15px;
-
     border-top: 1px solid #f0edf4;
 }
 
-.favorite-status {
+.user-favorites .favorite-status {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-
     color: var(--fav-muted);
-    font-size: 11px;
+    font-size: .76rem;
     font-weight: 700;
 }
 
-.favorite-status-dot {
-    width: 7px;
-    height: 7px;
+.user-favorites .favorite-status-dot {
+    width: 8px;
+    height: 8px;
     flex-shrink: 0;
-
     background: #c2bdcb;
     border-radius: 50%;
 }
 
-.favorite-status.open .favorite-status-dot {
+.user-favorites .favorite-status.open .favorite-status-dot {
     background: #2da66c;
 }
 
-.favorite-status.closed .favorite-status-dot {
+.user-favorites .favorite-status.closed .favorite-status-dot {
     background: #d65b65;
 }
 
-.favorite-details-btn {
+.user-favorites .favorite-details-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 7px;
-
-    min-height: 38px;
-    padding: 9px 13px;
-
-    color: #ffffff;
+    min-height: 36px;
+    padding: 8px 13px;
+    color: #fff;
     background: var(--fav-purple);
     border: 1px solid var(--fav-purple);
     border-radius: 9px;
-
-    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(57,38,95,.15);
+    font-size: .82rem;
     font-weight: 700;
     text-decoration: none;
     white-space: nowrap;
-
-    transition:
-        background 0.2s ease,
-        border-color 0.2s ease;
+    transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
 
-.favorite-details-btn:hover {
-    color: #ffffff;
+.user-favorites .favorite-details-btn:hover {
+    color: #fff;
     background: var(--fav-purple-dark);
     border-color: var(--fav-purple-dark);
+    box-shadow: 0 7px 17px rgba(40,26,70,.2);
+    transform: translateY(-1px);
 }
 
 /* ---------- Empty State ---------- */
-.favorites-empty {
+.user-favorites .favorites-empty {
     padding: 55px 25px;
     text-align: center;
-
-    background: #ffffff;
-    border: 1px dashed #d9cde9;
+    background: #fbf9fd;
+    border: 1px dashed #d8cde7;
     border-radius: 18px;
 }
 
-.favorites-empty-icon {
+.user-favorites .favorites-empty-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-
     width: 76px;
     height: 76px;
     margin: 0 auto 18px;
-
     color: var(--fav-purple);
-    background: #f0eafb;
+    background: var(--fav-lavender);
     border-radius: 22px;
-
-    font-size: 34px;
+    font-size: 2.1rem;
 }
 
-.favorites-empty h2 {
+.user-favorites .favorites-empty h2 {
     margin: 0 0 10px;
     color: var(--fav-text);
-    font-size: 22px;
-    font-weight: 800;
+    font-size: 1.2rem;
+    font-weight: 750;
 }
 
-.favorites-empty p {
+.user-favorites .favorites-empty p {
     max-width: 430px;
     margin: 0 auto 22px;
-
     color: var(--fav-muted);
-    font-size: 14px;
+    font-size: .9rem;
     line-height: 1.8;
 }
 
-.favorites-browse-btn {
+.user-favorites .favorites-browse-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-
-    min-height: 44px;
-    padding: 12px 20px;
-
-    color: #ffffff;
+    min-height: 40px;
+    padding: 10px 18px;
+    color: #fff;
     background: var(--fav-purple);
-    border-radius: 10px;
-
-    font-size: 13px;
+    border-radius: 9px;
+    box-shadow: 0 4px 12px rgba(57,38,95,.15);
+    font-size: .85rem;
     font-weight: 700;
     text-decoration: none;
-
-    transition: background 0.2s ease;
+    transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
 
-.favorites-browse-btn:hover {
-    color: #ffffff;
+.user-favorites .favorites-browse-btn:hover {
+    color: #fff;
     background: var(--fav-purple-dark);
+    box-shadow: 0 7px 17px rgba(40,26,70,.2);
+    transform: translateY(-1px);
 }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 700px) {
-    .favorites-hero {
-        gap: 16px;
-        padding: 30px 20px;
+    .user-favorites .favorites-hero {
+        padding: 30px 0;
     }
 
-    .favorites-hero h1 {
-        font-size: 27px;
+    .user-favorites .favorites-hero-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
+        font-size: 1.6rem;
     }
 
-    .favorites-hero-description {
-        font-size: 13px;
-    }
-
-    .favorites-hero-icon {
-        width: 58px;
-        height: 58px;
-        border-radius: 16px;
-        font-size: 27px;
-    }
-
-    .favorites-container {
-        width: calc(100% - 32px);
-    }
-
-    .favorites-summary {
+    .user-favorites .favorites-summary {
         padding: 16px;
     }
 
-    .favorites-summary-title {
-        font-size: 16px;
+    .user-favorites .favorites-summary-title {
+        font-size: 1rem;
     }
 
-    .favorites-count {
+    .user-favorites .favorites-count {
         min-width: 42px;
         height: 42px;
     }
 
-    .favorites-section-heading h2 {
-        font-size: 18px;
-    }
-
-    .favorite-card {
+    .user-favorites .favorite-card {
         flex-basis: 285px;
         width: 285px;
         padding: 17px;
@@ -779,55 +721,54 @@ user_header($me, 'Favorites', 'favorites');
 }
 
 @media (max-width: 400px) {
-    .favorites-hero {
-        padding: 25px 16px;
-    }
-
-    .favorites-hero-icon {
-        width: 48px;
-        height: 48px;
-        font-size: 23px;
-    }
-
-    .favorites-hero h1 {
-        font-size: 24px;
-    }
-
-    .favorites-container {
-        width: calc(100% - 24px);
-    }
-
-    .favorite-card {
+    .user-favorites .favorite-card {
         flex-basis: 265px;
         width: 265px;
     }
 }
+
+@media (prefers-reduced-motion: reduce) {
+    .user-favorites *,
+    .user-favorites *::before,
+    .user-favorites *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
 </style>
 
-<main class="favorites-page">
+<?php /* user_header() already opens <main>, so this wrapper is a div. */ ?>
+<div class="user-favorites">
 
-    <!-- Full-width hero banner -->
+    <!-- Banner -->
     <section class="favorites-hero">
-        <div class="favorites-hero-content">
-            <p class="favorites-eyebrow">YOUR UFUQ COLLECTION</p>
+        <div class="container favorites-hero-inner">
 
-            <h1>Favorites</h1>
+            <div>
+                <div class="favorites-label">
+                    <span aria-hidden="true">✦</span>
+                    <span>Ufuq Learning Space</span>
+                </div>
 
-            <p class="favorites-hero-description">
-                Keep track of the training programs and opportunities
-                you love, all in one place.
-            </p>
-        </div>
+                <h1>Favorites</h1>
 
-        <div class="favorites-hero-icon" aria-hidden="true">
-            &#9829;
+                <p class="favorites-hero-description">
+                    Keep track of the training programs and opportunities
+                    you love, all in one place.
+                </p>
+            </div>
+
+            <div class="favorites-hero-icon" aria-hidden="true">
+                &#9829;
+            </div>
+
         </div>
     </section>
 
-    <!-- Main content stays centered -->
-    <div class="favorites-container">
+    <!-- Main content -->
+    <div class="container favorites-container">
 
-        <?php if ($flashMessage): ?>
+    <?php if ($flashMessage): ?>
             <div class="favorites-alert <?= fav_e($flashMessage['type'] ?? 'success') ?>">
                 <span aria-hidden="true">
                     <?= ($flashMessage['type'] ?? '') === 'error' ? '&#9888;' : '&#10003;' ?>
@@ -887,70 +828,49 @@ user_header($me, 'Favorites', 'favorites');
                         }
 
                         $opportunityTitle = trim(
-                            (string) (
-                                $opportunity['Title']
-                                ?? $opportunity['OpportunityTitle']
-                                ?? $opportunity['Name']
-                                ?? 'Untitled Opportunity'
-                            )
+                            (string) ($opportunity['Title'] ?? '')
                         );
 
+                        if ($opportunityTitle === '') {
+                            $opportunityTitle = 'Untitled Opportunity';
+                        }
+
                         $description = trim(
-                            (string) (
-                                $opportunity['Description']
-                                ?? $opportunity['OpportunityDescription']
-                                ?? ''
-                            )
+                            (string) ($opportunity['Description'] ?? '')
                         );
 
                         $opportunityType = trim(
-                            (string) (
-                                $opportunity['OpportunityType']
-                                ?? $opportunity['Type']
-                                ?? $opportunity['Category']
-                                ?? 'Opportunity'
-                            )
+                            (string) ($opportunity['Type'] ?? '')
                         );
+
+                        if ($opportunityType === '') {
+                            $opportunityType = 'Opportunity';
+                        }
 
                         $location = trim(
-                            (string) (
-                                $opportunity['Location']
-                                ?? $opportunity['City']
-                                ?? ''
-                            )
+                            (string) ($opportunity['Location'] ?? '')
                         );
 
-                        $duration = trim(
-                            (string) (
-                                $opportunity['Duration']
-                                ?? ''
-                            )
-                        );
+                        /* Duration is stored as a number of days. */
+                        $durationDays = (int) ($opportunity['Duration'] ?? 0);
+                        $duration = $durationDays > 0
+                            ? $durationDays . ($durationDays === 1 ? ' day' : ' days')
+                            : '';
 
                         $deadline = trim(
-                            (string) (
-                                $opportunity['ApplicationDeadline']
-                                ?? $opportunity['Deadline']
-                                ?? $opportunity['ClosingDate']
-                                ?? ''
-                            )
+                            (string) ($opportunity['ApplicationDeadLine'] ?? '')
                         );
+
+                        $deadlineText = '';
+                        if ($deadline !== '' && strtotime($deadline) !== false) {
+                            $deadlineText = date('d M Y', strtotime($deadline));
+                        }
 
                         $statusValue = strtolower(
-                            trim(
-                                (string) (
-                                    $opportunity['Status']
-                                    ?? $opportunity['OpportunityStatus']
-                                    ?? ''
-                                )
-                            )
+                            trim((string) ($opportunity['Status'] ?? ''))
                         );
 
-                        $isClosed = in_array(
-                            $statusValue,
-                            ['closed', 'inactive', 'expired', 'completed'],
-                            true
-                        );
+                        $isClosed = $statusValue === 'closed';
 
                         if (
                             !$isClosed
@@ -1068,14 +988,14 @@ user_header($me, 'Favorites', 'favorites');
                                     </div>
                                 <?php endif; ?>
 
-                                <?php if ($deadline !== ''): ?>
+                                <?php if ($deadlineText !== ''): ?>
                                     <div class="favorite-meta-item">
                                         <span class="favorite-meta-icon" aria-hidden="true">
                                             &#128197;
                                         </span>
 
                                         <span>
-                                            Deadline: <?= fav_e($deadline) ?>
+                                            Deadline: <?= fav_e($deadlineText) ?>
                                         </span>
                                     </div>
                                 <?php endif; ?>
@@ -1134,15 +1054,6 @@ user_header($me, 'Favorites', 'favorites');
 
     </div>
 
-</main>
+</div>
 
-<?php
-/*
- * Keep the footer function used by your existing user layout.
- * If your layout already outputs the footer through user_header(),
- * remove this call only if your original file did not have it.
- */
-if (function_exists('user_footer')) {
-    user_footer();
-}
-?>
+<?php admin_footer(); ?>

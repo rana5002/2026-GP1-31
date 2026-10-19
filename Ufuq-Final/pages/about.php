@@ -802,7 +802,7 @@ require __DIR__ . '/../includes/header.php';
 
             <h1>
                 Your next opportunity is
-                <span class="highlight">on the horizon.</span>
+                <span class="highlight">on the Ufuq.</span>
             </h1>
 
             <p>
