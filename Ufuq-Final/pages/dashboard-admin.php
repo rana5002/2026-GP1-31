@@ -38,7 +38,7 @@ $pending = $pdo->query("
 ")->fetchAll();
 
 $reviewed = $pdo->query("
-    SELECT CompanyName, CrNumber, IndustrySector, Status
+    SELECT CompanyID, CompanyName, CrNumber, IndustrySector, Status
     FROM company
     WHERE Status <> 'Pending'
     ORDER BY CompanyID
@@ -614,6 +614,19 @@ admin_header('Admin Dashboard', $tab);
         scroll-behavior: auto !important;
     }
 }
+
+/* Clickable company names in Reviewed Companies */
+.admin-dashboard .reviewed-company-link {
+    color: var(--admin-purple);
+    font-weight: 700;
+    text-decoration: none;
+    text-underline-offset: 3px;
+}
+.admin-dashboard .reviewed-company-link:hover,
+.admin-dashboard .reviewed-company-link:focus-visible {
+    color: var(--admin-purple-dark);
+    text-decoration: underline;
+}
 </style>
 
 <div class="admin-dashboard">
@@ -814,7 +827,14 @@ admin_header('Admin Dashboard', $tab);
 
                             <?php foreach ($reviewed as $c): ?>
                                 <tr>
-                                    <td><?= e($c['CompanyName']) ?></td>
+                                    <td>
+                                        <a
+                                            class="reviewed-company-link"
+                                            href="admin-company-review.php?id=<?= (int)$c['CompanyID'] ?>"
+                                        >
+                                            <?= e($c['CompanyName']) ?>
+                                        </a>
+                                    </td>
                                     <td><?= e($c['CrNumber']) ?></td>
                                     <td><?= e($c['IndustrySector']) ?></td>
 

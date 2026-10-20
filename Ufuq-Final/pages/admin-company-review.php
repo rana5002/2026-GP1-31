@@ -5,6 +5,7 @@ ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 
 require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../includes/email_templates.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
 
@@ -44,10 +45,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $c['Status'] === 'Pending') {
         $update->execute([$adminId, $id]);
 
         if ($update->rowCount() > 0) {
+            // Use Ufuq's shared HTML + plain-text email template.
+            $appUrl = function_exists('env')
+                ? rtrim((string) env('APP_URL', ''), '/')
+                : '';
+            $loginUrl = ($appUrl !== '' ? $appUrl : 'http://localhost:8000')
+                . '/pages/login.php';
+
+            $email = email_company_approved(
+                (string) $c['CompanyName'],
+                $loginUrl
+            );
+
             send_mail(
                 $c['Email'],
-                'Your Ufuq company account has been approved',
-                "Hello {$c['CompanyName']},\n\nYour registration has been verified. You can now log in to Ufuq and start posting opportunities.\n\nUfuq Team"
+                $email['subject'],
+                $email['html'],
+                $email['text']
             );
 
             header('Location: dashboard-admin.php?tab=verification&msg=approved');
@@ -74,10 +88,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $c['Status'] === 'Pending') {
             $update->execute([$reason, $adminId, $id]);
 
             if ($update->rowCount() > 0) {
+                // The shared rejection template includes the admin's reason.
+                $email = email_company_rejected(
+                    (string) $c['CompanyName'],
+                    $reason
+                );
+
                 send_mail(
                     $c['Email'],
-                    'Your Ufuq company registration was rejected',
-                    "Hello {$c['CompanyName']},\n\nUnfortunately your registration was rejected for the following reason:\n\n$reason\n\nUfuq Team"
+                    $email['subject'],
+                    $email['html'],
+                    $email['text']
                 );
 
                 header('Location: dashboard-admin.php?tab=verification&msg=rejected');
@@ -670,7 +691,7 @@ admin_header('Company Review', 'verification');
                     class="review-btn review-btn-outline"
                     target="_blank"
                     rel="noopener"
-                    href="../uploads/<?= rawurlencode(basename($c['VerificationDocument'])) ?>"
+                    href="view-verification-document.php?id=<?= (int)$c['CompanyID'] ?>"
                 >
                     <?= icon('document', 15) ?>
                     View Document
