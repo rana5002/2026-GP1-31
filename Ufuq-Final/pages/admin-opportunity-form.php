@@ -28,6 +28,7 @@ if ($editId) {
 
 $v = [
     'company_name' => '',
+    'industry_sector' => '',
     'external_url' => '',
     'title' => '',
     'description' => '',
@@ -35,64 +36,176 @@ $v = [
     'location' => '',
     'start_date' => '',
     'end_date' => '',
-    'application_deadline' => ''
+    'application_deadline' => '',
+    'price_status' => 'Unknown',
+    'price' => ''
 ];
 
-$skills = [];
-$qualificationRows = [];
-$experienceRows = [];
+$skillIds = [];
+$qualificationIds = [];
+$experienceIds = [];
+$timelineRows = [];
 $errors = [];
+$requiredEmpty = false;
+
+/* Existing sectors, offered as suggestions for the Industry Sector field. */
+try {
+    $sectorOptions = $pdo->query(
+        'SELECT IndustrySector FROM company
+         UNION
+         SELECT IndustrySector FROM opportunity WHERE IndustrySector IS NOT NULL
+         ORDER BY 1'
+    )->fetchAll(PDO::FETCH_COLUMN);
+} catch (Throwable $ignored) {
+    $sectorOptions = [];
+}
 
 /**
  * skill / qualification / experience are shared lookup tables.
- * Find the row by name (case-insensitive thanks to the unique key + collation)
- * or create it, and return its ID. Existing rows are never modified here.
+ * The form only lets the admin pick existing rows (searchable dropdowns),
+ * returned as [ID => Name].
  */
-function find_or_create_lookup(
-    PDO $pdo,
-    string $table,
-    string $idCol,
-    string $nameCol,
-    string $name
-): int {
-    $find = $pdo->prepare("SELECT `$idCol` FROM `$table` WHERE `$nameCol` = ? LIMIT 1");
-    $find->execute([$name]);
-    $id = $find->fetchColumn();
-
-    if ($id === false) {
-        $pdo->prepare("INSERT IGNORE INTO `$table` (`$nameCol`) VALUES (?)")
-            ->execute([$name]);
-        $find->execute([$name]);
-        $id = $find->fetchColumn();
-    }
-
-    return (int)$id;
-}
-
-/** Trim, drop empties, and remove case-insensitive duplicates. */
-function unique_names(array $names): array
+function opp_lookup_options(PDO $pdo, string $table, string $idCol, string $nameCol): array
 {
+    $rows = $pdo->query(
+        "SELECT `$idCol` AS id, `$nameCol` AS name FROM `$table` ORDER BY `$nameCol`"
+    )->fetchAll(PDO::FETCH_ASSOC);
+
     $out = [];
-    $seen = [];
-
-    foreach ($names as $name) {
-        $name = trim((string)$name);
-        $key = mb_strtolower($name, 'UTF-8');
-
-        if ($name === '' || isset($seen[$key])) {
-            continue;
-        }
-
-        $seen[$key] = true;
-        $out[] = $name;
+    foreach ($rows as $row) {
+        $out[(int)$row['id']] = (string)$row['name'];
     }
 
     return $out;
 }
 
+/* Clean posted IDs. Sets $invalid when an ID is not in the lookup table. */
+function opp_posted_ids($value, array $options, bool &$invalid): array
+{
+    $ids = [];
+
+    foreach ((array)$value as $item) {
+        $id = filter_var($item, FILTER_VALIDATE_INT);
+
+        if ($id === false || !isset($options[$id])) {
+            $invalid = true;
+            continue;
+        }
+
+        $ids[$id] = $id;
+    }
+
+    return array_values($ids);
+}
+
+function opp_selected_ids(PDO $pdo, string $linkTable, string $idCol, int $opportunityId): array
+{
+    $stmt = $pdo->prepare("SELECT `$idCol` FROM `$linkTable` WHERE OpportunityID = ?");
+    $stmt->execute([$opportunityId]);
+
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/* Replace the link rows of one opportunity (shared lookup rows are never edited or deleted here). */
+function opp_sync_links(PDO $pdo, int $opportunityId, string $linkTable, string $idCol, array $ids): void
+{
+    $pdo->prepare("DELETE FROM `$linkTable` WHERE OpportunityID = ?")->execute([$opportunityId]);
+    $link = $pdo->prepare("INSERT IGNORE INTO `$linkTable` (OpportunityID, `$idCol`) VALUES (?, ?)");
+
+    foreach ($ids as $id) {
+        $link->execute([$opportunityId, (int)$id]);
+    }
+}
+
+/* Timeline stages live in the `timeline` table (TimelineID, OpportunityID, TimelineName, TimelineDate).
+   The forms post them as timeline_name[] / timeline_date[]. A row left completely empty is ignored. */
+function opp_posted_timeline($names, $dates, ?string &$error): array
+{
+    $rows = [];
+    $names = is_array($names) ? array_values($names) : [];
+    $dates = is_array($dates) ? array_values($dates) : [];
+    $count = max(count($names), count($dates));
+
+    for ($i = 0; $i < $count; $i++) {
+        $name = trim((string)($names[$i] ?? ''));
+        $date = trim((string)($dates[$i] ?? ''));
+
+        if ($name === '' && $date === '') {
+            continue;
+        }
+
+        if ($name === '' || $date === '') {
+            $error ??= 'Each timeline stage needs both a name and a date.';
+        } elseif (mb_strlen($name, 'UTF-8') > 100) {
+            $error ??= 'Timeline stage names must not exceed 100 characters.';
+        } else {
+            $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+            if (!$parsed || $parsed->format('Y-m-d') !== $date) {
+                $error ??= 'Please enter valid timeline dates.';
+            }
+        }
+
+        $rows[] = ['name' => $name, 'date' => $date];
+    }
+
+    return $rows;
+}
+function opp_load_timeline(PDO $pdo, int $opportunityId): array
+{
+    $stmt = $pdo->prepare('SELECT TimelineName, TimelineDate FROM timeline WHERE OpportunityID = ? ORDER BY TimelineDate, TimelineID');
+    $stmt->execute([$opportunityId]);
+    $rows = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $rows[] = ['name' => (string)$row['TimelineName'], 'date' => (string)$row['TimelineDate']];
+    }
+    return $rows;
+}
+/* Replace the timeline rows of one opportunity. */
+function opp_sync_timeline(PDO $pdo, int $opportunityId, array $rows): void
+{
+    usort($rows, fn($a, $b) => strcmp($a['date'], $b['date']));
+    $pdo->prepare('DELETE FROM timeline WHERE OpportunityID = ?')->execute([$opportunityId]);
+    $ins = $pdo->prepare('INSERT INTO timeline (OpportunityID, TimelineName, TimelineDate) VALUES (?, ?, ?)');
+    foreach ($rows as $row) {
+        $ins->execute([$opportunityId, $row['name'], $row['date']]);
+    }
+}
+
+/* Searchable multi-select dropdown. Selected items are shown as chips below it. */
+function lookup_picker(string $name, string $placeholder, array $options, array $selectedIds, bool $invalid = false, bool $required = false, string $chipClass = ''): string
+{
+    ob_start(); ?>
+    <div class="lookup-picker" data-lookup-picker data-placeholder="<?= e($placeholder) ?>" data-chip-class="<?= e($chipClass) ?>" <?= $required ? 'data-required' : '' ?>>
+        <button type="button" class="form-control lookup-toggle <?= $invalid ? 'invalid' : '' ?>" aria-haspopup="listbox" aria-expanded="false">
+            <span class="lookup-toggle-text"><?= e($placeholder) ?></span>
+            <span class="lookup-caret" aria-hidden="true">&#9662;</span>
+        </button>
+        <div class="lookup-panel" hidden>
+            <input type="text" class="form-control lookup-search" placeholder="Search..." autocomplete="off">
+            <div class="lookup-list">
+                <?php foreach ($options as $optId => $optName): ?>
+                    <label class="lookup-option" data-text="<?= e(mb_strtolower((string)$optName, 'UTF-8')) ?>">
+                        <input type="checkbox" name="<?= e($name) ?>[]" value="<?= (int)$optId ?>" data-label="<?= e($optName) ?>" <?= in_array((int)$optId, $selectedIds, true) ? 'checked' : '' ?>>
+                        <span><?= e($optName) ?></span>
+                    </label>
+                <?php endforeach; ?>
+                <div class="lookup-empty" hidden>No matches found</div>
+            </div>
+        </div>
+        <div class="lookup-chips"></div>
+    </div>
+    <?php
+    return (string)ob_get_clean();
+}
+
+$skillOptions = opp_lookup_options($pdo, 'skill', 'SkillID', 'SkillName');
+$qualificationOptions = opp_lookup_options($pdo, 'qualification', 'QualificationID', 'QualificationName');
+$experienceOptions = opp_lookup_options($pdo, 'experience', 'ExperienceID', 'ExperienceName');
+
 if ($editing) {
     $v = [
         'company_name' => $editing['OpportunityProvider'] ?? '',
+        'industry_sector' => $editing['IndustrySector'] ?? '',
         'external_url' => $editing['ExternalURL'] ?? '',
         'title' => $editing['Title'] ?? '',
         'description' => $editing['Description'] ?? '',
@@ -100,51 +213,20 @@ if ($editing) {
         'location' => $editing['Location'] ?? '',
         'start_date' => $editing['StartDate'] ?? '',
         'end_date' => $editing['EndDate'] ?? '',
-        'application_deadline' => $editing['ApplicationDeadLine'] ?? ''
+        'application_deadline' => $editing['ApplicationDeadLine'] ?? '',
+        /* Price status is stored in PriceStatus and the amount in Retail. */
+        'price_status' => in_array($editing['PriceStatus'] ?? '', ['Paid', 'Free', 'Unknown'], true)
+            ? $editing['PriceStatus']
+            : 'Unknown',
+        'price' => ($editing['PriceStatus'] ?? '') === 'Paid'
+            ? (string)($editing['Retail'] ?? '')
+            : (($editing['PriceStatus'] ?? '') === 'Free' ? '0' : '')
     ];
 
-    $s = $pdo->prepare(
-        'SELECT s.SkillName
-         FROM opportunityskill os
-         JOIN skill s ON s.SkillID = os.SkillID
-         WHERE os.OpportunityID = ?
-         ORDER BY s.SkillName'
-    );
-    $s->execute([$editId]);
-    $skills = $s->fetchAll(PDO::FETCH_COLUMN);
-
-    $q = $pdo->prepare(
-        'SELECT q.QualificationName
-         FROM opportunityqualification oq
-         JOIN qualification q ON q.QualificationID = oq.QualificationID
-         WHERE oq.OpportunityID = ?
-         ORDER BY q.QualificationName'
-    );
-    $q->execute([$editId]);
-    foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $name) {
-        $qualificationRows[] = ['Name' => $name];
-    }
-
-    $x = $pdo->prepare(
-        'SELECT ex.ExperienceName
-         FROM opportunityexperience ox
-         JOIN experience ex ON ex.ExperienceID = ox.ExperienceID
-         WHERE ox.OpportunityID = ?
-         ORDER BY ex.ExperienceName'
-    );
-    $x->execute([$editId]);
-    foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $name) {
-        $experienceRows[] = ['Name' => $name];
-    }
-}
-
-/* Ensure each section has at least one row. */
-if (!$qualificationRows) {
-    $qualificationRows = [['Name' => '']];
-}
-
-if (!$experienceRows) {
-    $experienceRows = [['Name' => '']];
+    $skillIds = opp_selected_ids($pdo, 'opportunityskill', 'SkillID', $editId);
+    $qualificationIds = opp_selected_ids($pdo, 'opportunityqualification', 'QualificationID', $editId);
+    $experienceIds = opp_selected_ids($pdo, 'opportunityexperience', 'ExperienceID', $editId);
+    $timelineRows = opp_load_timeline($pdo, $editId);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -154,43 +236,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v[$k] = trim((string)($_POST[$k] ?? ''));
     }
 
-    $decodedSkills = json_decode($_POST['skills'] ?? '[]', true);
-    $skills = unique_names(is_array($decodedSkills) ? $decodedSkills : []);
-
-    /* Read qualification rows submitted by the form. */
-    $qualificationRows = [];
-
-    foreach ((array)($_POST['qualifications'] ?? []) as $row) {
-        if (!is_array($row)) {
-            continue;
-        }
-
-        $qualificationRows[] = ['Name' => trim((string)($row['name'] ?? ''))];
+    if ($v['price_status'] === '') {
+        $v['price_status'] = 'Unknown';
     }
 
-    /* Read experience rows submitted by the form. */
-    $experienceRows = [];
-
-    foreach ((array)($_POST['experience'] ?? []) as $row) {
-        if (!is_array($row)) {
-            continue;
-        }
-
-        $experienceRows[] = ['Name' => trim((string)($row['name'] ?? ''))];
+    /* Free = price 0; Unknown = price stays empty. */
+    if ($v['price_status'] === 'Free') {
+        $v['price'] = '0';
+    } elseif ($v['price_status'] === 'Unknown') {
+        $v['price'] = '';
     }
 
-    /* Keep one blank row if the user removes all rows. */
-    if (!$qualificationRows) {
-        $qualificationRows = [['Name' => '']];
+    /* Timeline is optional here; a stage needs both a name and a date. */
+    $timelineError = null;
+    $timelineRows = opp_posted_timeline($_POST['timeline_name'] ?? [], $_POST['timeline_date'] ?? [], $timelineError);
+    if ($timelineError) {
+        $errors['timeline'] = $timelineError;
     }
 
-    if (!$experienceRows) {
-        $experienceRows = [['Name' => '']];
-    }
+    $badSkill = $badQualification = $badExperience = false;
+    $skillIds = opp_posted_ids($_POST['skills'] ?? [], $skillOptions, $badSkill);
+    $qualificationIds = opp_posted_ids($_POST['qualifications'] ?? [], $qualificationOptions, $badQualification);
+    $experienceIds = opp_posted_ids($_POST['experience'] ?? [], $experienceOptions, $badExperience);
 
     /* Validate required opportunity fields. */
     foreach ([
         'company_name',
+        'industry_sector',
         'title',
         'description',
         'type',
@@ -202,12 +274,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ] as $k) {
         if ($v[$k] === '') {
             $errors[$k] = 'This field is required.';
+            $requiredEmpty = true;
         }
     }
 
     /* Length limits that match the database columns. */
     $limits = [
         'company_name' => 100,
+        'industry_sector' => 50,
         'title' => 100,
         'external_url' => 255
     ];
@@ -231,15 +305,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if (!$skills) {
-        $errors['skills'] = 'Add at least one required skill.';
-    } else {
-        foreach ($skills as $name) {
-            if (mb_strlen($name, 'UTF-8') > 50) {
-                $errors['skills'] = 'Each skill must not exceed 50 characters.';
-                break;
-            }
-        }
+    /* Skills are required; qualifications and experience are optional. */
+    if ($badSkill) {
+        $errors['skills'] = 'Please select skills from the list.';
+    } elseif (!$skillIds) {
+        $errors['skills'] = 'This field is required.';
+        $requiredEmpty = true;
+    }
+
+    if ($badQualification) {
+        $errors['qualifications'] = 'Please select qualifications from the list.';
+    }
+
+    if ($badExperience) {
+        $errors['experience'] = 'Please select experience from the list.';
     }
 
     if (
@@ -276,20 +355,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['end_date'] = 'End date must be after the start date.';
     }
 
-    /* Validate qualification names (optional, max 100 characters). */
-    foreach ($qualificationRows as $i => $row) {
-        if (mb_strlen($row['Name'], 'UTF-8') > 100) {
-            $errors["qualifications.$i.name"] =
-                'Must not exceed 100 characters.';
-        }
-    }
+    /* Paid needs an amount (> 0); Free is stored as 0; Unknown as NULL (the price field stays empty). */
+    $price = null;
 
-    /* Validate experience names (optional, max 100 characters). */
-    foreach ($experienceRows as $i => $row) {
-        if (mb_strlen($row['Name'], 'UTF-8') > 100) {
-            $errors["experience.$i.name"] =
-                'Must not exceed 100 characters.';
+    if (!in_array($v['price_status'], ['Paid', 'Free', 'Unknown'], true)) {
+        $errors['price_status'] = 'Please select a price status.';
+    } elseif ($v['price_status'] === 'Paid') {
+        if (
+            !preg_match('/^\d{1,8}(\.\d{1,2})?$/', $v['price']) ||
+            (float)$v['price'] <= 0
+        ) {
+            $errors['price'] =
+                'A valid price amount greater than 0 is required when the status is Paid.';
+        } else {
+            $price = number_format((float)$v['price'], 2, '.', '');
         }
+    } elseif ($v['price_status'] === 'Free') {
+        $price = '0.00';
     }
 
     /* Save only if there are no validation errors. */
@@ -307,17 +389,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $v['start_date'],
                 $v['end_date'],
                 $v['application_deadline'],
-                $v['location']
+                $v['location'],
+                $v['industry_sector'],
+                $v['price_status'],
+                $price
             ];
 
             if ($editing) {
-                /* Status, price and view count are intentionally untouched. */
+                /* Status and view count are intentionally untouched. */
                 $pdo->prepare(
                     'UPDATE opportunity
                      SET Title = ?, Description = ?, Type = ?,
                          ApplicationMethod = ?, OpportunityProvider = ?,
                          ExternalURL = ?, StartDate = ?, EndDate = ?,
-                         ApplicationDeadLine = ?, Location = ?
+                         ApplicationDeadLine = ?, Location = ?,
+                         IndustrySector = ?, PriceStatus = ?, Retail = ?
                      WHERE OpportunityID = ? AND CreatedByAdminID IS NOT NULL'
                 )->execute([...$params, $editId]);
 
@@ -327,8 +413,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "INSERT INTO opportunity
                      (Title, Description, Type, ApplicationMethod,
                       OpportunityProvider, ExternalURL, StartDate, EndDate,
-                      ApplicationDeadLine, Location, Status, CreatedByAdminID)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?)"
+                      ApplicationDeadLine, Location, IndustrySector, PriceStatus, Retail,
+                      Status, CreatedByAdminID)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?)"
                 )->execute([...$params, $adminId]);
 
                 $oppId = (int)$pdo->lastInsertId();
@@ -336,49 +423,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             /* Re-link skills / qualifications / experience.
                Only the link rows are replaced; the shared lookup rows stay. */
-            $pdo->prepare('DELETE FROM opportunityskill WHERE OpportunityID = ?')
-                ->execute([$oppId]);
-            $pdo->prepare('DELETE FROM opportunityqualification WHERE OpportunityID = ?')
-                ->execute([$oppId]);
-            $pdo->prepare('DELETE FROM opportunityexperience WHERE OpportunityID = ?')
-                ->execute([$oppId]);
-
-            $linkSkill = $pdo->prepare(
-                'INSERT IGNORE INTO opportunityskill (OpportunityID, SkillID)
-                 VALUES (?, ?)'
-            );
-            foreach ($skills as $name) {
-                $linkSkill->execute([
-                    $oppId,
-                    find_or_create_lookup($pdo, 'skill', 'SkillID', 'SkillName', $name)
-                ]);
-            }
-
-            $linkQ = $pdo->prepare(
-                'INSERT IGNORE INTO opportunityqualification
-                 (OpportunityID, QualificationID) VALUES (?, ?)'
-            );
-            foreach (unique_names(array_column($qualificationRows, 'Name')) as $name) {
-                $linkQ->execute([
-                    $oppId,
-                    find_or_create_lookup(
-                        $pdo, 'qualification', 'QualificationID', 'QualificationName', $name
-                    )
-                ]);
-            }
-
-            $linkX = $pdo->prepare(
-                'INSERT IGNORE INTO opportunityexperience
-                 (OpportunityID, ExperienceID) VALUES (?, ?)'
-            );
-            foreach (unique_names(array_column($experienceRows, 'Name')) as $name) {
-                $linkX->execute([
-                    $oppId,
-                    find_or_create_lookup(
-                        $pdo, 'experience', 'ExperienceID', 'ExperienceName', $name
-                    )
-                ]);
-            }
+            opp_sync_links($pdo, $oppId, 'opportunityskill', 'SkillID', $skillIds);
+            opp_sync_links($pdo, $oppId, 'opportunityqualification', 'QualificationID', $qualificationIds);
+            opp_sync_links($pdo, $oppId, 'opportunityexperience', 'ExperienceID', $experienceIds);
+            opp_sync_timeline($pdo, $oppId, $timelineRows);
 
             $pdo->commit();
 
@@ -478,12 +526,12 @@ admin_header(
     display: block;
     width: 100%;
     box-sizing: border-box;
-    padding: clamp(20px, 3.5vw, 34px);
+    padding: clamp(20px, 3.5vw, 30px);
     background: var(--entry-surface);
-    border: 1px solid var(--entry-border);
-    border-radius: 20px;
-    box-shadow: 0 12px 36px rgba(40, 26, 70, .08);
-    overflow: hidden;
+    border: 1px solid #e9e3ed;
+    border-radius: 16px;
+    box-shadow: 0 5px 18px rgba(40, 26, 70, .045);
+    overflow: visible;
   }
 
   #oppForm .form-group {
@@ -571,6 +619,13 @@ admin_header(
     border-color: #e3dcec;
     cursor: default;
   }
+
+  /* Timeline rows and locked (grey) price field */
+  #oppForm .timeline-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+  #oppForm .timeline-row{display:grid;grid-template-columns:minmax(0,1fr) 190px 46px;gap:10px;align-items:center}
+  #oppForm .timeline-remove{min-width:0!important;width:46px;padding:0!important;font-size:1.3rem;line-height:1}
+  @media(max-width:700px){#oppForm .timeline-row{grid-template-columns:minmax(0,1fr) 46px}#oppForm .timeline-row input[type=text]{grid-column:1 / -1}}
+  #oppForm .form-control:disabled{color:#8a8a93;background:#efeff1;border-color:#dddde2;cursor:not-allowed;-webkit-text-fill-color:#8a8a93;opacity:1}
 
   #oppForm .form-control.invalid {
     border: 1.5px solid var(--entry-error) !important;
@@ -960,41 +1015,71 @@ admin_header(
     grid-column: 2;
     grid-row: 1;
   }
+  /* Searchable dropdowns (same look as the company page). */
+  #oppForm .lookup-picker{position:relative}
+  #oppForm .lookup-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer}
+  #oppForm .lookup-toggle-text.is-placeholder{color:#8a8396}
+  #oppForm .lookup-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
+  #oppForm .lookup-picker.is-open .lookup-caret{transform:rotate(180deg)}
+  #oppForm .lookup-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
+  #oppForm .lookup-panel[hidden]{display:none!important}
+  #oppForm .lookup-list{max-height:210px;margin-top:8px;overflow-y:auto}
+  #oppForm .lookup-option{display:flex;align-items:flex-start;gap:9px;padding:8px;border-radius:8px;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+  #oppForm .lookup-option:hover{background:var(--color-surface-alt,#f3f4f6)}
+  #oppForm .lookup-option[hidden]{display:none!important}
+  #oppForm .lookup-option input{width:16px;height:16px;flex-shrink:0;margin:3px 0 0;accent-color:var(--color-primary,#39265f);cursor:pointer}
+  #oppForm .lookup-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
+  #oppForm .lookup-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  #oppForm .lookup-option:hover{background:var(--admin-purple-light)}
+  #oppForm .lookup-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:var(--admin-purple-dark);font-size:.84rem;font-weight:700}
+  #oppForm .lookup-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:var(--admin-purple);font-size:1rem;line-height:1;cursor:pointer}
+  #oppForm .lookup-chip button:hover{color:var(--entry-error);background:rgba(217,75,86,.09)}
+  /* Hero + heading + banner: same look as the company page. */
+  .form-banner{padding:12px 16px;border-radius:8px;margin-bottom:16px;background:#fbe6e7;color:#b4232f}
+  .dashboard-hero{position:relative;overflow:hidden;padding:38px 0 42px;margin-bottom:28px;background:linear-gradient(125deg,#281a46 0%,#39265f 55%,#49316f 100%);color:#fff}
+  .dashboard-hero::before,.dashboard-hero::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+  .dashboard-hero::before{width:250px;height:250px;right:7%;top:-150px;border:35px solid rgba(255,255,255,.07)}
+  .dashboard-hero::after{width:190px;height:190px;right:23%;bottom:-145px;background:rgba(226,169,75,.10)}
+  .dashboard-hero-inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:22px}
+  .dashboard-hero .welcome-label{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;margin-bottom:12px;border:1px solid rgba(255,255,255,.2);border-radius:30px;background:rgba(255,255,255,.08);font-size:.84rem;letter-spacing:.2px}
+  .dashboard-hero h1{margin:0;color:#fff;font-size:clamp(1.65rem,3vw,2.15rem);font-weight:750;line-height:1.5}
+  .dashboard-hero p{margin:8px 0 0;color:rgba(255,255,255,.82);font-size:.96rem;line-height:1.8}
+  .dashboard-hero .hero-icon{display:flex;align-items:center;justify-content:center;width:78px;height:78px;flex-shrink:0;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(255,255,255,.08);box-shadow:0 10px 28px rgba(15,8,30,.16);font-size:2rem;animation:oppFloat 4s ease-in-out infinite}
+  .opp-section-heading{display:flex;align-items:center;gap:10px;margin:0 0 7px;color:#29243a;font-size:1.18rem;font-weight:750}
+  .opp-section-heading::before{content:"";display:block;width:5px;height:23px;flex-shrink:0;border-radius:5px;background:#e2a94b}
+  .page-content.container>div>p.text-muted{color:var(--entry-muted);font-size:.9rem;line-height:1.7;margin-bottom:18px!important}
+  @keyframes oppFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @media(max-width:620px){.dashboard-hero{padding:30px 0}.dashboard-hero .hero-icon{width:60px;height:60px;border-radius:18px;font-size:1.6rem}}
+  .form-banner{border:1px solid #f1c8cb;background:#fff3f3!important;color:#b82f3b!important;border-radius:10px!important;line-height:1.6}
+  .page-content h2.opp-section-heading{margin:0 0 7px;color:#29243a;font-size:1.18rem;font-weight:750;letter-spacing:normal;line-height:1.5}
 </style>
 
-<div class="page-content container"
-     style="max-width:1000px;width:100%;margin:0 auto;">
+<section class="dashboard-hero">
+  <div class="container dashboard-hero-inner">
+    <div>
+      <div class="welcome-label"><span aria-hidden="true">✦</span><span>Ufuq Admin Space</span></div>
+      <h1><?= $editing ? 'Edit Opportunity' : 'Add Opportunity' ?></h1>
+      <p>Add an opportunity on behalf of a company that isn't on the platform yet.</p>
+    </div>
+    <div class="hero-icon" aria-hidden="true">✦</div>
+  </div>
+</section>
 
-  <h2 style="margin-bottom:4px;">
-    <?= $editing ? 'Edit Opportunity' : 'Add Opportunity' ?>
-  </h2>
-
-  <p class="text-muted" style="margin-bottom:24px;">
-    Add an opportunity on behalf of a company that isn't on the platform yet.
-  </p>
+<div class="page-content container" style="padding-top:24px;">
+<div style="max-width:960px;width:100%;margin:0 auto;">
+  <h2 class="opp-section-heading">Opportunity Details</h2>
+  <p class="text-muted" style="margin:0 0 16px;">Fill in the details students will see.</p>
 
   <?php if ($errors): ?>
-    <div class="form-error"
-         style="display:block;background:#FBE6E7;padding:10px 14px;border-radius:8px;margin-bottom:16px;">
-      <?= e($errors['_form'] ?? 'Please fill in all required fields correctly.') ?>
+    <div class="form-banner" style="display:block;">
+      <?= e($errors['_form'] ?? ($requiredEmpty
+          ? 'Mandatory fields cannot be empty. Please fill in all required fields.'
+          : 'Please review the highlighted fields and try again.')) ?>
     </div>
   <?php endif; ?>
 
   <form method="post" id="oppForm" class="card" novalidate>
     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-    <input type="hidden" name="skills" id="skillsJson"
-           value="<?= e(json_encode($skills)) ?>">
-
-    <div class="form-group">
-      <label class="form-label icon-label" for="company_name">
-        <?= icon('company') ?> Company Name <span class="req">*</span>
-      </label>
-      <input type="text" id="company_name" name="company_name"
-             required
-             class="form-control <?= inv($errors, 'company_name') ?>"
-             value="<?= e($v['company_name']) ?>">
-      <?= err($errors, 'company_name') ?>
-    </div>
 
     <div class="form-group">
       <label class="form-label icon-label" for="external_url">
@@ -1006,6 +1091,34 @@ admin_header(
              placeholder="https://"
              value="<?= e($v['external_url']) ?>">
       <?= err($errors, 'external_url') ?>
+    </div>
+
+    <div class="form-row">
+    <div class="form-group">
+      <label class="form-label icon-label" for="company_name">
+        <?= icon('company') ?> Company Name <span class="req">*</span>
+      </label>
+      <input type="text" id="company_name" name="company_name"
+             required
+             class="form-control <?= inv($errors, 'company_name') ?>"
+             value="<?= e($v['company_name']) ?>">
+      <?= err($errors, 'company_name') ?>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="industry_sector">
+        Industry Sector <span class="req">*</span>
+      </label>
+      <input type="text" id="industry_sector" name="industry_sector"
+             required maxlength="50" list="sectorOptions"
+             class="form-control <?= inv($errors, 'industry_sector') ?>"
+             value="<?= e($v['industry_sector']) ?>">
+      <datalist id="sectorOptions">
+        <?php foreach ($sectorOptions as $sector): ?>
+          <option value="<?= e($sector) ?>"></option>
+        <?php endforeach; ?>
+      </datalist>
+      <?= err($errors, 'industry_sector') ?>
+    </div>
     </div>
 
     <div class="form-group">
@@ -1037,6 +1150,7 @@ admin_header(
       <?= err($errors, 'description') ?>
     </div>
 
+    <div class="form-row">
     <div class="form-group">
       <label class="form-label icon-label" for="type">
         <?= icon('training') ?> Opportunity Type <span class="req">*</span>
@@ -1053,22 +1167,42 @@ admin_header(
       </select>
       <?= err($errors, 'type') ?>
     </div>
+      <div class="form-group">
+        <label class="form-label icon-label" for="price_status">
+          <?= icon('goal') ?> Price Status
+        </label>
+        <select id="price_status" name="price_status"
+                class="form-control <?= inv($errors, 'price_status') ?>">
+          <?php foreach (['Paid', 'Free', 'Unknown'] as $ps): ?>
+            <option value="<?= e($ps) ?>"
+              <?= $v['price_status'] === $ps ? 'selected' : '' ?>>
+              <?= e($ps) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <div class="form-hint">Paid needs a price. Free sets the price to 0. Choose Unknown if the price is not known.</div>
+        <?= err($errors, 'price_status') ?>
+      </div>
+    </div>
+
+      <div class="form-group" id="priceGroup">
+        <label class="form-label icon-label" for="price">
+          <?= icon('goal') ?> Price (SAR) <span class="req" id="priceRequiredMark" style="<?= $v['price_status'] === 'Paid' ? '' : 'display:none;' ?>">*</span>
+        </label>
+        <input type="number" id="price" name="price" min="0" step="0.01"
+               inputmode="decimal" placeholder="0"
+               <?= $v['price_status'] === 'Paid' ? '' : 'disabled' ?>
+               class="form-control <?= inv($errors, 'price') ?>"
+               value="<?= e($v['price']) ?>">
+        <?= err($errors, 'price') ?>
+      </div>
 
     <div class="form-group">
       <label class="form-label icon-label">
         <?= icon('goal') ?> Required Skills <span class="req">*</span>
       </label>
 
-      <div class="flex gap-2" style="margin-bottom:10px;">
-        <input type="text" id="skillInput" class="form-control"
-               placeholder="Type a skill and press Enter">
-
-        <button type="button" class="btn btn-outline" id="skillAddBtn">
-          <?= icon('add') ?> Add
-        </button>
-      </div>
-
-      <div id="skillList"></div>
+      <?= lookup_picker('skills', 'Select skills', $skillOptions, $skillIds, isset($errors['skills']), true, '') ?>
       <?= err($errors, 'skills') ?>
     </div>
 
@@ -1145,87 +1279,59 @@ admin_header(
       </div>
     </div>
 
+    <!-- Timeline (optional) -->
+    <div class="form-group" id="timelineGroup">
+      <label class="form-label icon-label">
+        <?= icon('clock') ?> Timeline
+      </label>
+
+      <div class="timeline-rows" id="timelineRows">
+        <?php foreach ($timelineRows ?: [['name' => '', 'date' => '']] as $tlRow): ?>
+          <div class="timeline-row">
+            <input type="text" name="timeline_name[]" class="form-control"
+                   maxlength="100" list="timelineNames"
+                   placeholder="Stage name, e.g. Application Opens"
+                   value="<?= e($tlRow['name']) ?>">
+            <input type="date" name="timeline_date[]" class="form-control"
+                   value="<?= e($tlRow['date']) ?>">
+            <button type="button" class="btn btn-ghost timeline-remove"
+                    aria-label="Remove stage">&times;</button>
+          </div>
+        <?php endforeach; ?>
+      </div>
+
+      <datalist id="timelineNames"><option value="Application Opens"></option><option value="Application Closes"></option><option value="Initial Screening"></option><option value="Acceptance"></option></datalist>
+
+      <button type="button" class="btn btn-outline" id="timelineAdd">+ Add stage</button>
+
+      <div class="form-hint">
+        Optional. Stages of the opportunity, for example Application Opens,
+        Application Closes, Initial Screening and Acceptance.
+      </div>
+
+      <div class="form-error" id="timelineError"
+           style="<?= isset($errors['timeline']) ? 'display:block;' : 'display:none;' ?>"><?= e($errors['timeline'] ?? '') ?></div>
+    </div>
+
     <!-- Qualifications -->
-    <section class="entry-section">
-      <label class="form-label icon-label entry-section-title">
+    <div class="form-group">
+      <label class="form-label icon-label">
         <?= icon('goal') ?> Qualifications
       </label>
 
-      <p class="entry-section-hint">
-        Optional. Add each required qualification or certificate as a separate entry.
-      </p>
-
-      <div class="entry-list" id="qualificationList">
-        <?php foreach ($qualificationRows as $i => $q): ?>
-          <div class="entry-row entry-row-single qualification-row">
-            <div class="form-group">
-              <label class="form-label">
-                Qualification Name
-              </label>
-              <input type="text"
-                     maxlength="100"
-                     name="qualifications[<?= $i ?>][name]"
-                     class="form-control <?= rowInvalid($errors, 'qualifications', $i, 'name') ?>"
-                     value="<?= e($q['Name'] ?? '') ?>"
-                     placeholder="e.g. Google Data Analytics Certificate"
-                     data-row-field>
-              <?= rowError($errors, 'qualifications', $i, 'name') ?>
-            </div>
-
-            <button type="button" class="entry-remove"
-                    aria-label="Remove qualification"
-                    title="Remove qualification">×</button>
-          </div>
-        <?php endforeach; ?>
-      </div>
-
+      <?= lookup_picker('qualifications', 'Select qualifications', $qualificationOptions, $qualificationIds, isset($errors['qualifications']), false, '') ?>
       <?= err($errors, 'qualifications') ?>
-
-      <button type="button" class="add-entry" id="addQualification">
-        + Add another qualification
-      </button>
-    </section>
+    </div>
 
     <!-- Experience -->
-    <section class="entry-section">
-      <label class="form-label icon-label entry-section-title">
+    <div class="form-group">
+      <label class="form-label icon-label">
         <?= icon('form') ?> Experience
       </label>
 
-      <p class="entry-section-hint">
-        Optional. Add each required experience as a separate entry.
-      </p>
-
-      <div class="entry-list" id="experienceList">
-        <?php foreach ($experienceRows as $i => $x): ?>
-          <div class="entry-row entry-row-single experience-row">
-            <div class="form-group">
-              <label class="form-label">
-                Experience Name
-              </label>
-              <input type="text"
-                     maxlength="100"
-                     name="experience[<?= $i ?>][name]"
-                     class="form-control <?= rowInvalid($errors, 'experience', $i, 'name') ?>"
-                     value="<?= e($x['Name'] ?? '') ?>"
-                     placeholder="e.g. Customer Service"
-                     data-row-field>
-              <?= rowError($errors, 'experience', $i, 'name') ?>
-            </div>
-
-            <button type="button" class="entry-remove"
-                    aria-label="Remove experience"
-                    title="Remove experience">×</button>
-          </div>
-        <?php endforeach; ?>
-      </div>
-
+      <?= lookup_picker('experience', 'Select experience', $experienceOptions, $experienceIds, isset($errors['experience']), false, '') ?>
       <?= err($errors, 'experience') ?>
-
-      <button type="button" class="add-entry" id="addExperience">
-        + Add another experience
-      </button>
-    </section>
+    </div>
 
     <div class="flex-between" style="margin-top:24px;">
       <a href="dashboard-admin.php?tab=opportunities"
@@ -1237,70 +1343,75 @@ admin_header(
     </div>
   </form>
 </div>
+</div>
 
 <script>
-  /* Skill chips. */
-  let skills = <?= json_encode($skills) ?>;
-
-  const list = document.getElementById("skillList");
-  const input = document.getElementById("skillInput");
-  const hidden = document.getElementById("skillsJson");
-
-  function renderSkills() {
-    hidden.value = JSON.stringify(skills);
-    list.innerHTML = "";
-
-    if (!skills.length) {
-      list.innerHTML =
-        '<span class="text-muted" style="font-size:.85rem;">None added yet.</span>';
-      return;
+  /* Searchable multi-select pickers (skills / qualifications / experience). */
+  document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
+    const toggle = picker.querySelector('.lookup-toggle');
+    const toggleText = picker.querySelector('.lookup-toggle-text');
+    const panel = picker.querySelector('.lookup-panel');
+    const search = picker.querySelector('.lookup-search');
+    const chips = picker.querySelector('.lookup-chips');
+    const options = picker.querySelectorAll('.lookup-option');
+    const boxes = picker.querySelectorAll('input[type="checkbox"]');
+    const empty = picker.querySelector('.lookup-empty');
+  
+    function render() {
+      chips.replaceChildren();
+      let count = 0;
+      boxes.forEach(function (box) {
+        if (!box.checked) return;
+        count++;
+        const chip = document.createElement('span');
+        chip.className = 'lookup-chip ' + (picker.dataset.chipClass || '');
+        chip.append(document.createTextNode(box.dataset.label + ' '));
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '\u00d7';
+        remove.setAttribute('aria-label', 'Remove ' + box.dataset.label);
+        remove.addEventListener('click', function () { box.checked = false; render(); });
+        chip.append(remove);
+        chips.append(chip);
+      });
+      toggleText.textContent = count ? count + ' selected' : picker.dataset.placeholder;
+      toggleText.classList.toggle('is-placeholder', count === 0);
+      if (count) toggle.classList.remove('invalid');
     }
-
-    skills.forEach((skill, i) => {
-      const chip = document.createElement("span");
-      chip.className = "badge badge-primary";
-      chip.style.cssText =
-        "display:inline-flex;align-items:center;gap:6px;margin:0 6px 6px 0;";
-      chip.textContent = skill + " ";
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "\u00d7";
-      remove.style.cssText =
-        "background:none;border:none;color:inherit;cursor:pointer;padding:0;";
-
-      remove.onclick = () => {
-        skills.splice(i, 1);
-        renderSkills();
-      };
-
-      chip.appendChild(remove);
-      list.appendChild(chip);
+  
+    function closePanel() {
+      panel.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      picker.classList.remove('is-open');
+    }
+  
+    toggle.addEventListener('click', function () {
+      const willOpen = panel.hidden;
+      document.querySelectorAll('[data-lookup-picker] .lookup-panel').forEach(function (p) {
+        if (p !== panel) { p.hidden = true; p.closest('[data-lookup-picker]').classList.remove('is-open'); }
+      });
+      panel.hidden = !willOpen;
+      toggle.setAttribute('aria-expanded', String(willOpen));
+      picker.classList.toggle('is-open', willOpen);
+      if (willOpen) search.focus();
     });
-  }
-
-  function addSkill() {
-    const value = input.value.trim();
-
-    if (value && !skills.includes(value)) {
-      skills.push(value);
-    }
-
-    input.value = "";
-    renderSkills();
-  }
-
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addSkill();
-    }
+  
+    search.addEventListener('input', function () {
+      const q = search.value.trim().toLowerCase();
+      let visible = 0;
+      options.forEach(function (opt) {
+        const match = opt.dataset.text.indexOf(q) !== -1;
+        opt.hidden = !match;
+        if (match) visible++;
+      });
+      empty.hidden = visible !== 0;
+    });
+    search.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+    picker.addEventListener('change', render);
+    picker.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePanel(); toggle.focus(); } });
+    document.addEventListener('click', function (e) { if (!picker.contains(e.target)) closePanel(); });
+    render();
   });
-
-  document.getElementById("skillAddBtn")
-    .addEventListener("click", addSkill);
-
-  renderSkills();
 
   /* Duration display. */
   const sd = document.getElementById("start_date");
@@ -1328,168 +1439,203 @@ admin_header(
   ed.addEventListener("input", updateDuration);
   updateDuration();
 
-  /* Repeatable qualification and experience rows. */
-  const qualificationList = document.getElementById("qualificationList");
-  const experienceList = document.getElementById("experienceList");
+  /* Price: Paid = price required; Free = 0; Unknown = empty. Free and Unknown lock the field (grey). */
+  const priceStatus = document.getElementById("price_status");
+  const priceGroup = document.getElementById("priceGroup");
+  const priceField = document.getElementById("price");
+  const priceMark = document.getElementById("priceRequiredMark");
 
-  function createEntryRow(type, index) {
-    const row = document.createElement("div");
+  function syncPrice(changed) {
+    const st = priceStatus.value;
+    priceField.disabled = st !== "Paid";
+    priceMark.style.display = st === "Paid" ? "" : "none";
 
-    row.className = "entry-row entry-row-single " +
-      (type === "qualification" ? "qualification-row" : "experience-row");
-
-    const definitions = type === "qualification"
-      ? [
-          { key: "name", label: "Qualification Name", type: "text", placeholder: "e.g. Google Data Analytics Certificate" }
-        ]
-      : [
-          { key: "name", label: "Experience Name", type: "text", placeholder: "e.g. Customer Service" }
-        ];
-
-    const prefix = type === "qualification"
-      ? "qualifications"
-      : "experience";
-
-    definitions.forEach(def => {
-      const group = document.createElement("div");
-      group.className = "form-group";
-
-      const label = document.createElement("label");
-      label.className = "form-label";
-      label.textContent = def.label;
-
-      const field = document.createElement("input");
-      field.type = def.type;
-      field.name = `${prefix}[${index}][${def.key}]`;
-      field.dataset.field = def.key;
-      field.dataset.rowField = "";
-      field.className = "form-control";
-      field.placeholder = def.placeholder;
-
-      group.appendChild(label);
-      group.appendChild(field);
-      row.appendChild(group);
-    });
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "entry-remove";
-    remove.textContent = "×";
-    remove.title = "Remove entry";
-    remove.setAttribute("aria-label", "Remove entry");
-    row.appendChild(remove);
-
-    return row;
-  }
-
-  function reindexRows(container, type) {
-    const prefix = type === "qualification"
-      ? "qualifications"
-      : "experience";
-
-    const className = type === "qualification"
-      ? "qualification-row"
-      : "experience-row";
-
-    const fields = ["name"];
-
-    container.querySelectorAll("." + className).forEach((row, index) => {
-      fields.forEach(fieldName => {
-        const field =
-          row.querySelector(`[name*="[${fieldName}]"]`) ||
-          row.querySelector(`[data-field="${fieldName}"]`);
-
-        if (field) {
-          field.name = `${prefix}[${index}][${fieldName}]`;
-        }
-      });
-    });
-  }
-
-  function addEntry(container, type) {
-    const className = type === "qualification"
-      ? "qualification-row"
-      : "experience-row";
-
-    const index = container.querySelectorAll("." + className).length;
-
-    container.appendChild(createEntryRow(type, index));
-    reindexRows(container, type);
-  }
-
-  document.getElementById("addQualification").addEventListener("click", () => {
-    addEntry(qualificationList, "qualification");
-  });
-
-  document.getElementById("addExperience").addEventListener("click", () => {
-    addEntry(experienceList, "experience");
-  });
-
-  document.addEventListener("click", event => {
-    const button = event.target.closest(".entry-remove");
-
-    if (!button) {
-      return;
+    if (st === "Free") {
+      priceField.value = "0";
+    } else if (st === "Unknown") {
+      priceField.value = "";
+    } else if (changed && priceField.value === "0") {
+      priceField.value = "";
     }
 
-    const row = button.closest(".entry-row");
-    const container = row.parentElement;
-
-    if (container.children.length > 1) {
-      row.remove();
-
-      if (container === qualificationList) {
-        reindexRows(container, "qualification");
-      } else {
-        reindexRows(container, "experience");
-      }
-    } else {
-      row.querySelectorAll("input").forEach(field => {
-        if (field.type !== "hidden") {
-          field.value = "";
-        }
-      });
-
-      row.querySelectorAll(".form-error").forEach(error => error.remove());
-
-      row.querySelectorAll(".invalid").forEach(field => {
-        field.classList.remove("invalid");
-      });
-
+    if (st !== "Paid") {
+      priceField.classList.remove("invalid");
+      const pe = priceGroup.querySelector(".form-error");
+      if (pe) pe.remove();
     }
+  }
+
+  priceStatus.addEventListener("change", () => syncPrice(true));
+  syncPrice(false);
+
+  /* Timeline stages: add / remove rows and check them before submitting. */
+  const timelineRowsEl = document.getElementById('timelineRows');
+  document.getElementById('timelineAdd').addEventListener('click', function () {
+    const row = document.createElement('div');
+    row.className = 'timeline-row';
+    row.innerHTML = '<input type="text" name="timeline_name[]" class="form-control" maxlength="100" list="timelineNames" placeholder="Stage name, e.g. Application Opens"><input type="date" name="timeline_date[]" class="form-control"><button type="button" class="btn btn-ghost timeline-remove" aria-label="Remove stage">&times;</button>';
+    timelineRowsEl.appendChild(row);
+    row.querySelector('input').focus();
   });
+  timelineRowsEl.addEventListener('click', function (e) {
+    const btn = e.target.closest('.timeline-remove');
+    if (!btn) return;
+    const row = btn.closest('.timeline-row');
+    if (timelineRowsEl.children.length > 1) row.remove();
+    else row.querySelectorAll('input').forEach(function (i) { i.value = ''; i.classList.remove('invalid'); });
+  });
+  /* Returns true when the timeline is invalid. A stage needs a name and a date; at least one stage when required. */
+  function timelineInvalid(required) {
+    let partial = false, complete = 0;
+    timelineRowsEl.querySelectorAll('.timeline-row').forEach(function (row) {
+      const inputs = row.querySelectorAll('input');
+      const nameEl = inputs[0], dateEl = inputs[1];
+      nameEl.classList.remove('invalid'); dateEl.classList.remove('invalid');
+      const hasName = nameEl.value.trim() !== '', hasDate = dateEl.value !== '';
+      if (!hasName && !hasDate) return;
+      if (!hasName || !hasDate) { partial = true; (hasName ? dateEl : nameEl).classList.add('invalid'); return; }
+      complete++;
+    });
+    let msg = '';
+    if (partial) msg = 'Each timeline stage needs both a name and a date.';
+    else if (required && !complete) { msg = 'This field is required.'; timelineRowsEl.querySelector('input').classList.add('invalid'); }
+    const err = document.getElementById('timelineError');
+    err.textContent = msg;
+    err.style.display = msg ? 'block' : 'none';
+    return msg !== '';
+  }
 
   /* Client-side checks before submitting. */
   document.getElementById("oppForm").addEventListener("submit", event => {
     let firstInvalid = null;
 
-    /* Check the description minimum on the client side too. */
-    const description = document.getElementById("description");
+    /* Mandatory fields must not be empty (checked in page order). */
+    let emptyRequired = false;
 
-    if (description.value.trim().length < 15) {
-      description.classList.add("invalid");
-      firstInvalid = description;
+    const setError = (el, message) => {
+      el.classList.add("invalid");
 
-      let error = description.parentElement.querySelector(".form-error");
+      let error = el.parentElement.querySelector(".form-error");
 
       if (!error) {
         error = document.createElement("div");
         error.className = "form-error";
-        error.style.display = "block";
-        description.insertAdjacentElement("afterend", error);
+        el.insertAdjacentElement("afterend", error);
       }
 
-      error.textContent =
-        "Description must be at least 15 characters long.";
+      error.style.display = "block";
+      error.textContent = message;
+
+      if (!firstInvalid) {
+        firstInvalid = el;
+      }
+    };
+
+    const clearError = el => {
+      el.classList.remove("invalid");
+
+      const error = el.parentElement.querySelector(".form-error");
+
+      if (error) {
+        error.remove();
+      }
+    };
+
+    [
+      "external_url", "company_name", "industry_sector", "title",
+      "description", "type", "location",
+      "start_date", "end_date", "application_deadline"
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      const value = el.value.trim();
+
+      if (value === "") {
+        emptyRequired = true;
+        setError(el, "This field is required.");
+      } else if (id === "description" && value.length < 15) {
+        setError(el, "Description must be at least 15 characters long.");
+      } else if (id === "external_url") {
+        let ok = false;
+
+        try {
+          ok = ["http:", "https:"].includes(new URL(value).protocol);
+        } catch (_e) {}
+
+        if (ok) {
+          clearError(el);
+        } else {
+          setError(el, "Please enter a valid URL starting with http:// or https://.");
+        }
+      } else {
+        clearError(el);
+      }
+    });
+
+    const endEl = document.getElementById("end_date");
+
+    if (
+      sd.value && ed.value && ed.value < sd.value &&
+      !endEl.classList.contains("invalid")
+    ) {
+      setError(endEl, "End date must be after the start date.");
+    }
+
+    /* At least one skill must be selected. */
+    const skillsPicker = document.querySelector("[data-lookup-picker][data-required]");
+    if (skillsPicker && !skillsPicker.querySelector("input:checked")) {
+      emptyRequired = true;
+      skillsPicker.querySelector(".lookup-toggle").classList.add("invalid");
+      if (!firstInvalid) {
+        firstInvalid = skillsPicker.querySelector(".lookup-toggle");
+      }
+    }
+
+    /* Paid requires a price amount greater than 0. */
+    const priceInput = document.getElementById("price");
+    const priceValue = priceInput.value.trim();
+    const priceBad = priceStatus.value === "Paid" &&
+      (!/^\d{1,8}(\.\d{1,2})?$/.test(priceValue) || parseFloat(priceValue) <= 0);
+
+    let priceError = priceGroup.querySelector(".form-error");
+
+    if (priceBad) {
+      priceInput.classList.add("invalid");
+      if (!firstInvalid) {
+        firstInvalid = priceInput;
+      }
+      if (!priceError) {
+        priceError = document.createElement("div");
+        priceError.className = "form-error";
+        priceInput.insertAdjacentElement("afterend", priceError);
+      }
+      priceError.style.display = "block";
+      priceError.textContent =
+        "A valid price amount greater than 0 is required when the status is Paid.";
     } else {
-      description.classList.remove("invalid");
-
-      const descriptionError =
-        description.parentElement.querySelector(".form-error");
-
-      if (descriptionError) {
-        descriptionError.remove();
+      priceInput.classList.remove("invalid");
+      if (priceError) {
+        priceError.remove();
       }
+    }
+
+    /* Timeline is optional, but a stage needs both a name and a date. */
+    if (timelineInvalid(false) && !firstInvalid) {
+      firstInvalid = document.querySelector("#timelineRows .invalid");
+    }
+
+    /* Banner, same wording as the server-side one. */
+    if (emptyRequired) {
+      let banner = document.querySelector(".form-banner");
+
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.className = "form-banner";
+        document.getElementById("oppForm").insertAdjacentElement("beforebegin", banner);
+      }
+
+      banner.style.display = "block";
+      banner.textContent =
+        "Mandatory fields cannot be empty. Please fill in all required fields.";
     }
 
     if (firstInvalid) {

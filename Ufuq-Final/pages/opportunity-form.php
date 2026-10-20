@@ -11,14 +11,18 @@ $cities = defined('CITIES') ? CITIES : ['Riyadh','Jeddah','Mecca','Medina','Damm
 /* ApplicationMethod values as stored in the database. The buttons keep their labels. */
 const METHOD_LINK   = 'External Link';
 const METHOD_SYSTEM = 'Apply Through Platform';
+/* Price status is stored in PriceStatus and the amount in Retail: Free = 0, Unknown = NULL, Paid = amount greater than 0. */
+const PRICE_STATUSES = ['Paid', 'Free', 'Unknown'];
 
 $errors = [];
+$requiredEmpty = false;
 $success = '';
 $editing = false;
 $opportunity = [];
 $skillIds = [];
 $qualificationIds = [];
 $experienceIds = [];
+$timelineRows = [];
 
 function opp_form_redirect(): never {
     header('Location: dashboard-company.php?tab=opportunities');
@@ -53,6 +57,59 @@ function opp_sync_links(PDO $pdo, int $opportunityId, string $linkTable, string 
     $pdo->prepare("DELETE FROM `$linkTable` WHERE OpportunityID = ?")->execute([$opportunityId]);
     $link = $pdo->prepare("INSERT IGNORE INTO `$linkTable` (OpportunityID, `$idCol`) VALUES (?, ?)");
     foreach ($ids as $id) $link->execute([$opportunityId, (int)$id]);
+}
+/* Timeline stages live in the `timeline` table (TimelineID, OpportunityID, TimelineName, TimelineDate).
+   The forms post them as timeline_name[] / timeline_date[]. A row left completely empty is ignored. */
+function opp_posted_timeline($names, $dates, ?string &$error): array
+{
+    $rows = [];
+    $names = is_array($names) ? array_values($names) : [];
+    $dates = is_array($dates) ? array_values($dates) : [];
+    $count = max(count($names), count($dates));
+
+    for ($i = 0; $i < $count; $i++) {
+        $name = trim((string)($names[$i] ?? ''));
+        $date = trim((string)($dates[$i] ?? ''));
+
+        if ($name === '' && $date === '') {
+            continue;
+        }
+
+        if ($name === '' || $date === '') {
+            $error ??= 'Each timeline stage needs both a name and a date.';
+        } elseif (mb_strlen($name, 'UTF-8') > 100) {
+            $error ??= 'Timeline stage names must not exceed 100 characters.';
+        } else {
+            $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+            if (!$parsed || $parsed->format('Y-m-d') !== $date) {
+                $error ??= 'Please enter valid timeline dates.';
+            }
+        }
+
+        $rows[] = ['name' => $name, 'date' => $date];
+    }
+
+    return $rows;
+}
+function opp_load_timeline(PDO $pdo, int $opportunityId): array
+{
+    $stmt = $pdo->prepare('SELECT TimelineName, TimelineDate FROM timeline WHERE OpportunityID = ? ORDER BY TimelineDate, TimelineID');
+    $stmt->execute([$opportunityId]);
+    $rows = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $rows[] = ['name' => (string)$row['TimelineName'], 'date' => (string)$row['TimelineDate']];
+    }
+    return $rows;
+}
+/* Replace the timeline rows of one opportunity. */
+function opp_sync_timeline(PDO $pdo, int $opportunityId, array $rows): void
+{
+    usort($rows, fn($a, $b) => strcmp($a['date'], $b['date']));
+    $pdo->prepare('DELETE FROM timeline WHERE OpportunityID = ?')->execute([$opportunityId]);
+    $ins = $pdo->prepare('INSERT INTO timeline (OpportunityID, TimelineName, TimelineDate) VALUES (?, ?, ?)');
+    foreach ($rows as $row) {
+        $ins->execute([$opportunityId, $row['name'], $row['date']]);
+    }
 }
 /* Searchable multi-select dropdown. Selected items are shown as chips below it. */
 function lookup_picker(string $name, string $placeholder, array $options, array $selectedIds, bool $invalid = false, bool $required = false, string $chipClass = ''): string
@@ -101,6 +158,7 @@ if ($editId > 0) {
     $skillIds = opp_selected_ids($pdo, 'opportunityskill', 'SkillID', $editId);
     $qualificationIds = opp_selected_ids($pdo, 'opportunityqualification', 'QualificationID', $editId);
     $experienceIds = opp_selected_ids($pdo, 'opportunityexperience', 'ExperienceID', $editId);
+    $timelineRows = opp_load_timeline($pdo, $editId);
 }
 
 $values = [
@@ -113,7 +171,8 @@ $values = [
     'StartDate' => $opportunity['StartDate'] ?? '',
     'EndDate' => $opportunity['EndDate'] ?? '',
     'ApplicationDeadLine' => $opportunity['ApplicationDeadLine'] ?? '',
-    'Price' => isset($opportunity['Price']) ? (string)$opportunity['Price'] : '0',
+    'PriceStatus' => in_array($opportunity['PriceStatus'] ?? '', PRICE_STATUSES, true) ? $opportunity['PriceStatus'] : 'Unknown',
+    'Price' => ($opportunity['PriceStatus'] ?? '') === 'Paid' ? (string)($opportunity['Retail'] ?? '') : (($opportunity['PriceStatus'] ?? '') === 'Free' ? '0' : ''),
 ];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -138,14 +197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $startDate = trim((string)($_POST['start_date'] ?? ''));
         $endDate = trim((string)($_POST['end_date'] ?? ''));
         $deadline = trim((string)($_POST['application_deadline'] ?? ''));
+        $priceStatus = trim((string)($_POST['price_status'] ?? 'Unknown'));
         $priceRaw = trim((string)($_POST['price'] ?? ''));
-        if ($priceRaw === '') $priceRaw = '0';
+        $timelineError = null;
+        $timelineRows = opp_posted_timeline($_POST['timeline_name'] ?? [], $_POST['timeline_date'] ?? [], $timelineError);
         $badSkill = $badQualification = $badExperience = false;
         $skillIds = opp_posted_ids($_POST['skills'] ?? [], $skillOptions, $badSkill);
         $qualificationIds = opp_posted_ids($_POST['qualifications'] ?? [], $qualificationOptions, $badQualification);
         $experienceIds = opp_posted_ids($_POST['experience'] ?? [], $experienceOptions, $badExperience);
 
-        $values = ['Title'=>$title,'Description'=>$description,'Type'=>$type,'ApplicationMethod'=>$method,'ExternalURL'=>$externalUrl,'Location'=>$location,'StartDate'=>$startDate,'EndDate'=>$endDate,'ApplicationDeadLine'=>$deadline,'Price'=>$priceRaw];
+        $values = ['Title'=>$title,'Description'=>$description,'Type'=>$type,'ApplicationMethod'=>$method,'ExternalURL'=>$externalUrl,'Location'=>$location,'StartDate'=>$startDate,'EndDate'=>$endDate,'ApplicationDeadLine'=>$deadline,'PriceStatus'=>$priceStatus,'Price'=>($priceStatus === 'Free' ? '0' : ($priceStatus === 'Unknown' ? '' : $priceRaw))];
         if ($title === '') $errors['title'] = 'This field is required.';
         elseif (mb_strlen($title, 'UTF-8') > 100) $errors['title'] = 'Title must not exceed 100 characters.';
         if ($description === '') $errors['description'] = 'This field is required.';
@@ -163,30 +224,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($deadline === '') $errors['application_deadline'] = 'This field is required.';
         elseif (!DateTime::createFromFormat('!Y-m-d', $deadline)) $errors['application_deadline'] = 'Please enter a valid deadline.';
         elseif (empty($errors['start_date']) && DateTime::createFromFormat('!Y-m-d', $deadline) > $dateStart) $errors['application_deadline'] = 'Application deadline should be on or before the start date.';
-        /* Price is DECIMAL(10,2) with CHECK (Price >= 0); 0 means free. */
-        if (!preg_match('/^\d{1,8}(\.\d{1,2})?$/', $priceRaw)) $errors['price'] = 'Please enter a valid price (0 or more, up to 2 decimals).';
-        $price = preg_match('/^\d{1,8}(\.\d{1,2})?$/', $priceRaw) ? number_format((float)$priceRaw, 2, '.', '') : '0.00';
+        /* Paid needs an amount (> 0); Free is stored as 0; Unknown is stored as NULL (the price field stays empty). */
+        $price = null;
+        if (!in_array($priceStatus, PRICE_STATUSES, true)) {
+            $errors['price_status'] = 'Please select a price status.';
+        } elseif ($priceStatus === 'Paid') {
+            if (!preg_match('/^\d{1,8}(\.\d{1,2})?$/', $priceRaw) || (float)$priceRaw <= 0) $errors['price'] = 'A valid price amount greater than 0 is required when the status is Paid.';
+            else $price = number_format((float)$priceRaw, 2, '.', '');
+        } elseif ($priceStatus === 'Free') {
+            $price = '0.00';
+        }
+        /* Timeline: at least one stage is required for "Add via the Platform"; it is optional for "Add Link". */
+        if ($timelineError) $errors['timeline'] = $timelineError;
+        elseif ($method === METHOD_SYSTEM && !$timelineRows) $errors['timeline'] = 'This field is required.';
         /* Skills are required; qualifications and experience are optional. */
         if ($badSkill) $errors['skills'] = 'Please select skills from the list.';
         elseif (!$skillIds) $errors['skills'] = 'This field is required.';
         if ($badQualification) $errors['qualifications'] = 'Please select qualifications from the list.';
         if ($badExperience) $errors['experience'] = 'Please select experience from the list.';
 
+        $requiredEmpty = ($title === '' || $description === '' || $type === '' || $location === '' || $startDate === '' || $endDate === '' || $deadline === '' || !$skillIds || ($method === METHOD_LINK && $externalUrl === '') || ($method === METHOD_SYSTEM && !$timelineRows));
         if ($errors) {
             // Re-display entered values and errors below.
         } else {
             $pdo->beginTransaction();
             if ($isEditPost) {
                 /* Status and view count are left untouched on edit; Duration is a generated column. */
-                $params = [$title, $description, $type, $method, $company['CompanyName'], $company['IndustrySector'] ?? null, $method === METHOD_LINK ? $externalUrl : null, $startDate, $endDate, $deadline, $location, $price];
+                $params = [$title, $description, $type, $method, $company['CompanyName'], $company['IndustrySector'] ?? null, $method === METHOD_LINK ? $externalUrl : null, $startDate, $endDate, $deadline, $location, $priceStatus, $price];
                 $params[] = $postEditId; $params[] = $companyId;
-                $stmt = $pdo->prepare('UPDATE opportunity SET Title = ?, Description = ?, Type = ?, ApplicationMethod = ?, OpportunityProvider = ?, IndustrySector = ?, ExternalURL = ?, StartDate = ?, EndDate = ?, ApplicationDeadLine = ?, Location = ?, Price = ? WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
+                $stmt = $pdo->prepare('UPDATE opportunity SET Title = ?, Description = ?, Type = ?, ApplicationMethod = ?, OpportunityProvider = ?, IndustrySector = ?, ExternalURL = ?, StartDate = ?, EndDate = ?, ApplicationDeadLine = ?, Location = ?, PriceStatus = ?, Retail = ? WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
                 $stmt->execute($params);
                 $opportunityId = $postEditId;
             } else {
-                $cols = 'Title, Description, Type, ApplicationMethod, OpportunityProvider, IndustrySector, ExternalURL, StartDate, EndDate, ApplicationDeadLine, Location, Price, Status, CreatedByCompanyID';
-                $params = [$title, $description, $type, $method, $company['CompanyName'], $company['IndustrySector'] ?? null, $method === METHOD_LINK ? $externalUrl : null, $startDate, $endDate, $deadline, $location, $price, 'Open', $companyId];
-                $marks = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
+                $cols = 'Title, Description, Type, ApplicationMethod, OpportunityProvider, IndustrySector, ExternalURL, StartDate, EndDate, ApplicationDeadLine, Location, PriceStatus, Retail, Status, CreatedByCompanyID';
+                $params = [$title, $description, $type, $method, $company['CompanyName'], $company['IndustrySector'] ?? null, $method === METHOD_LINK ? $externalUrl : null, $startDate, $endDate, $deadline, $location, $priceStatus, $price, 'Open', $companyId];
+                $marks = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
                 $stmt = $pdo->prepare('INSERT INTO opportunity (' . $cols . ') VALUES (' . $marks . ')');
                 $stmt->execute($params);
                 $opportunityId = (int)$pdo->lastInsertId();
@@ -195,6 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             opp_sync_links($pdo, $opportunityId, 'opportunityskill', 'SkillID', $skillIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityqualification', 'QualificationID', $qualificationIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityexperience', 'ExperienceID', $experienceIds);
+            opp_sync_timeline($pdo, $opportunityId, $timelineRows);
             $pdo->commit();
             opp_form_redirect();
         }
@@ -303,6 +376,12 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
 .form-banner{border:1px solid #f1c8cb;background:#fff3f3!important;color:#b82f3b!important;border-radius:10px!important;line-height:1.6}
 @media(max-width:1000px){#oppForm .form-row:has(#applicationDeadline){grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){#oppForm .form-row,#oppForm .form-row:has(#applicationDeadline){grid-template-columns:minmax(0,1fr);gap:0}}
+/* Timeline rows and locked (grey) price field */
+#oppForm .timeline-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+#oppForm .timeline-row{display:grid;grid-template-columns:minmax(0,1fr) 190px 46px;gap:10px;align-items:center}
+#oppForm .timeline-remove{min-width:0!important;width:46px;padding:0!important;font-size:1.3rem;line-height:1}
+@media(max-width:700px){#oppForm .timeline-row{grid-template-columns:minmax(0,1fr) 46px}#oppForm .timeline-row input[type=text]{grid-column:1 / -1}}
+#oppForm .form-control:disabled{color:#8a8a93;background:#efeff1;border-color:#dddde2;cursor:not-allowed;-webkit-text-fill-color:#8a8a93;opacity:1}
 @media(prefers-reduced-motion:reduce){#oppForm *{transition:none!important}}
 @media(max-width:700px){.page-content.container>div{max-width:100%!important}.form-row{grid-template-columns:1fr!important}.role-toggle{width:100%;max-width:none!important}}
 </style>
@@ -330,7 +409,7 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
   <h2 class="opp-section-heading">Opportunity Details</h2>
   <p class="text-muted" style="margin:0 0 16px">Fill in the details students will see.</p>
   <?php if (!empty($errors['_general'])): ?><div class="form-banner" style="display:block;"><?= e($errors['_general']) ?></div><?php endif; ?>
-  <?php if ($errors && empty($errors['_general'])): ?><div class="form-banner" style="display:block;">Please review the highlighted fields and try again.</div><?php endif; ?>
+  <?php if ($errors && empty($errors['_general'])): ?><div class="form-banner" style="display:block;"><?= $requiredEmpty ? 'All mandatory fields must be completed.' : 'Please review the highlighted fields and try again.' ?></div><?php endif; ?>
   <form id="oppForm" class="card section-card" style="padding:20px" method="post" novalidate>
     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
     <?php if ($editing): ?><input type="hidden" name="opportunity_id" value="<?= (int)$opportunity['OpportunityID'] ?>"><?php endif; ?>
@@ -348,10 +427,12 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
     </div>
     <div class="form-group"><label class="form-label" for="title">Title <span class="required-mark">*</span></label><input type="text" id="title" name="title" maxlength="100" class="form-control <?= isset($errors['title']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'Title') ?>"><div class="form-error" id="titleError"><?= e($errors['title'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'title'); ?></div>
     <div class="form-group"><label class="form-label" for="description">Description<span class="required-mark">*</span></label><textarea id="description" name="description" maxlength="1000" class="form-control <?= isset($errors['description']) ? 'invalid' : '' ?>" rows="4"><?= opp_value($values, 'Description') ?></textarea><div class="form-error" id="descriptionError"><?= e($errors['description'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'description'); ?></div>
-    <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="type"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>Opportunity Type<span class="required-mark">*</span></label><select id="type" name="type" class="form-control <?= isset($errors['type']) ? 'invalid' : '' ?>"><option value="">Select type</option><?php foreach ($types as $type): ?><option value="<?= e($type) ?>" <?= $values['Type'] === $type ? 'selected' : '' ?>><?= e($type) ?></option><?php endforeach; ?></select><div class="form-error" id="typeError"><?= e($errors['type'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'type'); ?></div><div class="form-group"><label class="form-label icon-label" for="price"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Price (SAR)</label><input type="number" id="price" name="price" min="0" step="0.01" inputmode="decimal" placeholder="0" class="form-control <?= isset($errors['price']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'Price') ?>"><div class="form-hint">Enter 0 if the opportunity is free.</div><div class="form-error" id="priceError"><?= e($errors['price'] ?? 'Please enter a valid price.') ?></div><?php opp_error($errors, 'price'); ?></div></div>
+    <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="type"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>Opportunity Type<span class="required-mark">*</span></label><select id="type" name="type" class="form-control <?= isset($errors['type']) ? 'invalid' : '' ?>"><option value="">Select type</option><?php foreach ($types as $type): ?><option value="<?= e($type) ?>" <?= $values['Type'] === $type ? 'selected' : '' ?>><?= e($type) ?></option><?php endforeach; ?></select><div class="form-error" id="typeError"><?= e($errors['type'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'type'); ?></div><div class="form-group"><label class="form-label icon-label" for="priceStatus"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Price Status</label><select id="priceStatus" name="price_status" class="form-control <?= isset($errors['price_status']) ? 'invalid' : '' ?>"><?php foreach (PRICE_STATUSES as $ps): ?><option value="<?= e($ps) ?>" <?= $values['PriceStatus'] === $ps ? 'selected' : '' ?>><?= e($ps) ?></option><?php endforeach; ?></select><div class="form-hint">Paid needs a price. Free sets the price to 0. Choose Unknown if the price is not known.</div><?php opp_error($errors, 'price_status'); ?></div></div>
+    <div class="form-group" id="priceGroup"><label class="form-label icon-label" for="price"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Price (SAR)<span class="required-mark" id="priceRequiredMark" style="<?= $values['PriceStatus'] === 'Paid' ? '' : 'display:none;' ?>">*</span></label><input type="number" id="price" name="price" min="0" step="0.01" inputmode="decimal" placeholder="0" <?= $values['PriceStatus'] === 'Paid' ? '' : 'disabled' ?> class="form-control <?= isset($errors['price']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'Price') ?>"><div class="form-error" id="priceError">Please enter a valid price.</div><?php opp_error($errors, 'price'); ?></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Required Skills<span class="required-mark">*</span></label><?= lookup_picker('skills', 'Select skills', $skillOptions, $skillIds, isset($errors['skills']), true, '') ?><div class="form-error" id="skillsError"><?= e($errors['skills'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'skills'); ?></div>
     <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="duration"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/clock.png');mask-image:url('../images-website/icons/clock.png');"></span>Duration</label><input type="text" id="duration" class="form-control" placeholder="—" readonly value="<?= e($durationDisplay) ?>"><div class="form-hint">Calculated automatically from the start and end dates.</div></div><div class="form-group"><label class="form-label icon-label" for="location"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/location.png');mask-image:url('../images-website/icons/location.png');"></span>Location<span class="required-mark">*</span></label><select id="location" name="location" class="form-control <?= isset($errors['location']) ? 'invalid' : '' ?>"><option value="">Select location</option><?php foreach ($cities as $city): ?><option value="<?= e($city) ?>" <?= $values['Location'] === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?></select><div class="form-error" id="locationError"><?= e($errors['location'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'location'); ?></div></div>
     <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="startDate"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>Start Date<span class="required-mark">*</span></label><input type="date" id="startDate" name="start_date" class="form-control <?= isset($errors['start_date']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'StartDate') ?>"><div class="form-error" id="startDateError"><?= e($errors['start_date'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'start_date'); ?></div><div class="form-group"><label class="form-label icon-label" for="endDate"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>End Date<span class="required-mark">*</span></label><input type="date" id="endDate" name="end_date" class="form-control <?= isset($errors['end_date']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'EndDate') ?>"><div class="form-error" id="endDateError"><?= e($errors['end_date'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'end_date'); ?></div><div class="form-group"><label class="form-label icon-label" for="applicationDeadline"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/calendar.png');mask-image:url('../images-website/icons/calendar.png');"></span>Application Deadline<span class="required-mark" id="deadlineRequiredMark">*</span></label><input type="date" id="applicationDeadline" name="application_deadline" class="form-control <?= isset($errors['application_deadline']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'ApplicationDeadLine') ?>"><div class="form-error" id="applicationDeadlineError"><?= e($errors['application_deadline'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'application_deadline'); ?></div></div>
+    <div class="form-group" id="timelineGroup"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/clock.png');mask-image:url('../images-website/icons/clock.png');"></span>Timeline<span class="required-mark" id="timelineRequiredMark" style="<?= $values['ApplicationMethod'] === METHOD_SYSTEM ? '' : 'display:none;' ?>">*</span></label><div class="timeline-rows" id="timelineRows"><?php foreach ($timelineRows ?: [['name' => '', 'date' => '']] as $tlRow): ?><div class="timeline-row"><input type="text" name="timeline_name[]" class="form-control" maxlength="100" list="timelineNames" placeholder="Stage name, e.g. Application Opens" value="<?= e($tlRow['name']) ?>"><input type="date" name="timeline_date[]" class="form-control" value="<?= e($tlRow['date']) ?>"><button type="button" class="btn btn-ghost timeline-remove" aria-label="Remove stage">&times;</button></div><?php endforeach; ?></div><datalist id="timelineNames"><option value="Application Opens"></option><option value="Application Closes"></option><option value="Initial Screening"></option><option value="Acceptance"></option></datalist><button type="button" class="btn btn-outline" id="timelineAdd">+ Add stage</button><div class="form-hint">Add the stages of the opportunity, for example Application Opens, Application Closes, Initial Screening and Acceptance. Required when adding via the platform, optional otherwise.</div><div class="form-error" id="timelineError" style="<?= isset($errors['timeline']) ? 'display:block;' : 'display:none;' ?>"><?= e($errors['timeline'] ?? '') ?></div></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Qualifications</label><?= lookup_picker('qualifications', 'Select qualifications', $qualificationOptions, $qualificationIds, isset($errors['qualifications']), false, '') ?><?php opp_error($errors, 'qualifications'); ?></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/form.png');mask-image:url('../images-website/icons/form.png');"></span>Experience</label><?= lookup_picker('experience', 'Select experience', $experienceOptions, $experienceIds, isset($errors['experience']), false, '') ?><?php opp_error($errors, 'experience'); ?></div>
     <div class="flex-between" style="margin-top:12px;"><a href="dashboard-company.php?tab=opportunities" class="btn btn-ghost">Cancel</a><button type="submit" class="btn btn-primary" id="submitBtn"><?= $editing ? 'Save Changes' : 'Publish' ?></button></div>
@@ -365,13 +446,30 @@ const methodInput = document.getElementById('applicationMethod');
 const linkBtn = document.getElementById('methodLinkBtn');
 const systemBtn = document.getElementById('methodSystemBtn');
 const externalGroup = document.getElementById('externalUrlGroup');
+const timelineMark = document.getElementById('timelineRequiredMark');
 function setMethod(method) {
   if (lockedMethod) return;
   methodInput.value = method;
   linkBtn.classList.toggle('active', method === 'External Link');
   systemBtn.classList.toggle('active', method === 'Apply Through Platform');
   externalGroup.style.display = method === 'External Link' ? 'block' : 'none';
+  timelineMark.style.display = method === 'Apply Through Platform' ? '' : 'none';
 }
+const priceStatus = document.getElementById('priceStatus');
+const priceField = document.getElementById('price');
+const priceMark = document.getElementById('priceRequiredMark');
+/* Paid: the price is required. Free: price is 0. Unknown: price stays empty. Free and Unknown lock the field (grey). */
+function syncPrice(changed) {
+  const st = priceStatus.value;
+  priceField.disabled = st !== 'Paid';
+  priceMark.style.display = st === 'Paid' ? '' : 'none';
+  if (st === 'Free') priceField.value = '0';
+  else if (st === 'Unknown') priceField.value = '';
+  else if (changed && priceField.value === '0') priceField.value = '';
+  if (st !== 'Paid') { priceField.classList.remove('invalid'); const pe = document.getElementById('priceError'); if (pe) pe.style.display = 'none'; }
+}
+priceStatus.addEventListener('change', () => syncPrice(true));
+syncPrice(false);
 linkBtn.addEventListener('click', () => setMethod('External Link'));
 systemBtn.addEventListener('click', () => setMethod('Apply Through Platform'));
 const startDate = document.getElementById('startDate');
@@ -453,6 +551,42 @@ document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
   document.addEventListener('click', function (e) { if (!picker.contains(e.target)) closePanel(); });
   render();
 });
+/* Timeline stages: add / remove rows and check them before submitting. */
+const timelineRowsEl = document.getElementById('timelineRows');
+document.getElementById('timelineAdd').addEventListener('click', function () {
+  const row = document.createElement('div');
+  row.className = 'timeline-row';
+  row.innerHTML = '<input type="text" name="timeline_name[]" class="form-control" maxlength="100" list="timelineNames" placeholder="Stage name, e.g. Application Opens"><input type="date" name="timeline_date[]" class="form-control"><button type="button" class="btn btn-ghost timeline-remove" aria-label="Remove stage">&times;</button>';
+  timelineRowsEl.appendChild(row);
+  row.querySelector('input').focus();
+});
+timelineRowsEl.addEventListener('click', function (e) {
+  const btn = e.target.closest('.timeline-remove');
+  if (!btn) return;
+  const row = btn.closest('.timeline-row');
+  if (timelineRowsEl.children.length > 1) row.remove();
+  else row.querySelectorAll('input').forEach(function (i) { i.value = ''; i.classList.remove('invalid'); });
+});
+/* Returns true when the timeline is invalid. A stage needs a name and a date; at least one stage when required. */
+function timelineInvalid(required) {
+  let partial = false, complete = 0;
+  timelineRowsEl.querySelectorAll('.timeline-row').forEach(function (row) {
+    const inputs = row.querySelectorAll('input');
+    const nameEl = inputs[0], dateEl = inputs[1];
+    nameEl.classList.remove('invalid'); dateEl.classList.remove('invalid');
+    const hasName = nameEl.value.trim() !== '', hasDate = dateEl.value !== '';
+    if (!hasName && !hasDate) return;
+    if (!hasName || !hasDate) { partial = true; (hasName ? dateEl : nameEl).classList.add('invalid'); return; }
+    complete++;
+  });
+  let msg = '';
+  if (partial) msg = 'Each timeline stage needs both a name and a date.';
+  else if (required && !complete) { msg = 'This field is required.'; timelineRowsEl.querySelector('input').classList.add('invalid'); }
+  const err = document.getElementById('timelineError');
+  err.textContent = msg;
+  err.style.display = msg ? 'block' : 'none';
+  return msg !== '';
+}
 document.getElementById('oppForm').addEventListener('submit',e=>{
   let valid=true;
   const requiredIds=['title','description','type','location','startDate','endDate'];
@@ -461,12 +595,13 @@ document.getElementById('oppForm').addEventListener('submit',e=>{
   const descEl=document.getElementById('description');const descErr=document.getElementById('descriptionError');if(descEl.value.trim()&&descEl.value.trim().length<15){descEl.classList.add('invalid');descErr.textContent='Description must be at least 15 characters long.';descErr.style.display='block';valid=false;}
   const method=methodInput.value;const url=document.getElementById('externalUrl');const urlErr=document.getElementById('externalUrlError');
   if(method==='External Link'){let ok=false;try{const u=new URL(url.value.trim());ok=['http:','https:'].includes(u.protocol);}catch(_e){}url.classList.toggle('invalid',!ok);urlErr.style.display=ok?'none':'block';if(!ok)valid=false;}else{url.classList.remove('invalid');urlErr.style.display='none';}
-  const priceEl=document.getElementById('price');const priceErr=document.getElementById('priceError');const priceBad=priceEl.value.trim()!==''&&!/^\d{1,8}(\.\d{1,2})?$/.test(priceEl.value.trim());priceEl.classList.toggle('invalid',priceBad);priceErr.style.display=priceBad?'block':'none';if(priceBad)valid=false;
+  const priceEl=document.getElementById('price');const priceErr=document.getElementById('priceError');const priceVal=priceEl.value.trim();const priceBad=priceStatus.value==='Paid'&&(!/^\d{1,8}(\.\d{1,2})?$/.test(priceVal)||parseFloat(priceVal)<=0);priceEl.classList.toggle('invalid',priceBad);priceErr.textContent='A valid price amount greater than 0 is required when the status is Paid.';priceErr.style.display=priceBad?'block':'none';if(priceBad)valid=false;
+  if(timelineInvalid(methodInput.value==='Apply Through Platform'))valid=false;
   /* The deadline is required for both methods (NOT NULL in the database). */
   const deadline=document.getElementById('applicationDeadline');const deadlineErr=document.getElementById('applicationDeadlineError');const deadlineBad=!deadline.value;deadline.classList.toggle('invalid',deadlineBad);deadlineErr.style.display=deadlineBad?'block':'none';if(deadlineBad)valid=false;
   if(startDate.value&&endDate.value&&endDate.value<startDate.value){endDate.classList.add('invalid');document.getElementById('endDateError').textContent='End date must be on or after the start date.';document.getElementById('endDateError').style.display='block';valid=false;}
   if(deadline.value&&startDate.value&&deadline.value>startDate.value){deadline.classList.add('invalid');deadlineErr.textContent='Application deadline should be on or before the start date.';deadlineErr.style.display='block';valid=false;}
-  if(!valid){e.preventDefault();const banner=document.querySelector('.form-banner');if(banner){banner.style.display='block';banner.textContent='Please fill in all required fields correctly.';}const first=document.querySelector('.invalid');if(first)first.focus();}
+  if(!valid){e.preventDefault();const banner=document.querySelector('.form-banner');if(banner){banner.style.display='block';banner.textContent='All mandatory fields must be completed.';}const first=document.querySelector('.invalid');if(first)first.focus();}
 });
 </script>
 </body>

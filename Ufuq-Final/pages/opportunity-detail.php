@@ -380,6 +380,25 @@ if ($opp) {
     }
 }
 
+/* ---------- Opportunity timeline (table `timeline`) ---------- */
+$timelineSteps = [];
+
+if ($opp) {
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT TimelineName, TimelineDate
+             FROM timeline
+             WHERE OpportunityID = ?
+             ORDER BY TimelineDate, TimelineID'
+        );
+
+        $stmt->execute([$opportunityId]);
+        $timelineSteps = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        $timelineSteps = [];
+    }
+}
+
 /* ---------- Company / provider information ---------- */
 $provider = $opp['OpportunityProvider'] ?? 'Company';
 $company = null;
@@ -415,8 +434,8 @@ $externalURL = $opp['ExternalURL'] ?? '';
 $deadline = $opp['ApplicationDeadLine'] ?? null;
 $startDate = $opp['StartDate'] ?? null;
 $endDate = $opp['EndDate'] ?? null;
-$timeline = $opp['TimeLine'] ?? '';
-$price = $opp['Price'] ?? null;
+$priceStatus = $opp['PriceStatus'] ?? 'Unknown';
+$retail = $opp['Retail'] ?? null;
 $industrySector = $opp['IndustrySector'] ?? 'Not specified';
 
 $isOpen = detail_is_open($status, $deadline);
@@ -1241,6 +1260,153 @@ user_header($me, 'Opportunity Details', 'browse');
             }
         }
 
+        /* ---------- Timeline ---------- */
+        .tl-scroll {
+            padding: 6px 2px 4px;
+            overflow-x: auto;
+        }
+
+        .tl-track {
+            display: flex;
+            min-width: min-content;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .tl-step {
+            position: relative;
+            flex: 1 1 0;
+            min-width: 120px;
+            padding: 0 8px;
+            text-align: center;
+        }
+
+        /* Line that joins this circle to the previous one. */
+        .tl-step::before {
+            content: "";
+            position: absolute;
+            top: 13px;
+            left: -50%;
+            width: 100%;
+            height: 4px;
+            border-radius: 4px;
+            background: #e4dcef;
+        }
+
+        .tl-step:first-child::before {
+            display: none;
+        }
+
+        .tl-step.is-done::before {
+            background: var(--detail-purple);
+        }
+
+        .tl-dot {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            margin: 0 auto 11px;
+            box-sizing: border-box;
+            border: 3px solid #d5c9e6;
+            border-radius: 50%;
+            background: #fff;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .tl-step.is-done .tl-dot {
+            border-color: var(--detail-purple);
+            background: var(--detail-purple);
+        }
+
+        .tl-step.is-done .tl-dot::after {
+            content: "\2713";
+        }
+
+        .tl-step.is-next .tl-dot {
+            border-color: var(--detail-gold);
+            background: #fff;
+            box-shadow: 0 0 0 6px rgba(226, 169, 75, 0.22);
+        }
+
+        .tl-name {
+            color: var(--detail-text);
+            font-size: 13.5px;
+            font-weight: 750;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
+        .tl-step.is-next .tl-name {
+            color: var(--detail-purple-dark);
+        }
+
+        .tl-date {
+            margin-top: 2px;
+            color: var(--detail-muted);
+            font-size: 12.5px;
+        }
+
+        @media (max-width: 620px) {
+            .tl-scroll {
+                overflow: visible;
+            }
+
+            .tl-track {
+                flex-direction: column;
+                min-width: 0;
+            }
+
+            .tl-step {
+                display: flex;
+                align-items: flex-start;
+                gap: 14px;
+                min-width: 0;
+                padding: 0 0 22px;
+                text-align: left;
+            }
+
+            .tl-step:last-child {
+                padding-bottom: 0;
+            }
+
+            .tl-step::before {
+                display: none;
+            }
+
+            /* Vertical line down to the next circle. */
+            .tl-step:not(:last-child)::after {
+                content: "";
+                position: absolute;
+                top: 30px;
+                bottom: 0;
+                left: 13px;
+                width: 4px;
+                border-radius: 4px;
+                background: #e4dcef;
+            }
+
+            .tl-step.next-done::after {
+                background: var(--detail-purple);
+            }
+
+            .tl-dot {
+                flex: 0 0 30px;
+                margin: 0;
+            }
+
+            .tl-info {
+                padding-top: 3px;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             .detail-page *,
             .detail-page *::before,
@@ -1391,11 +1557,6 @@ user_header($me, 'Opportunity Details', 'browse');
                     </div>
 
                     <div class="field-view">
-                        <div class="field-label">Schedule / Timeline</div>
-                        <?= detail_h($timeline ?: 'Not specified') ?>
-                    </div>
-
-                    <div class="field-view">
                         <div class="field-label">Application Method</div>
                         <?= detail_h($method ?: 'Not specified') ?>
                     </div>
@@ -1403,8 +1564,12 @@ user_header($me, 'Opportunity Details', 'browse');
                     <div class="field-view">
                         <div class="field-label">Price</div>
 
-                        <?php if ($price !== null && $price !== ''): ?>
-                            <?= detail_h(number_format((float) $price, 2)) ?> SAR
+                        <?php if ($priceStatus === 'Free'): ?>
+                            Free
+                        <?php elseif ($priceStatus === 'Paid' && $retail !== null && $retail !== ''): ?>
+                            <?= detail_h(number_format((float) $retail, 2)) ?> SAR
+                        <?php elseif ($priceStatus === 'Paid'): ?>
+                            Paid
                         <?php else: ?>
                             Not specified
                         <?php endif; ?>
@@ -1424,6 +1589,49 @@ user_header($me, 'Opportunity Details', 'browse');
                     </div>
 
                 </div>
+
+                <!-- Timeline -->
+                <?php if ($timelineSteps): ?>
+                    <?php
+                    $tlToday = date('Y-m-d');
+                    $tlNext = null;
+
+                    foreach ($timelineSteps as $tlIndex => $tlStep) {
+                        if ((string) $tlStep['TimelineDate'] > $tlToday) {
+                            $tlNext = $tlIndex;
+                            break;
+                        }
+                    }
+                    ?>
+                    <div class="divider"></div>
+
+                    <section>
+                        <h3>Timeline</h3>
+
+                        <div class="tl-scroll">
+                            <ol class="tl-track">
+                                <?php foreach ($timelineSteps as $tlIndex => $tlStep):
+                                    $tlDone = (string) $tlStep['TimelineDate'] <= $tlToday;
+                                    $tlNextDone = isset($timelineSteps[$tlIndex + 1])
+                                        && (string) $timelineSteps[$tlIndex + 1]['TimelineDate'] <= $tlToday;
+                                    $tlClass = 'tl-step'
+                                        . ($tlDone ? ' is-done' : '')
+                                        . ($tlIndex === $tlNext ? ' is-next' : '')
+                                        . ($tlNextDone ? ' next-done' : '');
+                                ?>
+                                    <li class="<?= detail_h($tlClass) ?>">
+                                        <span class="tl-dot" aria-hidden="true"></span>
+
+                                        <div class="tl-info">
+                                            <div class="tl-name"><?= detail_h($tlStep['TimelineName']) ?></div>
+                                            <div class="tl-date"><?= detail_h(detail_date($tlStep['TimelineDate'])) ?></div>
+                                        </div>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ol>
+                        </div>
+                    </section>
+                <?php endif; ?>
 
                 <!-- Qualifications -->
                 <?php if ($qualifications): ?>
