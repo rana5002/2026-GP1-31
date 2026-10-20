@@ -103,6 +103,25 @@ if (!$opp) {
     http_response_code(404);
 }
 
+/* ---------- Count the view (once per session for each opportunity) ---------- */
+if ($opp && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $viewedKey = (int) $opp['OpportunityID'];
+
+    if (empty($_SESSION['viewed_opportunities'][$viewedKey])) {
+        try {
+            $pdo->prepare(
+                'UPDATE opportunity
+                 SET ViewCount = ViewCount + 1
+                 WHERE OpportunityID = ?'
+            )->execute([$viewedKey]);
+
+            $_SESSION['viewed_opportunities'][$viewedKey] = true;
+        } catch (Throwable $ignored) {
+            // Never break the page if the counter cannot be updated.
+        }
+    }
+}
+
 /* ---------- Handle POST actions ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
     $submittedToken = (string) ($_POST['csrf_token'] ?? '');

@@ -11,20 +11,6 @@ require_login('Company');
 
 $companyId = (int) $_SESSION['user_id'];
 
-// Opportunity view tracking table. The opportunity detail page must insert
-// one row per recorded visit for the Views count to increase.
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS opportunity_view (
-        ViewID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        OpportunityID INT NOT NULL,
-        ViewedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_opportunity_view_opportunity (OpportunityID),
-        INDEX idx_opportunity_view_date (ViewedAt)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-} catch (Throwable $ignored) {
-    // Keep the dashboard available if table creation is restricted.
-}
-
 $validTabs = ['overview', 'opportunities', 'applicants', 'engagement', 'reviews', 'profile'];
 $activeTab = $_GET['tab'] ?? 'overview';
 if (!in_array($activeTab, $validTabs, true)) $activeTab = 'overview';
@@ -78,63 +64,79 @@ try {
             company_redirect('applicants', 'status');
         }
 
-        if ($action === 'save_profile') {
+        /* ----- Company profile (each section saves on its own) ----- */
+        if ($action === 'company_name') {
             $name = trim($_POST['company_name'] ?? '');
+            if ($name === '' || mb_strlen($name) > 100) throw new RuntimeException('Please enter a valid company name (up to 100 characters).');
+            $stmt = $pdo->prepare('UPDATE company SET CompanyName = ? WHERE CompanyID = ?');
+            $stmt->execute([$name, $companyId]);
+            company_redirect('profile', 'saved');
+        }
+
+        if ($action === 'company_logo') {
+            if (empty($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Please choose a company logo.');
+            $file = $_FILES['logo'];
+            if ($file['size'] > 3 * 1024 * 1024) throw new RuntimeException('Logo must be 3 MB or smaller.');
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->file($file['tmp_name']);
+            $allowedLogo = ['image/jpeg' => 'jpg', 'image/png' => 'png'];
+            if (!isset($allowedLogo[$mime])) throw new RuntimeException('Please upload a PNG or JPG image.');
+            $uploadDir = __DIR__ . '/../uploads/company/logos';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) throw new RuntimeException('Could not create the logo upload folder.');
+            $fileName = 'company_' . $companyId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedLogo[$mime];
+            if (!move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $fileName)) throw new RuntimeException('Could not save the uploaded logo.');
+            $stmt = $pdo->prepare('UPDATE company SET Logo = ? WHERE CompanyID = ?');
+            $stmt->execute(['uploads/company/logos/' . $fileName, $companyId]);
+            company_redirect('profile', 'saved');
+        }
+
+        if ($action === 'contact') {
             $phone = trim($_POST['phone'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $password = (string)($_POST['password'] ?? '');
-            $industry = trim($_POST['industry'] ?? '');
-            $description = trim($_POST['description'] ?? '');
-            $location = trim($_POST['location'] ?? '');
-            $website = trim($_POST['website'] ?? '');
 
-            if ($name === '' || mb_strlen($name) > 100 || $email === '' || strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                throw new RuntimeException('Please enter a valid company name and email address.');
-            }
             // Matches chk_company_phone in the database
             if (!preg_match('/^(05[0-9]{8}|011[0-9]{7})$/', $phone)) {
                 throw new RuntimeException('Please enter a valid phone number (05XXXXXXXX or 011XXXXXXX).');
             }
-            if ($industry === '') throw new RuntimeException('Please select an industry sector.');
-            // Matches chk_company_desc in the database
-            if (mb_strlen($description) < 15) throw new RuntimeException('Company description must be at least 15 characters.');
-            if (mb_strlen($description) > 500) throw new RuntimeException('Company description must be 500 characters or fewer.');
-            if ($location === '') throw new RuntimeException('Please select a location.');
-            if ($website !== '' && !filter_var($website, FILTER_VALIDATE_URL)) throw new RuntimeException('Please enter a valid website URL.');
+            if ($email === '' || strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException('Please enter a valid email address.');
+            }
             if ($password !== '' && strlen($password) < 8) throw new RuntimeException('Password must be at least 8 characters.');
 
             $emailCheck = $pdo->prepare('SELECT MemberID FROM member WHERE Email = ? AND MemberID <> ?');
             $emailCheck->execute([$email, $companyId]);
             if ($emailCheck->fetch()) throw new RuntimeException('Email already registered');
 
-            $logoPath = null;
-            if (isset($_FILES['logo']) && $_FILES['logo']['error'] !== UPLOAD_ERR_NO_FILE) {
-                if ($_FILES['logo']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Logo upload failed.');
-                $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
-                if (!in_array($ext, ['png', 'jpg', 'jpeg'], true)) throw new RuntimeException('Please upload a PNG or JPG image.');
-                if ($_FILES['logo']['size'] > 3 * 1024 * 1024) throw new RuntimeException('Logo must be 3 MB or smaller.');
-                $uploadDir = __DIR__ . '/../uploads/company/logos';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) throw new RuntimeException('Could not create the logo upload folder.');
-                $fileName = 'company_' . $companyId . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
-                if (!move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . '/' . $fileName)) throw new RuntimeException('Could not save the uploaded logo.');
-                $logoPath = 'uploads/company/logos/' . $fileName;
-            }
-
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ? AND Role = \'Company\'');
-            $stmt->execute([$email, $companyId]);
+            $stmt = $pdo->prepare('UPDATE company SET Phone = ? WHERE CompanyID = ?');
+            $stmt->execute([$phone, $companyId]);
             if ($password !== '') {
-                $stmt = $pdo->prepare('UPDATE member SET Password = ? WHERE MemberID = ?');
-                $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $companyId]);
+                $stmt = $pdo->prepare('UPDATE member SET Email = ?, Password = ? WHERE MemberID = ? AND Role = \'Company\'');
+                $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), $companyId]);
+            } else {
+                $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ? AND Role = \'Company\'');
+                $stmt->execute([$email, $companyId]);
             }
-            $sql = 'UPDATE company SET CompanyName = ?, Phone = ?, IndustrySector = ?, Description = ?, Location = ?, WebsiteURL = ?';
-            $params = [$name, $phone, $industry, $description, $location, $website !== '' ? $website : null];
-            if ($logoPath !== null) { $sql .= ', Logo = ?'; $params[] = $logoPath; }
-            $sql .= ' WHERE CompanyID = ?';
-            $params[] = $companyId;
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
             $pdo->commit();
+            company_redirect('profile', 'saved');
+        }
+
+        if ($action === 'details') {
+            $industry = trim($_POST['industry'] ?? '');
+            $location = trim($_POST['location'] ?? '');
+            $website = trim($_POST['website'] ?? '');
+            $description = trim($_POST['description'] ?? '');
+
+            if ($industry === '') throw new RuntimeException('Please select an industry sector.');
+            if ($location === '') throw new RuntimeException('Please select a location.');
+            // Matches chk_company_desc in the database
+            if (mb_strlen($description) < 15) throw new RuntimeException('Company description must be at least 15 characters.');
+            if (mb_strlen($description) > 500) throw new RuntimeException('Company description must be 500 characters or fewer.');
+            if ($website !== '' && (strlen($website) > 255 || !filter_var($website, FILTER_VALIDATE_URL))) throw new RuntimeException('Please enter a valid website URL.');
+
+            $stmt = $pdo->prepare('UPDATE company SET IndustrySector = ?, Location = ?, WebsiteURL = ?, Description = ? WHERE CompanyID = ?');
+            $stmt->execute([$industry, $location, $website !== '' ? $website : null, $description, $companyId]);
             company_redirect('profile', 'saved');
         }
     }
@@ -151,7 +153,7 @@ if (!$company) { http_response_code(404); exit('Company profile not found.'); }
 $stmt = $pdo->prepare('SELECT o.*,
     (SELECT COUNT(*) FROM application a WHERE a.OpportunityID = o.OpportunityID) AS ApplicationCount,
     (SELECT COUNT(*) FROM favorite f WHERE f.OpportunityID = o.OpportunityID) AS FavouriteCount,
-    (SELECT COUNT(*) FROM opportunity_view v WHERE v.OpportunityID = o.OpportunityID) AS ViewsCount
+    o.ViewCount AS ViewsCount
     FROM opportunity o WHERE o.CreatedByCompanyID = ? ORDER BY o.OpportunityID DESC');
 $stmt->execute([$companyId]);
 $opportunities = $stmt->fetchAll();
@@ -393,16 +395,45 @@ $heroTitles = [
 .company-dashboard .rating-pill{display:inline-flex;align-items:center;padding:6px 12px;border-radius:30px;background:#fbf6eb;border:1px solid #eee4d1;color:#76531d;font-size:.84rem;font-weight:750}
 
 /* Profile */
-.company-dashboard .company-profile-head{display:flex;gap:18px;align-items:center;margin-bottom:22px}
-.company-dashboard .company-logo{width:84px;height:84px;flex-shrink:0;border-radius:50%;border:4px solid #f0ebf8;display:flex;align-items:center;justify-content:center;background:var(--c-lavender);color:var(--c-purple);font-size:1.8rem;font-weight:750;overflow:hidden}
-.company-dashboard .company-logo img{width:100%;height:100%;object-fit:cover}
-.company-dashboard .company-profile-head h2{margin:0 0 4px;color:var(--c-text);font-size:1.3rem;overflow-wrap:anywhere}
-.company-dashboard .company-field{margin-bottom:18px}
-.company-dashboard .company-field label{display:block;margin-bottom:7px;font-size:.87rem;font-weight:650;color:var(--c-text)}
-.company-dashboard .company-field .form-control{width:100%;border-radius:9px;border-color:#ddd5e8;transition:border-color .18s ease,box-shadow .18s ease}
-.company-dashboard .company-field .form-control:focus{border-color:var(--c-purple);box-shadow:0 0 0 3px rgba(57,38,95,.10);outline:none}
-.company-dashboard .profile-form-card h3{margin:0 0 16px;color:var(--c-text);font-size:1.08rem;font-weight:750}
-.company-dashboard .profile-form-card hr{border:0;border-top:1px solid #e9e4ef;margin:22px 0}
+
+/* Profile (same layout as the user profile page) */
+.company-dashboard .profile-identity,.company-dashboard .profile-section{border:1px solid var(--c-border);border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(40,26,70,.045);transition:box-shadow .22s ease,border-color .22s ease}
+.company-dashboard .profile-identity:hover,.company-dashboard .profile-section:hover{border-color:#d8cbe7;box-shadow:0 9px 24px rgba(40,26,70,.075)}
+.company-dashboard .profile-identity{display:flex;align-items:center;gap:22px;padding:25px;margin-bottom:22px}
+.company-dashboard .profile-avatar-wrap{position:relative;flex:0 0 92px;width:92px;height:92px}
+.company-dashboard .profile-avatar{display:flex;align-items:center;justify-content:center;width:92px;height:92px;overflow:hidden;border:4px solid #f0ebf8;border-radius:50%;background:var(--c-lavender);color:var(--c-purple);font-size:1.8rem;font-weight:750}
+.company-dashboard .profile-avatar img{width:100%;height:100%;object-fit:cover}
+.company-dashboard .profile-avatar-upload{position:absolute;right:-3px;bottom:0;display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:2px solid #fff;border-radius:50%;background:var(--c-purple);color:#fff;cursor:pointer;transition:transform .18s ease,background .18s ease}
+.company-dashboard .profile-avatar-upload:hover{transform:scale(1.07);background:var(--c-purple-dark)}
+.company-dashboard .profile-identity-details{flex:1;min-width:0}
+.company-dashboard .profile-name-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.company-dashboard .profile-name-row h2{margin:0;color:var(--c-text);font-size:1.35rem;overflow-wrap:anywhere}
+.company-dashboard .profile-subtitle{margin-top:6px;color:var(--c-muted);font-size:.9rem}
+.company-dashboard .profile-meta{margin-top:9px;color:var(--c-muted);font-size:.84rem}
+.company-dashboard .profile-section{padding:24px;margin-bottom:20px}
+.company-dashboard .profile-section-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding-bottom:17px;margin-bottom:19px;border-bottom:1px solid #e9e4ef}
+.company-dashboard .profile-section-header h2{display:flex;align-items:center;gap:10px;margin:0;color:var(--c-text);font-size:1.08rem;font-weight:750}
+.company-dashboard .profile-section-header h2::before{content:"";display:block;width:5px;height:23px;border-radius:5px;background:var(--c-gold)}
+.company-dashboard .profile-view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:21px 25px}
+.company-dashboard .profile-field{min-width:0}
+.company-dashboard .profile-field.is-wide{grid-column:1/-1}
+.company-dashboard .profile-field-label{margin-bottom:7px;color:var(--c-muted);font-size:.82rem}
+.company-dashboard .profile-field-value{color:var(--c-text);font-size:.93rem;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}
+.company-dashboard .profile-field-value a{color:var(--c-purple);font-weight:600}
+.company-dashboard .profile-form{margin-top:5px}
+.company-dashboard .profile-form .form-group{margin-bottom:17px}
+.company-dashboard .profile-form .form-group.is-wide{grid-column:1/-1}
+.company-dashboard .profile-form .form-label{display:block;margin-bottom:7px;color:var(--c-text);font-size:.87rem;font-weight:650}
+.company-dashboard .profile-form .form-control{width:100%;border-radius:9px;border-color:#ddd5e8;transition:border-color .18s ease,box-shadow .18s ease}
+.company-dashboard .profile-form .form-control:focus{border-color:var(--c-purple);box-shadow:0 0 0 3px rgba(57,38,95,.10);outline:none}
+.company-dashboard .profile-form textarea{resize:vertical}
+.company-dashboard .profile-form-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:19px}
+.company-dashboard .profile-hidden{display:none!important}
+.company-dashboard .profile-edit-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:0;border-radius:9px;background:transparent;color:var(--c-purple);font:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:background .18s ease,color .18s ease}
+.company-dashboard .profile-edit-btn:hover{background:var(--c-lavender);color:var(--c-purple-dark)}
+.company-dashboard .profile-status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:30px;font-size:.76rem;font-weight:750;background:#fbf6eb;color:#76531d}
+.company-dashboard .profile-status.is-verified{background:#e8f5ec;color:#24653c}
+.company-dashboard .profile-status.is-rejected{background:#fbe6e7;color:#9a3038}
 
 /* Header profile avatar (unchanged) */
 .company-header-profile{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;padding:5px 8px;border-radius:10px;white-space:nowrap}
@@ -424,9 +455,13 @@ $heroTitles = [
   .company-dashboard .applicant-status-form{min-width:0}
   .company-dashboard .applicant-status-form .status-select{min-width:115px}
   .company-dashboard .applicant-profile-grid{grid-template-columns:1fr}
-  .company-dashboard .company-profile-head{gap:13px;align-items:flex-start}
-  .company-dashboard .company-logo{width:68px;height:68px}
-}
+  .company-dashboard .profile-identity{align-items:flex-start;gap:15px;padding:19px}
+  .company-dashboard .profile-avatar-wrap,.company-dashboard .profile-avatar{width:70px;height:70px;flex-basis:70px}
+  .company-dashboard .profile-avatar{font-size:1.4rem}
+  .company-dashboard .profile-name-row h2{font-size:1.1rem}
+  .company-dashboard .profile-section{padding:19px 16px}
+  .company-dashboard .profile-view-grid{grid-template-columns:1fr;gap:17px}
+    }
 @keyframes companyFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes companyFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @media(prefers-reduced-motion:reduce){
@@ -644,7 +679,7 @@ $heroTitles = [
         <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Opportunity</th><th>Views</th><th>Applications</th><th>Favorites</th></tr></thead><tbody>
         <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= (int)($o['ViewsCount'] ?? 0) ?></td><td><?= (int)$o['ApplicationCount'] ?></td><td><?= (int)$o['FavouriteCount'] ?></td></tr><?php endforeach; ?>
         </tbody></table></div>
-        <p class="company-help" style="margin-top:10px">Views increase when the opportunity details page records visits in the opportunity_view table. Views from before tracking was enabled cannot be recovered.</p>
+        <p class="company-help" style="margin-top:10px">Views come from the ViewCount column of each opportunity, which increases when students open the opportunity details page.</p>
       <?php endif; ?>
     </section>
 
@@ -672,35 +707,84 @@ $heroTitles = [
 
     <!-- Profile -->
     <section class="tab-panel <?= $activeTab === 'profile' ? 'active' : '' ?>" id="tab-profile">
-      <div style="max-width:700px">
-        <div class="dashboard-card" style="margin-bottom:20px">
-          <div class="company-profile-head" style="margin-bottom:0">
-            <div class="company-logo"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company logo"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></div>
-            <div>
-              <h2><?= e($company['CompanyName']) ?></h2>
-              <div class="company-help"><?= e($company['IndustrySector'] ?? '') ?></div>
-              <div class="company-help">CR Number: <strong><?= e($company['CrNumber']) ?></strong> · Status: <strong><?= e($company['Status']) ?></strong></div>
-            </div>
-          </div>
+
+      <div class="profile-identity">
+        <div class="profile-avatar-wrap">
+          <div class="profile-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company logo"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></div>
+          <button type="button" class="profile-avatar-upload" title="Change company logo" aria-label="Change company logo" onclick="document.getElementById('logoInput').click()"><?= icon('upload', 15) ?></button>
         </div>
-
-        <form method="post" enctype="multipart/form-data" class="dashboard-card profile-form-card">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="save_profile"><input type="hidden" name="tab" value="profile">
-          <h3>Company Information</h3>
-          <div class="company-field"><label for="company_name">Company Name</label><input class="form-control" type="text" id="company_name" name="company_name" required maxlength="100" value="<?= e($company['CompanyName']) ?>"></div>
-          <div class="company-field"><label for="phone">Phone</label><input class="form-control" type="tel" id="phone" name="phone" required maxlength="10" value="<?= e($company['Phone'] ?? '') ?>" pattern="(05[0-9]{8}|011[0-9]{7})"><div class="company-help">Mobile (05XXXXXXXX) or landline (011XXXXXXX).</div></div>
-          <div class="company-field"><label for="email">Official Email</label><input class="form-control" type="email" id="email" name="email" required maxlength="100" value="<?= e($company['Email']) ?>"></div>
-          <div class="company-field"><label for="password">New Password</label><input class="form-control" type="password" id="password" name="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password"><div class="company-help">If changed, the password is securely hashed before storage.</div></div>
-
-          <hr><h3>Company Details</h3>
-          <div class="company-field"><label for="industry">Industry Sector</label><select class="form-control" id="industry" name="industry" required><option value="">Select industry</option><?php foreach ($industryOptions as $industry): ?><option value="<?= e($industry) ?>" <?= ($company['IndustrySector'] ?? '') === $industry ? 'selected' : '' ?>><?= e($industry) ?></option><?php endforeach; ?><?php if (!empty($company['IndustrySector']) && !in_array($company['IndustrySector'], $industryOptions, true)): ?><option selected value="<?= e($company['IndustrySector']) ?>"><?= e($company['IndustrySector']) ?></option><?php endif; ?></select></div>
-          <div class="company-field"><label for="description">Company Description</label><textarea class="form-control" id="description" name="description" rows="4" required minlength="15" maxlength="500"><?= e($company['Description'] ?? '') ?></textarea><div class="company-help">15–500 characters.</div></div>
-          <div class="company-field"><label for="location">Location</label><select class="form-control" id="location" name="location" required><option value="">Select location</option><?php foreach ($locationOptions as $city): ?><option value="<?= e($city) ?>" <?= ($company['Location'] ?? '') === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?><?php if (!empty($company['Location']) && !in_array($company['Location'], $locationOptions, true)): ?><option selected value="<?= e($company['Location']) ?>"><?= e($company['Location']) ?></option><?php endif; ?></select></div>
-          <div class="company-field"><label for="website">Website URL</label><input class="form-control" type="url" id="website" name="website" maxlength="255" value="<?= e($company['WebsiteURL'] ?? '') ?>" placeholder="https://example.com"></div>
-          <div class="company-field"><label for="logo">Company Logo</label><input class="form-control" type="file" id="logo" name="logo" accept=".png,.jpg,.jpeg,image/png,image/jpeg"><div class="company-help">PNG or JPG, maximum 3 MB.</div></div>
-          <button type="submit" class="btn btn-primary">Save Changes</button>
-        </form>
+        <div class="profile-identity-details">
+          <div class="profile-name-row">
+            <h2><?= e($company['CompanyName']) ?></h2>
+            <button type="button" class="profile-edit-btn" onclick="toggleProfileForm('nameForm')"><?= icon('edit', 14) ?> Edit</button>
+          </div>
+          <div class="profile-subtitle"><?= e($company['IndustrySector'] ?: 'Industry not specified') ?></div>
+          <div class="profile-meta">CR Number: <?= e($company['CrNumber']) ?> &middot; <span class="profile-status <?= $company['Status'] === 'Verified' ? 'is-verified' : ($company['Status'] === 'Rejected' ? 'is-rejected' : '') ?>"><?= e($company['Status']) ?></span></div>
+        </div>
       </div>
+
+      <form id="logoForm" method="post" enctype="multipart/form-data" class="profile-hidden">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="company_logo"><input type="hidden" name="tab" value="profile">
+        <input type="file" id="logoInput" name="logo" accept=".png,.jpg,.jpeg,image/png,image/jpeg" onchange="if(this.files.length){this.form.submit();}">
+      </form>
+
+      <section class="profile-section profile-edit-panel profile-hidden" id="nameForm">
+        <div class="profile-section-header"><h2>Edit Company Name</h2></div>
+        <form method="post" class="profile-form">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="company_name"><input type="hidden" name="tab" value="profile">
+          <div class="form-group"><label class="form-label" for="company_name">Company Name</label><input class="form-control" id="company_name" name="company_name" required maxlength="100" value="<?= e($company['CompanyName']) ?>"></div>
+          <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('nameForm')">Cancel</button></div>
+        </form>
+      </section>
+
+      <section class="profile-section">
+        <div class="profile-section-header">
+          <h2>Contact Information</h2>
+          <button type="button" class="profile-edit-btn" onclick="toggleProfileForm('contactForm')"><?= icon('edit', 14) ?> Edit</button>
+        </div>
+        <div class="profile-view-grid">
+          <div class="profile-field"><div class="profile-field-label">Phone Number</div><div class="profile-field-value"><?= e($company['Phone'] ?: '—') ?></div></div>
+          <div class="profile-field"><div class="profile-field-label">Official Email</div><div class="profile-field-value"><?= e($company['Email'] ?: '—') ?></div></div>
+          <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
+        </div>
+        <div id="contactForm" class="profile-edit-panel profile-hidden">
+          <form method="post" class="profile-form">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="contact"><input type="hidden" name="tab" value="profile">
+            <div class="profile-view-grid">
+              <div class="form-group"><label class="form-label" for="phone">Phone Number</label><input class="form-control" type="tel" id="phone" name="phone" required maxlength="10" pattern="(05[0-9]{8}|011[0-9]{7})" value="<?= e($company['Phone'] ?? '') ?>"><small class="company-help">Mobile (05XXXXXXXX) or landline (011XXXXXXX).</small></div>
+              <div class="form-group"><label class="form-label" for="email">Official Email</label><input class="form-control" type="email" id="email" name="email" required maxlength="100" value="<?= e($company['Email']) ?>"></div>
+              <div class="form-group"><label class="form-label" for="password">New Password</label><input class="form-control" type="password" id="password" name="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password"><small class="company-help">At least 8 characters. Your password is securely hashed before storage.</small></div>
+            </div>
+            <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('contactForm')">Cancel</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="profile-section-header">
+          <h2>Company Details</h2>
+          <button type="button" class="profile-edit-btn" onclick="toggleProfileForm('detailsForm')"><?= icon('edit', 14) ?> Edit</button>
+        </div>
+        <div class="profile-view-grid">
+          <div class="profile-field"><div class="profile-field-label">Industry Sector</div><div class="profile-field-value"><?= e($company['IndustrySector'] ?: '—') ?></div></div>
+          <div class="profile-field"><div class="profile-field-label">Location</div><div class="profile-field-value"><?= e($company['Location'] ?: '—') ?></div></div>
+          <div class="profile-field is-wide"><div class="profile-field-label">Website</div><div class="profile-field-value"><?php if (!empty($company['WebsiteURL'])): ?><a href="<?= e($company['WebsiteURL']) ?>" target="_blank" rel="noopener"><?= e($company['WebsiteURL']) ?></a><?php else: ?>—<?php endif; ?></div></div>
+          <div class="profile-field is-wide"><div class="profile-field-label">Description</div><div class="profile-field-value"><?= e($company['Description'] ?: '—') ?></div></div>
+        </div>
+        <div id="detailsForm" class="profile-edit-panel profile-hidden">
+          <form method="post" class="profile-form">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="details"><input type="hidden" name="tab" value="profile">
+            <div class="profile-view-grid">
+              <div class="form-group"><label class="form-label" for="industry">Industry Sector</label><select class="form-control" id="industry" name="industry" required><option value="">Select industry</option><?php foreach ($industryOptions as $industry): ?><option value="<?= e($industry) ?>" <?= ($company['IndustrySector'] ?? '') === $industry ? 'selected' : '' ?>><?= e($industry) ?></option><?php endforeach; ?><?php if (!empty($company['IndustrySector']) && !in_array($company['IndustrySector'], $industryOptions, true)): ?><option selected value="<?= e($company['IndustrySector']) ?>"><?= e($company['IndustrySector']) ?></option><?php endif; ?></select></div>
+              <div class="form-group"><label class="form-label" for="location">Location</label><select class="form-control" id="location" name="location" required><option value="">Select location</option><?php foreach ($locationOptions as $city): ?><option value="<?= e($city) ?>" <?= ($company['Location'] ?? '') === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?><?php if (!empty($company['Location']) && !in_array($company['Location'], $locationOptions, true)): ?><option selected value="<?= e($company['Location']) ?>"><?= e($company['Location']) ?></option><?php endif; ?></select></div>
+              <div class="form-group is-wide"><label class="form-label" for="website">Website URL</label><input class="form-control" type="url" id="website" name="website" maxlength="255" placeholder="https://example.com" value="<?= e($company['WebsiteURL'] ?? '') ?>"></div>
+              <div class="form-group is-wide"><label class="form-label" for="description">Company Description</label><textarea class="form-control" id="description" name="description" rows="4" required minlength="15" maxlength="500"><?= e($company['Description'] ?? '') ?></textarea><small class="company-help">15&ndash;500 characters.</small></div>
+            </div>
+            <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('detailsForm')">Cancel</button></div>
+          </form>
+        </div>
+      </section>
+
     </section>
 
   </div>
@@ -708,5 +792,17 @@ $heroTitles = [
 </main>
 
 <footer class="site-footer"><div class="container"><div class="footer-bottom"><span>&copy; 2026 Ufuq &mdash; IT496 Graduation Project</span></div></div></footer>
+<script>
+function toggleProfileForm(id) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  const willOpen = target.classList.contains('profile-hidden');
+  document.querySelectorAll('#tab-profile .profile-edit-panel').forEach(function (panel) { panel.classList.add('profile-hidden'); });
+  if (willOpen) {
+    target.classList.remove('profile-hidden');
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+</script>
 </body>
 </html>

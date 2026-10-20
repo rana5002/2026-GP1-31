@@ -17,13 +17,13 @@ function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'
 
 /* Expects login.php to set $_SESSION['user_id'] and $_SESSION['role'] ('Admin'). */
 function require_admin(): int {
-    if (($_SESSION['role'] ?? '') !== 'Admin'
+    if (($_SESSION['role'] ?? '') !== 'Administrator'
         || !isset($_SESSION['user_id'])) {
         header('Location: login.php');
         exit;
     }
 
-    return (int)$_SESSION['user_id'];
+    return (int) $_SESSION['user_id'];
 }
 
 function csrf_token(): string {

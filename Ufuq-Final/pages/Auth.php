@@ -23,9 +23,11 @@ function no_cache(): void {
 }
 
 function dashboard_for(string $role): string {
+    // The role stored in the database (member.Role) is 'Administrator'.
     $map = [
         'User' => 'home.php',
         'Company' => 'dashboard-company.php',
+        'Administrator' => 'dashboard-admin.php',
         'Admin' => 'dashboard-admin.php'
     ];
 
@@ -42,6 +44,11 @@ function require_login(?string $role = null): void {
 
     no_cache();
 
+    // Accept 'Admin' as a short name for the 'Administrator' role.
+    if ($role === 'Admin') {
+        $role = 'Administrator';
+    }
+
     if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
         header('Location: login.php');
         exit;
@@ -50,6 +57,18 @@ function require_login(?string $role = null): void {
     if ($role !== null && $_SESSION['role'] !== $role) {
         header('Location: ' . dashboard_for((string) $_SESSION['role']));
         exit;
+    }
+}
+
+/**
+ * Guard for administrator pages. Returns the administrator's ID.
+ * (Skipped if another file already defines it.)
+ */
+if (!function_exists('require_admin')) {
+    function require_admin(): int {
+        require_login('Administrator');
+
+        return (int) $_SESSION['user_id'];
     }
 }
 

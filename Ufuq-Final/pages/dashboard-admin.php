@@ -7,7 +7,8 @@ require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
 
-$adminId = require_admin();
+require_login('Administrator');
+$adminId = (int)$_SESSION['user_id'];
 
 $tab = $_GET['tab'] ?? 'verification';
 if (!in_array($tab, ['verification', 'opportunities'], true)) {
@@ -50,13 +51,23 @@ $opps = $pdo->query("
     ORDER BY OpportunityID DESC
 ")->fetchAll();
 
+/* ---------- Overview numbers ---------- */
+$pendingCount  = count($pending);
+$verifiedCount = 0;
+$rejectedCount = 0;
+foreach ($reviewed as $r) {
+    if ($r['Status'] === 'Verified') $verifiedCount++;
+    elseif ($r['Status'] === 'Rejected') $rejectedCount++;
+}
+$oppCount = count($opps);
+
 $adminName = trim($_SESSION['admin_name'] ?? 'Hatoon');
 
 admin_header('Admin Dashboard', $tab);
 ?>
 
 <style>
-/* ===== Admin Dashboard ===== */
+/* ===== Ufuq Admin Dashboard (same design as the user Home page) ===== */
 
 .admin-dashboard {
     --admin-purple: #39265f;
@@ -64,15 +75,25 @@ admin_header('Admin Dashboard', $tab);
     --admin-purple-mid: #49316f;
     --admin-lavender: #f0ebf8;
     --admin-gold: #e2a94b;
+    --admin-bg: #faf6ef;
     --admin-text: #29243a;
     --admin-muted: #777184;
+    --admin-border: #e9e3ed;
 
     color: var(--admin-text);
-    padding-bottom: 50px;
+    padding-bottom: 48px;
+    background: var(--admin-bg);
+    min-height: 70vh;
 }
 
-.admin-dashboard * {
+.admin-dashboard *,
+.admin-dashboard *::before,
+.admin-dashboard *::after {
     box-sizing: border-box;
+}
+
+.admin-dashboard a {
+    text-underline-offset: 3px;
 }
 
 /* Welcome banner */
@@ -81,12 +102,7 @@ admin_header('Admin Dashboard', $tab);
     overflow: hidden;
     padding: 38px 0 42px;
     margin-bottom: 28px;
-    background: linear-gradient(
-        125deg,
-        #281a46 0%,
-        #39265f 55%,
-        #49316f 100%
-    );
+    background: linear-gradient(125deg, #281a46 0%, #39265f 55%, #49316f 100%);
     color: #fff;
 }
 
@@ -137,7 +153,7 @@ admin_header('Admin Dashboard', $tab);
     letter-spacing: .2px;
 }
 
-.admin-dashboard .admin-hero h2 {
+.admin-dashboard .admin-hero h1 {
     margin: 0;
     color: #fff;
     font-size: clamp(1.65rem, 3vw, 2.15rem);
@@ -148,7 +164,8 @@ admin_header('Admin Dashboard', $tab);
 .admin-dashboard .admin-hero p {
     margin: 8px 0 0;
     color: rgba(255,255,255,.82);
-    font-size: .98rem;
+    font-size: .96rem;
+    line-height: 1.8;
 }
 
 .admin-dashboard .hero-icon {
@@ -157,6 +174,7 @@ admin_header('Admin Dashboard', $tab);
     justify-content: center;
     width: 78px;
     height: 78px;
+    flex-shrink: 0;
     border: 1px solid rgba(255,255,255,.2);
     border-radius: 24px;
     background: rgba(255,255,255,.08);
@@ -165,27 +183,31 @@ admin_header('Admin Dashboard', $tab);
     animation: adminFloat 4s ease-in-out infinite;
 }
 
-/* Content entrance */
 .admin-dashboard .admin-content {
-    animation: adminFadeUp .55s ease both;
+    animation: adminFadeUp .5s ease both;
 }
 
-/* Notification */
-.admin-dashboard .admin-notice {
+/* Notice */
+.admin-dashboard .dashboard-notice {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     padding: 13px 16px;
-    margin-bottom: 24px;
+    margin-bottom: 22px;
     border: 1px solid #e4dced;
     border-radius: 13px;
     background: #f7f4fb;
     color: var(--admin-purple);
-    box-shadow: 0 4px 15px rgba(40,26,70,.04);
+    font-size: .9rem;
+    line-height: 1.6;
     animation: adminFadeUp .35s ease both;
 }
 
-/* Section headings */
+/* Headings */
+.admin-dashboard .dashboard-section {
+    margin-bottom: 24px;
+}
+
 .admin-dashboard .section-heading {
     display: flex;
     align-items: center;
@@ -201,59 +223,197 @@ admin_header('Admin Dashboard', $tab);
     display: block;
     width: 5px;
     height: 23px;
+    flex-shrink: 0;
     border-radius: 5px;
     background: var(--admin-gold);
 }
 
-/* Company cards */
-.admin-dashboard .company-review-card {
-    position: relative;
-    overflow: hidden;
+.admin-dashboard .section-description {
+    margin: -7px 0 16px;
+    color: var(--admin-muted);
+    font-size: .9rem;
+    line-height: 1.7;
+}
+
+.admin-dashboard .card-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+/* Cards */
+.admin-dashboard .dashboard-card {
+    min-width: 0;
     padding: 20px;
-    border: 1px solid #ece7f2;
+    border: 1px solid var(--admin-border);
     border-radius: 16px;
     background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.045);
-    transition: transform .22s ease, box-shadow .22s ease,
-                border-color .22s ease;
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+
+.admin-dashboard .dashboard-card:hover {
+    border-color: #d5c8e4;
+    box-shadow: 0 10px 26px rgba(40,26,70,.075);
+}
+
+/* Overview stat cards */
+.admin-dashboard .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+.admin-dashboard .stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 150px;
+    color: var(--admin-text);
+    text-decoration: none;
     animation: adminFadeUp .45s ease both;
+}
+
+.admin-dashboard .stat-card:hover {
+    transform: translateY(-3px);
+}
+
+.admin-dashboard .stat-card.is-active {
+    border-color: var(--admin-purple);
+}
+
+.admin-dashboard .stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.admin-dashboard .stat-title {
+    font-size: .93rem;
+    font-weight: 700;
+}
+
+.admin-dashboard .stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 43px;
+    height: 43px;
+    flex-shrink: 0;
+    border-radius: 13px;
+    background: var(--admin-lavender);
+    color: var(--admin-purple);
+}
+
+.admin-dashboard .stat-number {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--admin-purple);
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.admin-dashboard .stat-note {
+    color: var(--admin-muted);
+    font-size: .83rem;
+    line-height: 1.6;
+}
+
+.admin-dashboard .dashboard-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--admin-purple);
+    font-size: .86rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.admin-dashboard .dashboard-link:hover {
+    color: var(--admin-purple-dark);
+    text-decoration: underline;
+}
+
+/* Company review cards */
+.admin-dashboard .company-review-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 17px;
+    border: 1px solid #ece7f2;
+    border-radius: 15px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40,26,70,.04);
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+    animation: adminFadeUp .4s ease both;
 }
 
 .admin-dashboard .company-review-card:hover {
     transform: translateY(-3px);
     border-color: #cfc1e2;
-    box-shadow: 0 12px 28px rgba(40,26,70,.10);
+    box-shadow: 0 12px 28px rgba(40,26,70,.09);
+}
+
+.admin-dashboard .company-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
 }
 
 .admin-dashboard .company-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
+    width: 46px;
+    height: 46px;
     flex-shrink: 0;
-    border-radius: 15px;
+    border-radius: 14px;
     background: var(--admin-lavender);
+    color: var(--admin-purple);
 }
 
 .admin-dashboard .company-name {
-    margin: 0 0 5px;
+    margin: 0 0 4px;
     color: var(--admin-text);
-    font-size: 1.02rem;
-    font-weight: 700;
+    font-size: .98rem;
+    font-weight: 750;
+    line-height: 1.55;
     overflow-wrap: anywhere;
 }
 
 .admin-dashboard .company-meta {
     color: var(--admin-muted);
-    font-size: .87rem;
-    line-height: 1.7;
+    font-size: .82rem;
+    line-height: 1.6;
+}
+
+.admin-dashboard .company-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.admin-dashboard .review-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }
 
 /* Tables */
 .admin-dashboard .admin-table-card {
     overflow: hidden;
-    border: 1px solid #e9e4ef;
+    border: 1px solid var(--admin-border);
     border-radius: 16px;
     background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.045);
@@ -300,15 +460,15 @@ admin_header('Admin Dashboard', $tab);
     border-bottom: none;
 }
 
-/* Status labels */
+/* Badges */
 .admin-dashboard .badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 5px 11px;
+    padding: 5px 10px;
     border-radius: 30px;
-    font-size: .79rem;
-    font-weight: 700;
+    font-size: .76rem;
+    font-weight: 750;
     white-space: nowrap;
 }
 
@@ -335,7 +495,7 @@ admin_header('Admin Dashboard', $tab);
 .admin-dashboard .btn-primary:hover {
     background: var(--admin-purple-dark);
     border-color: var(--admin-purple-dark);
-    box-shadow: 0 7px 17px rgba(40,26,70,.23);
+    box-shadow: 0 7px 17px rgba(40,26,70,.20);
 }
 
 .admin-dashboard .btn-outline {
@@ -348,47 +508,60 @@ admin_header('Admin Dashboard', $tab);
     gap: 7px;
 }
 
+.admin-dashboard .text-muted {
+    color: var(--admin-muted);
+}
+
 /* Empty state */
 .admin-dashboard .empty-state {
-    padding: 38px 20px;
+    padding: 30px 18px;
     border: 1px dashed #d8cde7;
-    border-radius: 16px;
+    border-radius: 14px;
     background: #fbf9fd;
     text-align: center;
-    animation: adminFadeUp .4s ease both;
 }
 
 .admin-dashboard .empty-state .empty-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 70px;
-    height: 70px;
-    margin-bottom: 12px;
-    border-radius: 22px;
-    background: #f0ebf8;
+    width: 58px;
+    height: 58px;
+    margin-bottom: 11px;
+    border-radius: 19px;
+    background: var(--admin-lavender);
+    color: var(--admin-purple);
 }
 
 .admin-dashboard .empty-state h3 {
     margin: 0;
     color: var(--admin-text);
-    font-size: 1.05rem;
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.admin-dashboard .empty-state p {
+    margin: 7px 0 0;
+    color: var(--admin-muted);
+    font-size: .87rem;
+    line-height: 1.7;
 }
 
 /* Divider */
-.admin-dashboard .divider {
+.admin-dashboard .dashboard-divider {
     height: 1px;
+    margin: 28px 0;
     border: 0;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        #dcd2e9,
-        transparent
-    );
+    background: linear-gradient(90deg, transparent, #dcd2e9, transparent);
 }
 
-/* Responsive tables */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
+    .admin-dashboard .stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 620px) {
     .admin-dashboard .admin-hero {
         padding: 30px 0;
     }
@@ -400,6 +573,19 @@ admin_header('Admin Dashboard', $tab);
         font-size: 1.6rem;
     }
 
+    .admin-dashboard .stat-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .admin-dashboard .stat-card {
+        min-height: 130px;
+    }
+
+    .admin-dashboard .dashboard-card {
+        padding: 16px;
+    }
+
     .admin-dashboard .admin-table-card {
         overflow-x: auto;
     }
@@ -407,39 +593,16 @@ admin_header('Admin Dashboard', $tab);
     .admin-dashboard .admin-table-card .data-table {
         min-width: 590px;
     }
-
-    .admin-dashboard .company-review-card {
-        align-items: flex-start !important;
-    }
-
-    .admin-dashboard .company-review-card > .flex {
-        flex-wrap: wrap;
-    }
-
-    .admin-dashboard .admin-notice {
-        align-items: flex-start;
-    }
 }
 
-/* Motion */
 @keyframes adminFadeUp {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes adminFloat {
-    0%, 100% {
-        transform: translateY(0);
-    }
-    50% {
-        transform: translateY(-5px);
-    }
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -461,14 +624,15 @@ admin_header('Admin Dashboard', $tab);
 
             <div>
                 <div class="welcome-label">
-                    <span>✦</span>
+                    <span aria-hidden="true">✦</span>
                     <span>Ufuq Administration</span>
                 </div>
 
-                <h2>Welcome back, <?= e($adminName) ?>!</h2>
+                <h1>Welcome back, <?= e($adminName) ?>!</h1>
 
                 <p>
-                    We're glad to have you back. Here's to another productive day.
+                    Review companies, manage opportunities,
+                    and keep the platform running smoothly.
                 </p>
             </div>
 
@@ -479,66 +643,118 @@ admin_header('Admin Dashboard', $tab);
 
     <div class="container admin-content">
 
-        <?php if (isset($_GET['msg'])): ?>
-            <?php
-            $messages = [
-                'deleted'  => 'Opportunity deleted successfully.',
-                'saved'    => 'Opportunity saved successfully.',
-                'approved' => 'Company approved and notified by email.',
-                'rejected' => 'Company rejected and notified by email.'
-            ];
+        <!-- Feedback Messages -->
+        <?php
+        $messages = [
+            'deleted'  => 'Opportunity deleted successfully.',
+            'saved'    => 'Opportunity saved successfully.',
+            'approved' => 'Company approved and notified by email.',
+            'rejected' => 'Company rejected and notified by email.'
+        ];
+        $notice = $messages[$_GET['msg'] ?? ''] ?? '';
+        ?>
 
-            $notice = $messages[$_GET['msg']] ?? '';
-            ?>
-
-            <?php if ($notice !== ''): ?>
-                <div class="admin-notice" role="status">
-                    <?= icon('company', 20, 'icon-primary') ?>
-                    <span><?= e($notice) ?></span>
-                </div>
-            <?php endif; ?>
+        <?php if ($notice !== ''): ?>
+            <div class="dashboard-notice" role="status">
+                <span aria-hidden="true">✓</span>
+                <span><?= e($notice) ?></span>
+            </div>
         <?php endif; ?>
+
+        <!-- Overview -->
+        <section class="stat-grid" aria-label="Dashboard overview">
+
+            <a href="dashboard-admin.php?tab=verification"
+               class="dashboard-card stat-card <?= $tab === 'verification' ? 'is-active' : '' ?>">
+                <div class="stat-top">
+                    <span class="stat-title">Pending Review</span>
+                    <span class="stat-icon" aria-hidden="true"><?= icon('company', 22) ?></span>
+                </div>
+                <div>
+                    <span class="stat-number"><?= $pendingCount ?></span>
+                    <span class="stat-note">Companies waiting for verification.</span>
+                </div>
+            </a>
+
+            <a href="dashboard-admin.php?tab=verification"
+               class="dashboard-card stat-card">
+                <div class="stat-top">
+                    <span class="stat-title">Verified Companies</span>
+                    <span class="stat-icon" aria-hidden="true">✓</span>
+                </div>
+                <div>
+                    <span class="stat-number"><?= $verifiedCount ?></span>
+                    <span class="stat-note">Approved to publish opportunities.</span>
+                </div>
+            </a>
+
+            <a href="dashboard-admin.php?tab=verification"
+               class="dashboard-card stat-card">
+                <div class="stat-top">
+                    <span class="stat-title">Rejected Companies</span>
+                    <span class="stat-icon" aria-hidden="true">✕</span>
+                </div>
+                <div>
+                    <span class="stat-number"><?= $rejectedCount ?></span>
+                    <span class="stat-note">Registrations that were declined.</span>
+                </div>
+            </a>
+
+            <a href="dashboard-admin.php?tab=opportunities"
+               class="dashboard-card stat-card <?= $tab === 'opportunities' ? 'is-active' : '' ?>">
+                <div class="stat-top">
+                    <span class="stat-title">My Opportunities</span>
+                    <span class="stat-icon" aria-hidden="true"><?= icon('training', 22) ?></span>
+                </div>
+                <div>
+                    <span class="stat-number"><?= $oppCount ?></span>
+                    <span class="stat-note">Opportunities added by the admin.</span>
+                </div>
+            </a>
+
+        </section>
 
         <?php if ($tab === 'verification'): ?>
 
-            <section class="tab-panel active">
+            <!-- Pending Review -->
+            <section class="dashboard-section">
 
-                <h3 class="section-heading">Pending Review</h3>
+                <div class="card-heading-row">
+                    <div>
+                        <h2 class="section-heading" style="margin-bottom:7px;">Pending Review</h2>
+                        <p class="section-description" style="margin:0;">
+                            New company registrations waiting for your decision.
+                        </p>
+                    </div>
+                </div>
 
                 <?php if (!$pending): ?>
 
-                    <div class="empty-state" style="margin-top:20px;">
-                        <div class="empty-icon">
-                            <?= icon('company', 40, 'icon-muted') ?>
+                    <div class="empty-state">
+                        <div class="empty-icon" aria-hidden="true">
+                            <?= icon('company', 30, 'icon-muted') ?>
                         </div>
 
                         <h3>No companies waiting for review</h3>
 
-                        <p class="text-muted" style="margin:8px 0 0;">
-                            New company registrations will appear here.
-                        </p>
+                        <p>New company registrations will appear here.</p>
                     </div>
 
                 <?php else: ?>
 
-                    <div class="grid" style="grid-template-columns:1fr;gap:14px;">
+                    <div class="review-list">
 
                         <?php foreach ($pending as $c): ?>
 
-                            <div class="card company-review-card flex-between"
-                                 style="align-items:center;flex-wrap:wrap;gap:16px;">
+                            <div class="company-review-card">
 
-                                <div class="flex gap-3"
-                                     style="align-items:center;min-width:0;">
-
-                                    <div class="company-icon">
-                                        <?= icon('company', 26, 'icon-primary') ?>
+                                <div class="company-info">
+                                    <div class="company-icon" aria-hidden="true">
+                                        <?= icon('company', 24, 'icon-primary') ?>
                                     </div>
 
                                     <div style="min-width:0;">
-                                        <h3 class="company-name">
-                                            <?= e($c['CompanyName']) ?>
-                                        </h3>
+                                        <h3 class="company-name"><?= e($c['CompanyName']) ?></h3>
 
                                         <div class="company-meta">
                                             <?= e($c['IndustrySector']) ?>
@@ -546,12 +762,9 @@ admin_header('Admin Dashboard', $tab);
                                             <?= e($c['Location']) ?>
                                         </div>
                                     </div>
-
                                 </div>
 
-                                <div class="flex gap-3"
-                                     style="align-items:center;flex-wrap:wrap;">
-
+                                <div class="company-actions">
                                     <span class="badge badge-warning">Pending</span>
 
                                     <a href="admin-company-review.php?id=<?= (int)$c['CompanyID'] ?>"
@@ -559,7 +772,6 @@ admin_header('Admin Dashboard', $tab);
                                         <?= icon('search', 14) ?>
                                         Review
                                     </a>
-
                                 </div>
 
                             </div>
@@ -570,9 +782,21 @@ admin_header('Admin Dashboard', $tab);
 
                 <?php endif; ?>
 
-                <div class="divider" style="margin:32px 0;"></div>
+            </section>
 
-                <h3 class="section-heading">Reviewed Companies</h3>
+            <hr class="dashboard-divider">
+
+            <!-- Reviewed Companies -->
+            <section class="dashboard-section">
+
+                <div class="card-heading-row">
+                    <div>
+                        <h2 class="section-heading" style="margin-bottom:7px;">Reviewed Companies</h2>
+                        <p class="section-description" style="margin:0;">
+                            Companies that have already been approved or rejected.
+                        </p>
+                    </div>
+                </div>
 
                 <div class="admin-table-card">
                     <table class="data-table">
@@ -620,17 +844,14 @@ admin_header('Admin Dashboard', $tab);
 
         <?php else: ?>
 
-            <section class="tab-panel active">
+            <!-- Manage Opportunities -->
+            <section class="dashboard-section">
 
-                <div class="flex-between"
-                     style="margin-bottom:20px;gap:14px;flex-wrap:wrap;">
-
+                <div class="card-heading-row">
                     <div>
-                        <h3 class="section-heading" style="margin-bottom:6px;">
-                            Manage Opportunities
-                        </h3>
+                        <h2 class="section-heading" style="margin-bottom:7px;">Manage Opportunities</h2>
 
-                        <p class="text-muted" style="margin:0;line-height:1.7;">
+                        <p class="section-description" style="margin:0;">
                             Opportunities added by the admin on behalf of companies not on the platform.
                         </p>
                     </div>
@@ -639,21 +860,18 @@ admin_header('Admin Dashboard', $tab);
                         <?= icon('add') ?>
                         Add Opportunity
                     </a>
-
                 </div>
 
                 <?php if (!$opps): ?>
 
                     <div class="empty-state">
-                        <div class="empty-icon">
-                            <?= icon('training', 40, 'icon-muted') ?>
+                        <div class="empty-icon" aria-hidden="true">
+                            <?= icon('training', 30, 'icon-muted') ?>
                         </div>
 
                         <h3>No admin-added opportunities yet</h3>
 
-                        <p class="text-muted" style="margin:8px 0 0;">
-                            Add an opportunity to display it here.
-                        </p>
+                        <p>Add an opportunity to display it here.</p>
                     </div>
 
                 <?php else: ?>
