@@ -24,6 +24,35 @@ if (!$me) {
     exit('User profile was not found.');
 }
 
+/* Clicking a notification marks it as read and opens the opportunity details (User Story 37). */
+$openId = filter_input(INPUT_GET, 'open', FILTER_VALIDATE_INT);
+
+if ($openId) {
+    $stmt = $pdo->prepare(
+        'SELECT n.OpportunityID
+         FROM usernotification un
+         JOIN notification n ON n.NotificationID = un.NotificationID
+         WHERE un.UserID = ? AND un.NotificationID = ?
+         LIMIT 1'
+    );
+    $stmt->execute([$uid, $openId]);
+    $openOpportunityId = $stmt->fetchColumn();
+
+    if ($openOpportunityId !== false) {
+        $pdo->prepare(
+            'UPDATE usernotification
+             SET IsRead = 1
+             WHERE UserID = ? AND NotificationID = ?'
+        )->execute([$uid, $openId]);
+
+        header('Location: opportunity-detail.php?id=' . (int) $openOpportunityId);
+        exit;
+    }
+
+    header('Location: notifications.php');
+    exit;
+}
+
 /* Get notifications for this user.
    IsRead belongs to the usernotification relationship table. */
 $stmt = $pdo->prepare(
@@ -53,18 +82,6 @@ foreach ($notifications as $notification) {
     if ((int) $notification['IsRead'] === 0) {
         $unreadCount++;
     }
-}
-
-/* Opening this page marks everything as read.
-   $notifications above was loaded first, so the cards still show which
-   ones were new on this visit; the bell badge in the header is cleared. */
-if ($unreadCount > 0) {
-    $stmt = $pdo->prepare(
-        'UPDATE usernotification
-         SET IsRead = 1
-         WHERE UserID = ? AND IsRead = 0'
-    );
-    $stmt->execute([$uid]);
 }
 
 /* Notification type labels and icons */
@@ -356,6 +373,17 @@ user_header($me, 'Notifications', '');
     background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.04);
     transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.user-notifications a.notification-card {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.user-notifications a.notification-card:focus-visible {
+    outline: 3px solid rgba(226,169,75,.65);
+    outline-offset: 3px;
 }
 
 .user-notifications .notification-card:hover {
@@ -688,7 +716,11 @@ user_header($me, 'Notifications', '');
                     $typeInfo = notification_type_info($n['Type'] ?? null);
                     ?>
 
-                    <article class="notification-card <?= $isUnread ? 'unread' : '' ?>">
+                    <a
+                        href="notifications.php?open=<?= (int) $n['NotificationID'] ?>"
+                        class="notification-card <?= $isUnread ? 'unread' : '' ?>"
+                        title="Open the opportunity details"
+                    >
 
                         <div class="notification-type-icon <?= e($typeInfo['class']) ?>">
                             <?= icon($typeInfo['icon'], 23) ?>
@@ -732,7 +764,7 @@ user_header($me, 'Notifications', '');
 
                         </div>
 
-                    </article>
+                    </a>
 
                 <?php endforeach; ?>
 

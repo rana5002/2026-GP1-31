@@ -328,6 +328,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             opp_sync_links($pdo, $opportunityId, 'opportunityqualification', 'QualificationID', $qualificationIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityexperience', 'ExperienceID', $experienceIds);
             $pdo->commit();
+            /* User Story 37: a new opportunity notifies the users whose skills match it. */
+            if (!$isEditPost) {
+                notify_matching_users($pdo, $opportunityId);
+            }
             opp_form_redirect($editing ? 'updated' : 'added');
         }
     } catch (Throwable $ex) {

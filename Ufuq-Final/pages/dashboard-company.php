@@ -87,19 +87,20 @@ try {
             $update = $pdo->prepare('UPDATE application SET ApplicationStatus = ? WHERE UserID = ? AND OpportunityID = ?');
             $update->execute([$status, $userId, $oppId]);
 
-            /* When the application is accepted, the user gets a notification on the Notifications page.
-               The company then contacts the applicant outside Ufuq, using the email shown on the applicant list and profile. */
-            if ($status === 'Accepted' && $oldStatus !== false && $oldStatus !== 'Accepted') {
-                $nameStmt = $pdo->prepare('SELECT CompanyName FROM company WHERE CompanyID = ?');
-                $nameStmt->execute([$companyId]);
-                $message = 'Your application has been accepted by ' . (string)$nameStmt->fetchColumn()
-                    . '. The company will contact you by email about the next steps.';
-                $pdo->prepare("INSERT INTO notification (Message, Type, OpportunityID) VALUES (?, 'ApplicationUpdate', ?)")
-                    ->execute([mb_substr($message, 0, 255, 'UTF-8'), $oppId]);
-                $pdo->prepare('INSERT INTO usernotification (UserID, NotificationID, IsRead) VALUES (?, ?, 0)')
-                    ->execute([$userId, (int)$pdo->lastInsertId()]);
-            }
             $pdo->commit();
+
+            /* User Story 37: when the status changes to Accepted or Rejected, the user gets an
+               in-system notification with the opportunity title and the new status.
+               After acceptance the company contacts the applicant outside Ufuq, using the email shown on the applicant list and profile. */
+            if (in_array($status, ['Accepted', 'Rejected'], true) && $oldStatus !== false && $oldStatus !== $status) {
+                $info = $pdo->prepare('SELECT o.Title, c.CompanyName FROM opportunity o JOIN company c ON c.CompanyID = o.CreatedByCompanyID WHERE o.OpportunityID = ?');
+                $info->execute([$oppId]);
+                $infoRow = $info->fetch(PDO::FETCH_ASSOC) ?: ['Title' => 'the opportunity', 'CompanyName' => 'the company'];
+                $message = $status === 'Accepted'
+                    ? 'Your application for "' . $infoRow['Title'] . '" has been accepted by ' . $infoRow['CompanyName'] . '. The company will contact you by email about the next steps.'
+                    : 'Your application for "' . $infoRow['Title'] . '" has been rejected by ' . $infoRow['CompanyName'] . '.';
+                notify_users($pdo, [$userId], 'ApplicationUpdate', $oppId, $message);
+            }
             company_redirect('applicants', 'status');
         }
 
@@ -515,6 +516,25 @@ $heroTitles = [
 .company-dashboard .opp-actions{flex-wrap:nowrap;gap:4px}
 .company-dashboard .opp-actions .company-inline-form{margin:0}
 .company-dashboard .opp-status-btn{min-width:150px;white-space:nowrap;justify-content:center}
+/* My Opportunities: the whole table fits the page (no left/right scrolling), centered content, small action buttons */
+.company-dashboard .opp-table-wrap{overflow-x:visible}
+.company-dashboard .opp-table{table-layout:fixed;width:100%}
+.company-dashboard .company-table-wrap .opp-table th,.company-dashboard .company-table-wrap .opp-table td{text-align:center;padding:12px 8px;overflow-wrap:break-word}
+.company-dashboard .company-table-wrap .opp-table th{white-space:normal;font-size:.78rem;line-height:1.35}
+.company-dashboard .opp-table td{font-size:.87rem}
+.company-dashboard .opp-table th:nth-child(1){width:17%}
+.company-dashboard .opp-table th:nth-child(2){width:10%}
+.company-dashboard .opp-table th:nth-child(3){width:9%}
+.company-dashboard .opp-table th:nth-child(4){width:7%}
+.company-dashboard .opp-table th:nth-child(5){width:9%}
+.company-dashboard .opp-table th:nth-child(6){width:11%}
+.company-dashboard .opp-table th:nth-child(7){width:14%}
+.company-dashboard .opp-table th:nth-child(8){width:23%}
+.company-dashboard .opp-table .opp-actions{justify-content:center;flex-wrap:nowrap;gap:2px}
+.company-dashboard .opp-table .opp-status-btn{min-width:0;width:122px;justify-content:center;min-height:30px;padding:5px 9px;font-size:.74rem;border-radius:8px}
+.company-dashboard .opp-table .opp-actions .btn-ghost{min-height:30px;padding:4px 5px}
+.company-dashboard .opp-table .opp-actions .btn-ghost svg{width:16px;height:16px}
+@media (max-width:900px){.company-dashboard .opp-table-wrap{overflow-x:auto}.company-dashboard .opp-table{table-layout:auto;min-width:820px}}
 .company-dashboard .company-inline-form{display:inline;margin:0}
 .company-dashboard .status-select{padding:7px 9px;min-width:135px}
 
@@ -808,8 +828,8 @@ $heroTitles = [
       <?php if (!$opportunities): ?>
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Click "Add Opportunity" to publish your first training program or course.</p></div>
       <?php else: ?>
-        <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
-        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; ?><form method="post" class="company-inline-form" <?= $isOpenOpp ? 'onsubmit="return confirm(\'Close applications for this opportunity? Users will no longer be able to apply.\');"' : '' ?>><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="<?= $isOpenOpp ? 'close_opportunity' : 'reopen_opportunity' ?>"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-outline btn-sm opp-status-btn" type="submit"><?= $isOpenOpp ? 'Close Opportunity' : 'Reopen' ?></button></form><a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>
+        <div class="company-table-wrap opp-table-wrap"><table class="data-table opp-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Applications</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
+        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['ApplicationCount'] ?? 0) ?></strong></td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; ?><form method="post" class="company-inline-form" <?= $isOpenOpp ? 'onsubmit="return confirm(\'Close applications for this opportunity? Users will no longer be able to apply.\');"' : '' ?>><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="<?= $isOpenOpp ? 'close_opportunity' : 'reopen_opportunity' ?>"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-outline btn-sm opp-status-btn" type="submit"><?= $isOpenOpp ? 'Close Opportunity' : 'Reopen' ?></button></form><a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>
         </tbody></table></div>
       <?php endif; ?>
     </section>

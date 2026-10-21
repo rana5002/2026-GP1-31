@@ -463,6 +463,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
 
+            /* User Story 37: a new opportunity notifies the users whose skills match it. */
+            if (!$editing) {
+                notify_matching_users($pdo, $oppId);
+            }
+
             header('Location: dashboard-admin.php?tab=opportunities&msg=' . ($editing ? 'updated' : 'added'));
             exit;
 
