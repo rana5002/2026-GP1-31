@@ -227,15 +227,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
             );
 
             $reviewText = trim((string) ($_POST['review_text'] ?? ''));
+            $declared = ($_POST['completion_declaration'] ?? '') === '1';
 
             if (
                 $rating === false
                 || $rating === null
                 || $rating < 1
                 || $rating > 5
+                || $reviewText === ''
             ) {
                 $_SESSION['detail_message'] =
-                    'Please select a rating from 1 to 5.';
+                    'Please complete all review fields: select a star rating and write your review.';
+            } elseif (!$declared) {
+                $_SESSION['detail_message'] =
+                    'Please confirm that you have completed this training opportunity or course.';
             } elseif (mb_strlen($reviewText, 'UTF-8') > 500) {
                 $_SESSION['detail_message'] =
                     'Your review must not exceed 500 characters.';
@@ -260,13 +265,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
 
                     $stmt->execute([
                         $rating,
-                        $reviewText !== '' ? $reviewText : null,
+                        $reviewText,
                         $uid,
                         $opportunityId
                     ]);
 
-                    $_SESSION['detail_message'] =
-                        'Your review has been submitted.';
+                    $verifyCheck = $pdo->prepare(
+                        "SELECT 1 FROM application
+                         WHERE UserID = ? AND OpportunityID = ? AND ApplicationStatus = 'Accepted'
+                         LIMIT 1"
+                    );
+                    $verifyCheck->execute([$uid, $opportunityId]);
+                    $hasStages = !empty($opp['ScreeningDate']) || !empty($opp['InterviewDate']);
+
+                    $_SESSION['detail_message'] = ($verifyCheck->fetchColumn() && !$hasStages)
+                        ? 'Your review has been published with a Verified Participant badge.'
+                        : 'Your review has been published.';
                 }
             }
         }
@@ -367,12 +381,16 @@ $myReview = false;
 
 if ($opp) {
     $reviewStmt = $pdo->prepare(
-        'SELECT r.Rating, r.ReviewText, r.CreatedAt,
-                u.FirstName, u.LastName, r.UserID
+        "SELECT r.Rating, r.ReviewText, r.CreatedAt,
+                u.FirstName, u.LastName, r.UserID,
+                EXISTS (SELECT 1 FROM application a
+                        WHERE a.UserID = r.UserID
+                          AND a.OpportunityID = r.OpportunityID
+                          AND a.ApplicationStatus = 'Accepted') AS IsAccepted
          FROM review r
          INNER JOIN `user` u ON u.UserID = r.UserID
          WHERE r.OpportunityID = ?
-         ORDER BY r.CreatedAt DESC'
+         ORDER BY r.CreatedAt DESC"
     );
 
     $reviewStmt->execute([$opportunityId]);
@@ -487,12 +505,21 @@ $industrySector = $opp['IndustrySector'] ?? 'Not specified';
 
 $isOpen = detail_is_open($status, $deadline, $openDate);
 $notOpenYet = strcasecmp(trim((string) $status), 'Open') === 0 && detail_not_open_yet($openDate);
+/* Shown status: Closed when the company closed it or the application deadline has passed. */
+$displayStatus = $isOpen ? 'Open' : ($notOpenYet ? 'Not Open Yet' : 'Closed');
+$isClosed = $displayStatus === 'Closed';
+
+/* "Verified Participant": an accepted application through Ufuq and no extra selection stages
+   (Initial Screening / Interview). External-link opportunities have no application, so no badge. */
+$canVerifyReviews = !$hasSelectionDates;
 
 $message = (string) ($_SESSION['detail_message'] ?? '');
 unset($_SESSION['detail_message']);
 
 $successMessages = [
     'Your review has been submitted.',
+    'Your review has been published.',
+    'Your review has been published with a Verified Participant badge.',
     'Your application has been submitted successfully.',
     'Added to your favorites.',
     'Removed from your favorites.'
@@ -964,6 +991,74 @@ user_header($me, 'Opportunity Details', 'browse');
             font-size: 12px;
         }
 
+        /* Toast: success message that slides down from the top, then disappears (same as Browse and the dashboards) */
+        .ufuq-toast {
+            position: fixed;
+            top: 18px;
+            left: 50%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            width: max-content;
+            max-width: calc(100% - 32px);
+            padding: 13px 14px 13px 16px;
+            border: 1px solid #bfe3cc;
+            border-radius: 13px;
+            background: #eaf7ef;
+            color: #1f6b47;
+            font-size: .92rem;
+            font-weight: 700;
+            line-height: 1.5;
+            box-shadow: 0 12px 30px rgba(31,107,71,.16);
+            transform: translate(-50%, -150%);
+            opacity: 0;
+            transition: transform .35s ease, opacity .35s ease;
+        }
+
+        .ufuq-toast.is-shown {
+            transform: translate(-50%, 0);
+            opacity: 1;
+        }
+
+        .ufuq-toast-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            background: #2f8a5c;
+            color: #fff;
+            font-size: .85rem;
+        }
+
+        .ufuq-toast-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            flex-shrink: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 8px;
+            background: none;
+            color: #1f6b47;
+            font-size: 1.2rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .ufuq-toast-close:hover {
+            background: rgba(31,107,71,.1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ufuq-toast { transition: none; }
+        }
+
         /* ---------- Status Toast ---------- */
         .status-toast {
             display: flex;
@@ -1010,6 +1105,66 @@ user_header($me, 'Opportunity Details', 'browse');
             opacity: 0;
             transform: translateY(-6px);
             pointer-events: none;
+        }
+
+        .detail-page .badge-closed {
+            color: #9c263d;
+            background: #fff1f2;
+            border-color: #f1d4d8;
+        }
+
+        .heading-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .verified-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 8px;
+            padding: 3px 9px;
+            border: 1px solid #c5e9d0;
+            border-radius: 999px;
+            background: #e8f7ed;
+            color: #176b3a;
+            font-size: 11px;
+            font-weight: 750;
+            vertical-align: middle;
+        }
+
+        .declaration-check {
+            display: flex !important;
+            align-items: flex-start;
+            gap: 9px;
+            padding: 12px 14px;
+            border: 1px solid #eee9f5;
+            border-radius: 10px;
+            background: #faf9fd;
+            font-weight: 600 !important;
+            line-height: 1.6;
+            cursor: pointer;
+        }
+
+        .declaration-check input {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            margin: 3px 0 0;
+            accent-color: var(--detail-purple);
+            cursor: pointer;
+        }
+
+        .field-error {
+            display: none;
+            margin-top: 6px;
+            color: var(--detail-red);
+            font-size: 12px;
+        }
+
+        .field-error.is-visible {
+            display: block;
         }
 
         /* ---------- Review Summary ---------- */
@@ -1555,7 +1710,13 @@ user_header($me, 'Opportunity Details', 'browse');
 
         <?php else: ?>
 
-            <?php if ($message !== ''): ?>
+            <?php if ($message !== '' && $isSuccessMessage): ?>
+                <div class="ufuq-toast" id="successToast" role="status" aria-live="polite">
+                    <span class="ufuq-toast-icon" aria-hidden="true">✓</span>
+                    <span><?= detail_h($message) ?></span>
+                    <button type="button" class="ufuq-toast-close" aria-label="Close">&times;</button>
+                </div>
+            <?php elseif ($message !== ''): ?>
                 <div
                     id="statusToast"
                     class="status-toast <?= $isSuccessMessage ? 'success' : 'error' ?>"
@@ -1577,9 +1738,15 @@ user_header($me, 'Opportunity Details', 'browse');
 
                     <div class="opportunity-heading-main">
 
-                        <span class="badge badge-neutral">
-                            <?= detail_h($type) ?>
-                        </span>
+                        <div class="heading-badges">
+                            <span class="badge badge-neutral">
+                                <?= detail_h($type) ?>
+                            </span>
+
+                            <?php if ($isClosed): ?>
+                                <span class="badge badge-closed">Closed</span>
+                            <?php endif; ?>
+                        </div>
 
                         <h2><?= detail_h($title) ?></h2>
 
@@ -1684,8 +1851,8 @@ user_header($me, 'Opportunity Details', 'browse');
                     <div class="field-view">
                         <div class="field-label">Opportunity Status</div>
 
-                        <span class="badge <?= $isOpen ? 'badge-success' : 'badge-neutral' ?>">
-                            <?= detail_h($status) ?>
+                        <span class="badge <?= $isOpen ? 'badge-success' : ($isClosed ? 'badge-closed' : 'badge-neutral') ?>">
+                            <?= detail_h($displayStatus) ?>
                         </span>
                     </div>
 
@@ -2003,6 +2170,7 @@ user_header($me, 'Opportunity Details', 'browse');
                             method="POST"
                             action="opportunity-detail.php?id=<?= (int) $opportunityId ?>"
                             id="reviewForm"
+                            novalidate
                         >
                             <input
                                 type="hidden"
@@ -2072,6 +2240,7 @@ user_header($me, 'Opportunity Details', 'browse');
                             <div class="form-group">
                                 <label for="review_text">
                                     Share Your Experience
+                                    <span style="color:#c74755;">*</span>
                                 </label>
 
                                 <textarea
@@ -2081,12 +2250,37 @@ user_header($me, 'Opportunity Details', 'browse');
                                     rows="4"
                                     maxlength="500"
                                     placeholder="What did you think about this opportunity?"
+                                    required
                                 ></textarea>
+
+                                <span id="reviewTextError" class="field-error" role="alert">
+                                    Please write your review.
+                                </span>
 
                                 <p class="text-muted"
                                    style="margin:6px 0 0; font-size:11px;">
                                     Maximum 500 characters.
                                 </p>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="declaration-check">
+                                    <input
+                                        type="checkbox"
+                                        name="completion_declaration"
+                                        id="completionDeclaration"
+                                        value="1"
+                                        required
+                                    >
+                                    <span>
+                                        I confirm that I have completed this training opportunity or course.
+                                        <span style="color:#c74755;">*</span>
+                                    </span>
+                                </label>
+
+                                <span id="declarationError" class="field-error" role="alert">
+                                    Please confirm that you have completed this opportunity.
+                                </span>
                             </div>
 
                             <button type="submit" class="btn btn-primary">
@@ -2134,6 +2328,13 @@ user_header($me, 'Opportunity Details', 'browse');
 
                                     <strong class="review-author">
                                         <?= detail_h($reviewName ?: 'A user') ?>
+
+                                        <?php if ($canVerifyReviews && (int) ($review['IsAccepted'] ?? 0) === 1): ?>
+                                            <span class="verified-badge" title="Accepted through Ufuq">
+                                                <span aria-hidden="true">✓</span>
+                                                Verified Participant
+                                            </span>
+                                        <?php endif; ?>
                                     </strong>
 
                                     <span
@@ -2294,8 +2495,30 @@ user_header($me, 'Opportunity Details', 'browse');
         updateStars(selectedRating);
     });
 
+    const reviewText = document.getElementById('review_text');
+    const reviewTextError = document.getElementById('reviewTextError');
+    const declaration = document.getElementById('completionDeclaration');
+    const declarationError = document.getElementById('declarationError');
+
     reviewForm.addEventListener('submit', function (event) {
         const rating = Number(ratingInput.value);
+        const textMissing = reviewText.value.trim() === '';
+        const notDeclared = !declaration.checked;
+
+        reviewTextError.classList.toggle('is-visible', textMissing);
+        declarationError.classList.toggle('is-visible', notDeclared);
+
+        if (textMissing || notDeclared) {
+            event.preventDefault();
+        }
+
+        if (rating >= 1 && rating <= 5) {
+            if (textMissing) {
+                reviewText.focus();
+            } else if (notDeclared) {
+                declaration.focus();
+            }
+        }
 
         if (rating < 1 || rating > 5) {
             event.preventDefault();
@@ -2310,10 +2533,38 @@ user_header($me, 'Opportunity Details', 'browse');
         }
     });
 
+    reviewText.addEventListener('input', function () {
+        if (reviewText.value.trim() !== '') reviewTextError.classList.remove('is-visible');
+    });
+    declaration.addEventListener('change', function () {
+        if (declaration.checked) declarationError.classList.remove('is-visible');
+    });
+
     updateStars(selectedRating);
 })();
 
-/* ---------- Auto-hide Status Message ---------- */
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
+(function () {
+    const toast = document.getElementById('successToast');
+    if (!toast) return;
+
+    /* Move it to <body> so the page animations do not affect its fixed position. */
+    document.body.appendChild(toast);
+
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.ufuq-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+
+/* ---------- Auto-hide Status Message (errors) ---------- */
 (function () {
     const toast = document.getElementById('statusToast');
 

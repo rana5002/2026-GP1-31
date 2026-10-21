@@ -48,35 +48,46 @@ function browse_h($value): string
     );
 }
 
-function browse_duration($startDate, $endDate): string
+/* Number of days between the start and end dates, or null when unknown. */
+function browse_duration_days($startDate, $endDate): ?int
 {
     if (empty($startDate) || empty($endDate)) {
-        return 'Not specified';
+        return null;
     }
 
     try {
-        $start = new DateTime($startDate);
-        $end = new DateTime($endDate);
-
-        $days = (int)$start->diff($end)->format('%r%a');
-
-        if ($days < 0) {
-            return 'Not specified';
-        }
-
-        if ($days < 14) {
-            return 'Under 2 weeks';
-        }
-
-        if ($days < 63) {
-            return '2–9 weeks';
-        }
-
-        return 'Over 9 weeks';
-
+        $days = (int)(new DateTime($startDate))->diff(new DateTime($endDate))->format('%r%a');
+        return $days >= 0 ? $days : null;
     } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/* Duration shown on the cards, in days (same as the details page). */
+function browse_duration_text($startDate, $endDate): string
+{
+    $days = browse_duration_days($startDate, $endDate);
+    return $days === null ? 'Not specified' : $days . ($days === 1 ? ' day' : ' days');
+}
+
+/* Duration filter range for an opportunity, in days. */
+function browse_duration($startDate, $endDate): string
+{
+    $days = browse_duration_days($startDate, $endDate);
+
+    if ($days === null) {
         return 'Not specified';
     }
+
+    if ($days <= 14) {
+        return 'Up to 14 days';
+    }
+
+    if ($days <= 60) {
+        return '15–60 days';
+    }
+
+    return 'More than 60 days';
 }
 
 function browse_initial($name): string
@@ -114,6 +125,24 @@ function browse_int_list($value): array
     }
 
     return array_values($ids);
+}
+
+/* Clean a list of text values from the query string (a single value is also accepted). */
+function browse_str_list($value): array
+{
+    $out = [];
+
+    foreach ((array)$value as $item) {
+        if (!is_string($item)) {
+            continue;
+        }
+        $item = trim($item);
+        if ($item !== '' && mb_strlen($item, 'UTF-8') <= 100) {
+            $out[$item] = $item;
+        }
+    }
+
+    return array_values($out);
 }
 
 /* ---------- Handle favorite button ---------- */
@@ -163,6 +192,7 @@ if (
         $favoriteCheck->execute([$uid, $opportunityId]);
 
         if ($favoriteCheck->fetchColumn()) {
+            $favoriteResult = 'favorite_removed';
             $delete = $pdo->prepare(
                 'DELETE FROM favorite
                  WHERE UserID = ?
@@ -171,6 +201,7 @@ if (
             $delete->execute([$uid, $opportunityId]);
 
         } else {
+            $favoriteResult = 'favorite_added';
             $insert = $pdo->prepare(
                 'INSERT INTO favorite (UserID, OpportunityID)
                  VALUES (?, ?)'
@@ -192,19 +223,18 @@ if (
     }
 
     // Preserve only the recognized filters.
-    $filterKeys = [
-        'type',
-        'location',
-        'method',
-        'duration',
-        'company'
-    ];
-
     $returnFilters = [];
 
-    foreach ($filterKeys as $key) {
-        if (isset($_GET[$key]) && is_string($_GET[$key])) {
+    foreach (['q'] as $key) {
+        if (isset($_GET[$key]) && is_string($_GET[$key]) && trim($_GET[$key]) !== '') {
             $returnFilters[$key] = trim($_GET[$key]);
+        }
+    }
+
+    foreach (['type', 'location', 'sector', 'duration', 'company'] as $key) {
+        $values = browse_str_list($_GET[$key] ?? []);
+        if ($values) {
+            $returnFilters[$key] = $values;
         }
     }
 
@@ -215,64 +245,80 @@ if (
         }
     }
 
-    $returnFilters['msg'] = 'favorite_updated';
+    $returnFilters['msg'] = $favoriteResult;
 
     header('Location: browse.php?' . http_build_query($returnFilters));
     exit;
 }
 
+/* ---------- Search (opportunity title) ---------- */
+$search = isset($_GET['q']) && is_string($_GET['q'])
+    ? trim($_GET['q']) : '';
+
+if (mb_strlen($search, 'UTF-8') > 150) {
+    $search = mb_substr($search, 0, 150, 'UTF-8');
+}
+
 /* ---------- Filters ---------- */
-$type = isset($_GET['type']) && is_string($_GET['type'])
-    ? trim($_GET['type']) : '';
+/* Type, location, sector and duration accept several values (checkbox lists). */
+$sectors = $pdo->query(
+    "SELECT DISTINCT IndustrySector
+     FROM opportunity
+     WHERE IndustrySector IS NOT NULL
+       AND IndustrySector <> ''
+     ORDER BY IndustrySector"
+)->fetchAll(PDO::FETCH_COLUMN);
 
-$location = isset($_GET['location']) && is_string($_GET['location'])
-    ? trim($_GET['location']) : '';
+$typeFilter = array_values(array_intersect(browse_str_list($_GET['type'] ?? []), OPPORTUNITY_TYPES));
+$locationFilter = array_values(array_intersect(browse_str_list($_GET['location'] ?? []), CITIES));
+$sectorFilter = array_values(array_intersect(browse_str_list($_GET['sector'] ?? []), $sectors));
+$durationFilter = browse_str_list($_GET['duration'] ?? []);
 
-$method = isset($_GET['method']) && is_string($_GET['method'])
-    ? trim($_GET['method']) : '';
+/* Companies / providers that have opportunities (the provider name, or the posting company). */
+$companies = $pdo->query(
+    "SELECT DISTINCT COALESCE(NULLIF(TRIM(o.OpportunityProvider), ''), (SELECT c.CompanyName FROM company c WHERE c.CompanyID = o.CreatedByCompanyID)) AS Provider
+     FROM opportunity o
+     HAVING Provider IS NOT NULL AND Provider <> ''
+     ORDER BY Provider"
+)->fetchAll(PDO::FETCH_COLUMN);
 
-$duration = isset($_GET['duration']) && is_string($_GET['duration'])
-    ? trim($_GET['duration']) : '';
-
-$company = isset($_GET['company']) && is_string($_GET['company'])
-    ? trim($_GET['company']) : '';
+$companyFilter = array_values(array_intersect(browse_str_list($_GET['company'] ?? []), $companies));
 
 $skillIds = browse_int_list($_GET['skill'] ?? []);
 $experienceIds = browse_int_list($_GET['experience'] ?? []);
 $qualificationIds = browse_int_list($_GET['qualification'] ?? []);
 
 $allowedDurations = [
-    'Under 2 weeks',
-    '2–9 weeks',
-    'Over 9 weeks'
+    'Up to 14 days',
+    '15–60 days',
+    'More than 60 days'
 ];
 
-if (!in_array($duration, $allowedDurations, true)) {
-    $duration = '';
-}
+$durationFilter = array_values(array_intersect($durationFilter, $allowedDurations));
 
 /* ---------- Build opportunity query ---------- */
 $where = [];
 $params = [];
 
-if ($type !== '') {
-    $where[] = 'o.Type = ?';
-    $params[] = $type;
+/* Search: opportunity title. Companies are chosen in the filter on the side. */
+if ($search !== '') {
+    $where[] = 'o.Title LIKE ?';
+    $params[] = '%' . $search . '%';
 }
 
-if ($location !== '') {
-    $where[] = 'o.Location = ?';
-    $params[] = $location;
-}
+/* Within one filter: any of the selected values. Between filters: all must match. */
+$listFilters = [
+    'o.Type'           => $typeFilter,
+    'o.Location'       => $locationFilter,
+    'o.IndustrySector' => $sectorFilter,
+    "COALESCE(NULLIF(TRIM(o.OpportunityProvider), ''), (SELECT c.CompanyName FROM company c WHERE c.CompanyID = o.CreatedByCompanyID))" => $companyFilter,
+];
 
-if ($method !== '') {
-    $where[] = 'o.ApplicationMethod = ?';
-    $params[] = $method;
-}
-
-if ($company !== '') {
-    $where[] = 'o.OpportunityProvider LIKE ?';
-    $params[] = '%' . $company . '%';
+foreach ($listFilters as $column => $values) {
+    if ($values) {
+        $where[] = $column . ' IN (' . implode(',', array_fill(0, count($values), '?')) . ')';
+        array_push($params, ...$values);
+    }
 }
 
 /* Skills / experience / qualifications: match ANY of the selected items. */
@@ -312,45 +358,22 @@ $stmt->execute($params);
 $opportunities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ---------- Filter by duration ---------- */
-if ($duration !== '') {
+if ($durationFilter) {
     $opportunities = array_values(
         array_filter(
             $opportunities,
-            static function ($o) use ($duration) {
-                return browse_duration(
-                    $o['StartDate'] ?? null,
-                    $o['EndDate'] ?? null
-                ) === $duration;
+            static function ($o) use ($durationFilter) {
+                return in_array(
+                    browse_duration($o['StartDate'] ?? null, $o['EndDate'] ?? null),
+                    $durationFilter,
+                    true
+                );
             }
         )
     );
 }
 
-/* ---------- Dropdown values ---------- */
-$locations = $pdo->query(
-    "SELECT DISTINCT Location
-     FROM opportunity
-     WHERE Location IS NOT NULL
-       AND Location <> ''
-     ORDER BY Location"
-)->fetchAll(PDO::FETCH_COLUMN);
-
-$types = $pdo->query(
-    "SELECT DISTINCT Type
-     FROM opportunity
-     WHERE Type IS NOT NULL
-       AND Type <> ''
-     ORDER BY Type"
-)->fetchAll(PDO::FETCH_COLUMN);
-
-$methods = $pdo->query(
-    "SELECT DISTINCT ApplicationMethod
-     FROM opportunity
-     WHERE ApplicationMethod IS NOT NULL
-       AND ApplicationMethod <> ''
-     ORDER BY ApplicationMethod"
-)->fetchAll(PDO::FETCH_COLUMN);
-
+/* ---------- Filter lists (types and cities come from the same lists as the opportunity forms) ---------- */
 $skillOptions = $pdo->query(
     'SELECT SkillID AS id, SkillName AS name FROM skill ORDER BY SkillName'
 )->fetchAll(PDO::FETCH_ASSOC);
@@ -377,11 +400,11 @@ $favorites = array_map(
 );
 
 $hasFilters = (
-    $type !== ''
-    || $location !== ''
-    || $method !== ''
-    || $duration !== ''
-    || $company !== ''
+    $typeFilter
+    || $locationFilter
+    || $sectorFilter
+    || $durationFilter
+    || $companyFilter
     || $skillIds
     || $experienceIds
     || $qualificationIds
@@ -390,9 +413,15 @@ $hasFilters = (
 /* ---------- Safe filter query string ---------- */
 $filterQuery = [];
 
-foreach (['type', 'location', 'method', 'duration', 'company'] as $key) {
-    if (isset($_GET[$key]) && is_string($_GET[$key])) {
-        $filterQuery[$key] = trim($_GET[$key]);
+foreach (['q' => $search] as $key => $value) {
+    if ($value !== '') {
+        $filterQuery[$key] = $value;
+    }
+}
+
+foreach (['type' => $typeFilter, 'location' => $locationFilter, 'sector' => $sectorFilter, 'duration' => $durationFilter, 'company' => $companyFilter] as $key => $values) {
+    if ($values) {
+        $filterQuery[$key] = $values;
     }
 }
 
@@ -412,42 +441,65 @@ if ($filterQuery) {
     $filterAction .= '?' . http_build_query($filterQuery);
 }
 
-/* Searchable multi-select dropdown (same look as the other filters). */
-function browse_multi_dropdown(string $name, string $label, array $options, array $selectedIds): void
+/* Number of active filters, shown on the Filters button. */
+$activeFilterCount = count($typeFilter) + count($locationFilter) + count($sectorFilter)
+    + count($durationFilter) + count($companyFilter)
+    + count($skillIds) + count($experienceIds) + count($qualificationIds);
+
+/* Checkbox list with search, same as the company "Filter Applicants" sidebar.
+   Collapsed by default; opened when something in it is selected. The triangle opens / closes it. */
+function browse_lookup_box(string $name, string $label, string $searchPlaceholder, array $options, array $selected): void
 {
-    $selectedNames = [];
-    foreach ($options as $opt) {
-        if (in_array((int)$opt['id'], $selectedIds, true)) {
-            $selectedNames[] = $opt['name'];
+    /* $options: [value => label]. Selected items are listed first. */
+    $selected = array_map('strval', $selected);
+    $checked = $unchecked = [];
+    foreach ($options as $value => $text) {
+        if (in_array((string)$value, $selected, true)) {
+            $checked[(string)$value] = $text;
+        } else {
+            $unchecked[(string)$value] = $text;
         }
     }
-    $summary = $selectedNames
-        ? (count($selectedNames) === 1 ? $selectedNames[0] : count($selectedNames) . ' selected')
-        : 'Any ' . $label;
+    $isOpen = (bool)$checked;
+    $hasSearch = count($options) > 5;
+    $boxId = 'lookup-' . preg_replace('/[^a-z0-9_-]/i', '', $name);
     ?>
-    <div class="multi-dropdown" data-multi-dropdown data-placeholder="<?= browse_h('Any ' . $label) ?>">
-        <button type="button" class="form-control multi-dropdown-toggle" aria-haspopup="listbox" aria-expanded="false">
-            <span class="multi-dropdown-label <?= $selectedNames ? '' : 'is-placeholder' ?>"><?= browse_h($summary) ?></span>
-            <span class="multi-dropdown-caret" aria-hidden="true">▾</span>
+    <div class="filter-field lookup-field <?= $isOpen ? 'is-open' : '' ?>" data-lookup-box>
+        <button type="button" class="lookup-header" aria-expanded="<?= $isOpen ? 'true' : 'false' ?>" aria-controls="<?= browse_h($boxId) ?>">
+            <span class="filter-label"><?= browse_h($label) ?> <span class="lookup-count"><?= $checked ? '(' . count($checked) . ' selected)' : '' ?></span></span>
+            <span class="lookup-caret" aria-hidden="true"></span>
         </button>
-        <div class="multi-dropdown-panel" hidden>
-            <input type="text" class="form-control multi-dropdown-search"
-                   placeholder="Search <?= browse_h($label) ?>..." autocomplete="off">
-            <div class="multi-dropdown-list" role="listbox" aria-multiselectable="true">
-                <?php foreach ($options as $opt): ?>
-                    <label class="multi-dropdown-option" data-text="<?= browse_h(mb_strtolower($opt['name'], 'UTF-8')) ?>">
-                        <input type="checkbox" name="<?= browse_h($name) ?>[]"
-                               value="<?= (int)$opt['id'] ?>"
-                               data-name="<?= browse_h($opt['name']) ?>"
-                               <?= in_array((int)$opt['id'], $selectedIds, true) ? 'checked' : '' ?>>
-                        <span><?= browse_h($opt['name']) ?></span>
+        <div class="lookup-box" id="<?= browse_h($boxId) ?>" <?= $isOpen ? '' : 'hidden' ?>>
+            <?php if ($hasSearch): ?>
+                <input type="text" class="form-control lookup-search" placeholder="<?= browse_h($searchPlaceholder) ?>" autocomplete="off" aria-label="<?= browse_h($searchPlaceholder) ?>">
+            <?php endif; ?>
+            <div class="lookup-list <?= $hasSearch ? '' : 'no-search' ?>" role="group" aria-label="<?= browse_h($label) ?>">
+                <?php foreach ($checked + $unchecked as $value => $text): ?>
+                    <label class="lookup-option" data-text="<?= browse_h(mb_strtolower((string)$text, 'UTF-8')) ?>">
+                        <input type="checkbox" name="<?= browse_h($name) ?>[]" value="<?= browse_h($value) ?>" <?= isset($checked[$value]) ? 'checked' : '' ?>>
+                        <span><?= browse_h($text) ?></span>
                     </label>
                 <?php endforeach; ?>
-                <div class="multi-dropdown-empty" hidden>No matches found</div>
+                <div class="lookup-empty" hidden>No matches found</div>
             </div>
         </div>
     </div>
     <?php
+}
+
+/* [value => label] lists for the checkbox boxes. */
+function browse_pairs(array $values): array
+{
+    return array_combine($values, $values) ?: [];
+}
+
+function browse_id_pairs(array $rows): array
+{
+    $out = [];
+    foreach ($rows as $row) {
+        $out[(int)$row['id']] = (string)$row['name'];
+    }
+    return $out;
 }
 
 /* ---------- Header ---------- */
@@ -631,6 +683,34 @@ user_header($me, 'Browse', 'browse');
     background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.045);
     transition: border-color .22s ease, box-shadow .22s ease;
+}
+
+.user-browse .search-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 14px;
+}
+
+.user-browse .search-card .form-control {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-browse .search-card .btn {
+    min-height: 43px;
+    flex-shrink: 0;
+}
+
+.user-browse .opportunity-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.user-browse .opportunity-title a:hover {
+    color: var(--browse-purple);
+    text-decoration: underline;
 }
 
 .user-browse .filters-card {
@@ -954,8 +1034,9 @@ user_header($me, 'Browse', 'browse');
 }
 
 .user-browse .badge-closed {
-    background: #f1edf4;
-    color: #625b6d;
+    border: 1px solid #f1d4d8;
+    background: #fff1f2;
+    color: #9c263d;
 }
 
 .user-browse .badge-other {
@@ -1034,6 +1115,74 @@ user_header($me, 'Browse', 'browse');
     border-color: #f1d4d8;
     background: #fff4f5;
     color: #9c263d;
+}
+
+/* Toast: success message that slides down from the top, then disappears */
+.browse-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc;
+    border-radius: 13px;
+    background: #eaf7ef;
+    color: #1f6b47;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%);
+    opacity: 0;
+    transition: transform .35s ease, opacity .35s ease;
+}
+
+.browse-toast.is-shown {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.browse-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2f8a5c;
+    color: #fff;
+    font-size: .85rem;
+}
+
+.browse-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #1f6b47;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.browse-toast-close:hover {
+    background: rgba(31,107,71,.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .browse-toast { transition: none; }
 }
 
 @keyframes browseFadeUp {
@@ -1151,6 +1300,274 @@ user_header($me, 'Browse', 'browse');
     text-align: center;
 }
 
+/* ===== Filter sidebar on the left (same idea as the company "Filter Applicants") ===== */
+.user-browse .browse-filter-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 10px;
+}
+
+.user-browse .filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.user-browse .filter-toggle-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--browse-gold);
+    color: #fff;
+    font-size: .74rem;
+    font-weight: 800;
+}
+
+.user-browse .browse-layout {
+    display: grid;
+    grid-template-columns: 290px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.user-browse .browse-layout.filters-hidden {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.user-browse .browse-layout.filters-hidden .filter-panel {
+    display: none;
+}
+
+.user-browse .browse-results {
+    min-width: 0;
+}
+
+/* Only the filter moves left, into the empty space beside the page; the opportunity cards stay in place. */
+.user-browse .browse-content {
+    --filter-shift: min(312px, max(0px, calc((100vw - 100%) / 2 - 16px)));
+}
+
+.user-browse .browse-layout {
+    margin-left: calc(-1 * var(--filter-shift));
+}
+
+.user-browse .browse-layout.filters-hidden {
+    margin-left: 0;
+}
+
+.user-browse .filter-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 18px;
+    background: #fff;
+    border: 1px solid var(--browse-border);
+    border-radius: 16px;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
+    animation: browseFadeUp .3s ease both;
+}
+
+.user-browse .filter-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #eee8f4;
+    color: var(--browse-text);
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.user-browse .filter-panel-title::before {
+    content: "";
+    display: block;
+    width: 5px;
+    height: 20px;
+    border-radius: 5px;
+    background: var(--browse-gold);
+}
+
+.user-browse .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+}
+
+.user-browse .filter-field > label,
+.user-browse .filter-label {
+    color: var(--browse-text);
+    font-size: .86rem;
+    font-weight: 700;
+}
+
+.user-browse .filter-field .form-control {
+    min-height: 42px;
+    padding: 9px 11px;
+}
+
+.user-browse .filter-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-browse .filter-panel-actions .btn {
+    flex: 1;
+}
+
+.user-browse .filter-panel-note {
+    margin: 0;
+    color: var(--browse-muted);
+    font-size: .8rem;
+    line-height: 1.55;
+}
+
+/* Category header with a triangle that opens / closes its list */
+.user-browse .lookup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.user-browse .lookup-header:hover .filter-label {
+    color: var(--browse-purple);
+}
+
+.user-browse .lookup-header:focus-visible {
+    outline: 2px solid var(--browse-purple);
+    outline-offset: 2px;
+}
+
+.user-browse .lookup-caret {
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 7px solid var(--browse-purple);
+    transition: transform .2s ease;
+}
+
+.user-browse .lookup-field.is-open .lookup-caret {
+    transform: rotate(180deg);
+}
+
+.user-browse .lookup-box[hidden] {
+    display: none !important;
+}
+
+/* Checkbox list box with search: shows 5 items, scroll for the rest */
+.user-browse .lookup-count {
+    color: var(--browse-purple);
+    font-size: .8rem;
+    font-weight: 650;
+}
+
+.user-browse .lookup-box {
+    padding: 8px;
+    border: 1px solid #ddd5e8;
+    border-radius: 10px;
+    background: #fff;
+    animation: browseFadeUp .2s ease both;
+}
+
+.user-browse .lookup-box:focus-within {
+    border-color: var(--browse-purple);
+    box-shadow: 0 0 0 3px rgba(57,38,95,.10);
+}
+
+.user-browse .lookup-box .lookup-search {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: .85rem;
+}
+
+.user-browse .lookup-list {
+    max-height: 180px;
+    margin-top: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.user-browse .lookup-list.no-search {
+    margin-top: 0;
+}
+
+.user-browse .lookup-option {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 36px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: #514b5d;
+    font-size: .87rem;
+    line-height: 1.4;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.user-browse .lookup-option:hover {
+    background: var(--browse-lavender);
+}
+
+.user-browse .lookup-option:has(input:checked) {
+    background: #f2ecfa;
+    color: var(--browse-purple-dark);
+    font-weight: 650;
+}
+
+.user-browse .lookup-option[hidden] {
+    display: none !important;
+}
+
+.user-browse .lookup-option input {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin: 0;
+    accent-color: var(--browse-purple);
+    cursor: pointer;
+}
+
+.user-browse .lookup-empty {
+    padding: 10px 8px;
+    color: var(--browse-muted);
+    font-size: .85rem;
+    text-align: center;
+}
+
+/* With the filter open, the cards share the remaining width. */
+.user-browse .browse-layout:not(.filters-hidden) .opportunity-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+@media (max-width: 900px) {
+    .user-browse .browse-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .user-browse .browse-layout {
+        margin-left: 0;
+    }
+}
+
 @media (max-width: 950px) {
     .user-browse .opportunity-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1232,10 +1649,12 @@ user_header($me, 'Browse', 'browse');
         <!-- Action Messages -->
         <?php $message = $_GET['msg'] ?? ''; ?>
 
-        <?php if ($message === 'favorite_updated'): ?>
-            <div class="dashboard-notice" role="status">
-                <span aria-hidden="true">✓</span>
-                <span>Your favorites have been updated.</span>
+        <?php if (in_array($message, ['favorite_added', 'favorite_removed', 'favorite_updated'], true)): ?>
+            <!-- Success message: slides down from the top, then disappears (same as the dashboards) -->
+            <div class="browse-toast" id="browseToast" role="status" aria-live="polite">
+                <span class="browse-toast-icon" aria-hidden="true">✓</span>
+                <span><?= $message === 'favorite_added' ? 'Added to your favorites.' : 'Removed from your favorites.' ?></span>
+                <button type="button" class="browse-toast-close" aria-label="Close">&times;</button>
             </div>
         <?php elseif ($message === 'unavailable'): ?>
             <div class="dashboard-notice notice-warning" role="status">
@@ -1254,215 +1673,89 @@ user_header($me, 'Browse', 'browse');
             </div>
         <?php endif; ?>
 
-        <!-- Toolbar -->
-        <div class="browse-toolbar">
+        <div class="browse-layout" id="browseLayout">
 
-            <div>
-                <h2 class="section-heading">Explore Opportunities</h2>
+        <!-- Filter sidebar (left) -->
+        <form method="GET" action="browse.php" class="filter-panel" id="filterPanel">
+            <?php if ($search !== ''): ?>
+                <input type="hidden" name="q" value="<?= browse_h($search) ?>">
+            <?php endif; ?>
 
-                <p class="section-description">
-                    Find courses and training programs using the filters below.
-                </p>
+            <h3 class="filter-panel-title">Filter Opportunities</h3>
+
+            <?php browse_lookup_box('type', 'Opportunity Type', 'Search types...', browse_pairs(OPPORTUNITY_TYPES), $typeFilter); ?>
+            <?php browse_lookup_box('location', 'Location / City', 'Search cities...', browse_pairs(CITIES), $locationFilter); ?>
+            <?php browse_lookup_box('sector', 'Industry Sector', 'Search sectors...', browse_pairs($sectors), $sectorFilter); ?>
+            <?php browse_lookup_box('duration', 'Duration', 'Search durations...', browse_pairs($allowedDurations), $durationFilter); ?>
+
+            <?php browse_lookup_box('company', 'Company Name / Provider', 'Search companies...', browse_pairs($companies), $companyFilter); ?>
+
+            <?php browse_lookup_box('skill', 'Skills', 'Search skills...', browse_id_pairs($skillOptions), $skillIds); ?>
+            <?php browse_lookup_box('qualification', 'Qualifications', 'Search qualifications...', browse_id_pairs($qualificationOptions), $qualificationIds); ?>
+            <?php browse_lookup_box('experience', 'Experience', 'Search experience...', browse_id_pairs($experienceOptions), $experienceIds); ?>
+
+            <div class="filter-panel-actions">
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+                <a href="<?= browse_h('browse.php' . ($search !== '' ? '?' . http_build_query(['q' => $search]) : '')) ?>" class="btn btn-ghost">Reset</a>
             </div>
 
-            <button
-                type="button"
-                class="btn btn-outline"
-                id="filtersToggleBtn"
-                aria-controls="filterPanel"
-                aria-expanded="<?= $hasFilters ? 'true' : 'false' ?>"
-            >
-                <span aria-hidden="true">☷</span>
-                <span id="filtersToggleText">
-                    <?= $hasFilters ? 'Hide Filters' : 'Show Filters' ?>
-                </span>
-            </button>
+            <p class="filter-panel-note">
+                Results match all the filters you choose. Inside one filter, an opportunity
+                matches if it has any of the items you selected.
+            </p>
+        </form>
 
-        </div>
+        <div class="browse-results">
 
-        <!-- Filters -->
-        <form
-            method="GET"
-            action="browse.php"
-            class="dashboard-card filters-card"
-            id="filterPanel"
-            <?= $hasFilters ? '' : 'hidden' ?>
-        >
-
-            <div class="filters-heading">
-                <h2>Filter Opportunities</h2>
-
-                <?php if ($hasFilters): ?>
-                    <a href="browse.php" class="btn btn-ghost btn-sm">
-                        Clear All
-                    </a>
-                <?php endif; ?>
+            <!-- Filters button: on the right, above the Search button -->
+            <div class="browse-filter-bar">
+                <button
+                    type="button"
+                    class="btn btn-outline btn-sm filter-toggle"
+                    id="filterToggle"
+                    aria-controls="filterPanel"
+                    aria-expanded="true"
+                >
+                    <span class="filter-toggle-text">Hide Filters</span>
+                    <?php if ($activeFilterCount > 0): ?>
+                        <span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span>
+                    <?php endif; ?>
+                </button>
             </div>
 
-            <div class="filter-grid">
+            <!-- Search: opportunity title (Enter or the Search button) -->
+            <form method="GET" action="browse.php" class="dashboard-card search-card" role="search">
+                <?php foreach ($filterQuery as $key => $value): ?>
+                    <?php if ($key === 'q') continue; ?>
+                    <?php foreach ((array)$value as $item): ?>
+                        <input type="hidden" name="<?= browse_h($key) ?><?= is_array($value) ? '[]' : '' ?>" value="<?= browse_h($item) ?>">
+                    <?php endforeach; ?>
+                <?php endforeach; ?>
 
-                <!-- Opportunity Type -->
-                <div class="filter-group">
-                    <h3>Opportunity Type</h3>
-
-                    <div class="filter-options">
-
-                        <?php foreach ($types as $item): ?>
-                            <label class="filter-option">
-                                <input
-                                    type="radio"
-                                    name="type"
-                                    value="<?= browse_h($item) ?>"
-                                    <?= $type === $item ? 'checked' : '' ?>
-                                >
-                                <span><?= browse_h($item) ?></span>
-                            </label>
-                        <?php endforeach; ?>
-
-                        <label class="filter-option">
-                            <input
-                                type="radio"
-                                name="type"
-                                value=""
-                                <?= $type === '' ? 'checked' : '' ?>
-                            >
-                            <span>Any type</span>
-                        </label>
-
-                    </div>
-                </div>
-
-                <!-- Location -->
-                <div class="filter-group">
-                    <h3>Location / City</h3>
-
-                    <select class="form-control" name="location">
-                        <option value="">Any location</option>
-
-                        <?php foreach ($locations as $item): ?>
-                            <option
-                                value="<?= browse_h($item) ?>"
-                                <?= $location === $item ? 'selected' : '' ?>
-                            >
-                                <?= browse_h($item) ?>
-                            </option>
-                        <?php endforeach; ?>
-
-                    </select>
-                </div>
-
-                <!-- Duration -->
-                <div class="filter-group">
-                    <h3>Duration</h3>
-
-                    <div class="filter-options">
-
-                        <?php foreach ($allowedDurations as $item): ?>
-                            <label class="filter-option">
-                                <input
-                                    type="radio"
-                                    name="duration"
-                                    value="<?= browse_h($item) ?>"
-                                    <?= $duration === $item ? 'checked' : '' ?>
-                                >
-                                <span><?= browse_h($item) ?></span>
-                            </label>
-                        <?php endforeach; ?>
-
-                        <label class="filter-option">
-                            <input
-                                type="radio"
-                                name="duration"
-                                value=""
-                                <?= $duration === '' ? 'checked' : '' ?>
-                            >
-                            <span>Any duration</span>
-                        </label>
-
-                    </div>
-                </div>
-
-                <!-- Application Method -->
-                <div class="filter-group">
-                    <h3>Application Method</h3>
-
-                    <div class="filter-options">
-
-                        <?php foreach ($methods as $item): ?>
-                            <label class="filter-option">
-                                <input
-                                    type="radio"
-                                    name="method"
-                                    value="<?= browse_h($item) ?>"
-                                    <?= $method === $item ? 'checked' : '' ?>
-                                >
-                                <span><?= browse_h($item) ?></span>
-                            </label>
-                        <?php endforeach; ?>
-
-                        <label class="filter-option">
-                            <input
-                                type="radio"
-                                name="method"
-                                value=""
-                                <?= $method === '' ? 'checked' : '' ?>
-                            >
-                            <span>Any method</span>
-                        </label>
-
-                    </div>
-                </div>
-
-                <!-- Company -->
-                <div class="filter-group">
-                    <h3>Company Name</h3>
-
-                    <input
-                        type="text"
-                        class="form-control"
-                        name="company"
-                        value="<?= browse_h($company) ?>"
-                        placeholder="Search by company name"
-                        maxlength="150"
-                    >
-                </div>
-
-                <!-- Skills -->
-                <div class="filter-group">
-                    <h3>Skills</h3>
-                    <?php browse_multi_dropdown('skill', 'skills', $skillOptions, $skillIds); ?>
-                </div>
-
-                <!-- Experience -->
-                <div class="filter-group">
-                    <h3>Experience</h3>
-                    <?php browse_multi_dropdown('experience', 'experience', $experienceOptions, $experienceIds); ?>
-                </div>
-
-                <!-- Qualifications -->
-                <div class="filter-group">
-                    <h3>Qualifications</h3>
-                    <?php browse_multi_dropdown('qualification', 'qualifications', $qualificationOptions, $qualificationIds); ?>
-                </div>
-            </div>
-
-            <div class="filter-actions">
+                <input
+                    type="search"
+                    class="form-control"
+                    name="q"
+                    value="<?= browse_h($search) ?>"
+                    placeholder="Search by opportunity title"
+                    maxlength="150"
+                    aria-label="Search by opportunity title"
+                >
 
                 <button type="submit" class="btn btn-primary">
                     <span aria-hidden="true">⌕</span>
-                    Apply Filters
+                    Search
                 </button>
 
-                <a href="browse.php" class="btn btn-outline">
-                    Reset Filters
-                </a>
-
-            </div>
-
-        </form>
+                <?php if ($search !== ''): ?>
+                    <a href="<?= browse_h('browse.php' . (($tmp = array_diff_key($filterQuery, ['q' => 1])) ? '?' . http_build_query($tmp) : '')) ?>" class="btn btn-ghost">
+                        Clear
+                    </a>
+                <?php endif; ?>
+            </form>
 
         <!-- Results -->
-        <div class="browse-toolbar" style="margin-top:26px;">
+        <div class="browse-toolbar">
 
             <div>
                 <h2 class="section-heading">Available Listings</h2>
@@ -1487,17 +1780,21 @@ user_header($me, 'Browse', 'browse');
 
                 <h2>
                     <?= $hasFilters
-                        ? 'No opportunities match your filters'
-                        : 'No opportunities available yet' ?>
+                        ? 'No opportunities match your selected filter criteria'
+                        : ($search !== ''
+                            ? 'No opportunities or courses found matching your search'
+                            : 'No opportunities available yet') ?>
                 </h2>
 
                 <p>
                     <?= $hasFilters
-                        ? 'Try changing your search criteria or clearing the filters.'
-                        : 'New training programs and courses will appear here when available.' ?>
+                        ? 'Try changing your filters or clearing them.'
+                        : ($search !== ''
+                            ? 'Try a different opportunity title.'
+                            : 'New training programs and courses will appear here when available.') ?>
                 </p>
 
-                <?php if ($hasFilters): ?>
+                <?php if ($hasFilters || $search !== ''): ?>
                     <div style="margin-top:17px;">
                         <a href="browse.php" class="btn btn-primary">
                             Clear Filters
@@ -1531,7 +1828,7 @@ user_header($me, 'Browse', 'browse');
                         $opLocation = 'Location not specified';
                     }
 
-                    $opDuration = browse_duration(
+                    $opDuration = browse_duration_text(
                         $o['StartDate'] ?? null,
                         $o['EndDate'] ?? null
                     );
@@ -1545,6 +1842,16 @@ user_header($me, 'Browse', 'browse');
                     $shortDescription = function_exists('mb_substr')
                         ? mb_substr($description, 0, 150, 'UTF-8')
                         : substr($description, 0, 150);
+
+                    /* Past the application deadline counts as Closed, even if the status is still Open. */
+                    $opDeadline = (string)($o['ApplicationDeadLine'] ?? '');
+                    if (
+                        strcasecmp($opStatus, 'Open') === 0
+                        && $opDeadline !== ''
+                        && $opDeadline < date('Y-m-d')
+                    ) {
+                        $opStatus = 'Closed';
+                    }
 
                     $statusClass = strcasecmp($opStatus, 'Open') === 0
                         ? 'badge-open'
@@ -1578,7 +1885,7 @@ user_header($me, 'Browse', 'browse');
                                 <div class="company-details">
 
                                     <h3 class="opportunity-title">
-                                        <?= browse_h($title) ?>
+                                        <a href="opportunity-detail.php?id=<?= $id ?>"><?= browse_h($title) ?></a>
                                     </h3>
 
                                     <div class="company-name">
@@ -1682,6 +1989,9 @@ user_header($me, 'Browse', 'browse');
 
         <?php endif; ?>
 
+        </div><!-- /.browse-results -->
+        </div><!-- /.browse-layout -->
+
     </div>
 
 </main>
@@ -1689,68 +1999,80 @@ user_header($me, 'Browse', 'browse');
 <?php user_footer(); ?>
 
 <script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
 (function () {
-    const filterPanel = document.getElementById('filterPanel');
-    const toggleButton = document.getElementById('filtersToggleBtn');
-    const toggleText = document.getElementById('filtersToggleText');
+    const toast = document.getElementById('browseToast');
+    if (!toast) return;
 
-    if (!filterPanel || !toggleButton || !toggleText) {
-        return;
+    /* Move it to <body> so the page animations do not affect its fixed position. */
+    document.body.appendChild(toast);
+
+    /* Remove ?msg= from the address so a refresh does not show the message again. */
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('msg')) {
+        url.searchParams.delete('msg');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
     }
 
-    toggleButton.addEventListener('click', function () {
-        const willOpen = filterPanel.hidden;
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
 
-        filterPanel.hidden = !willOpen;
-        toggleButton.setAttribute('aria-expanded', String(willOpen));
-
-        toggleText.textContent = willOpen
-            ? 'Hide Filters'
-            : 'Show Filters';
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.browse-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
     });
 })();
-(function () {
-    const dropdowns = document.querySelectorAll('[data-multi-dropdown]');
 
-    function closeAll(except) {
-        dropdowns.forEach(function (dd) {
-            if (dd === except) return;
-            dd.querySelector('.multi-dropdown-panel').hidden = true;
-            dd.classList.remove('is-open');
-            dd.querySelector('.multi-dropdown-toggle').setAttribute('aria-expanded', 'false');
-        });
+/* Show / hide the filter sidebar (remembered in this browser). */
+(function () {
+    const layout = document.getElementById('browseLayout');
+    const btn = document.getElementById('filterToggle');
+    if (!layout || !btn) return;
+    const text = btn.querySelector('.filter-toggle-text');
+
+    function setHidden(hidden) {
+        layout.classList.toggle('filters-hidden', hidden);
+        btn.setAttribute('aria-expanded', String(!hidden));
+        text.textContent = hidden ? 'Show Filters' : 'Hide Filters';
+        try { localStorage.setItem('ufuqBrowseFiltersHidden', hidden ? '1' : '0'); } catch (e) {}
     }
 
-    dropdowns.forEach(function (dd) {
-        const toggle = dd.querySelector('.multi-dropdown-toggle');
-        const panel = dd.querySelector('.multi-dropdown-panel');
-        const search = dd.querySelector('.multi-dropdown-search');
-        const label = dd.querySelector('.multi-dropdown-label');
-        const options = dd.querySelectorAll('.multi-dropdown-option');
-        const empty = dd.querySelector('.multi-dropdown-empty');
+    let hidden = false;
+    try { hidden = localStorage.getItem('ufuqBrowseFiltersHidden') === '1'; } catch (e) {}
+    setHidden(hidden);
+    btn.addEventListener('click', function () {
+        setHidden(!layout.classList.contains('filters-hidden'));
+    });
+})();
 
-        function updateLabel() {
-            const checked = dd.querySelectorAll('input[type="checkbox"]:checked');
-            if (checked.length === 0) {
-                label.textContent = dd.dataset.placeholder;
-                label.classList.add('is-placeholder');
-            } else {
-                label.textContent = checked.length === 1
-                    ? checked[0].dataset.name
-                    : checked.length + ' selected';
-                label.classList.remove('is-placeholder');
-            }
-        }
+/* Checkbox list boxes (skills / qualifications / experience): triangle, search and selected count. */
+document.querySelectorAll('[data-lookup-box]').forEach(function (field) {
+    const search = field.querySelector('.lookup-search');
+    const options = field.querySelectorAll('.lookup-option');
+    const boxes = field.querySelectorAll('input[type="checkbox"]');
+    const empty = field.querySelector('.lookup-empty');
+    const countEl = field.querySelector('.lookup-count');
+    const header = field.querySelector('.lookup-header');
+    const box = field.querySelector('.lookup-box');
 
-        toggle.addEventListener('click', function () {
-            const willOpen = panel.hidden;
-            closeAll(dd);
-            panel.hidden = !willOpen;
-            dd.classList.toggle('is-open', willOpen);
-            toggle.setAttribute('aria-expanded', String(willOpen));
-            if (willOpen) search.focus();
-        });
+    header.addEventListener('click', function () {
+        const willOpen = box.hidden;
+        box.hidden = !willOpen;
+        field.classList.toggle('is-open', willOpen);
+        header.setAttribute('aria-expanded', String(willOpen));
+        if (willOpen && search) search.focus();
+    });
 
+    function updateCount() {
+        const n = Array.from(boxes).filter(function (b) { return b.checked; }).length;
+        countEl.textContent = n ? '(' + n + ' selected)' : '';
+    }
+
+    if (search) {
         search.addEventListener('input', function () {
             const q = search.value.trim().toLowerCase();
             let visible = 0;
@@ -1762,22 +2084,10 @@ user_header($me, 'Browse', 'browse');
             empty.hidden = visible !== 0;
         });
 
-        search.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') e.preventDefault();
-        });
-
-        dd.addEventListener('change', updateLabel);
-
-        dd.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                closeAll(null);
-                toggle.focus();
-            }
-        });
-    });
-
-    document.addEventListener('click', function (e) {
-        if (!e.target.closest('[data-multi-dropdown]')) closeAll(null);
-    });
-})();
+        /* Enter in the search box should not submit the filters. */
+        search.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+    }
+    field.addEventListener('change', updateCount);
+    updateCount();
+});
 </script>

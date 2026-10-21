@@ -269,7 +269,75 @@ user_header($me, 'Favorites', 'favorites');
     50%      { transform: translateY(-5px); }
 }
 
-/* ---------- Flash Message ---------- */
+/* Toast: success message that slides down from the top, then disappears (same as Browse and the dashboards) */
+.ufuq-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc;
+    border-radius: 13px;
+    background: #eaf7ef;
+    color: #1f6b47;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%);
+    opacity: 0;
+    transition: transform .35s ease, opacity .35s ease;
+}
+
+.ufuq-toast.is-shown {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.ufuq-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2f8a5c;
+    color: #fff;
+    font-size: .85rem;
+}
+
+.ufuq-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #1f6b47;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.ufuq-toast-close:hover {
+    background: rgba(31,107,71,.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ufuq-toast { transition: none; }
+}
+
+/* ---------- Flash Message (errors) ---------- */
 .user-favorites .favorites-alert {
     display: flex;
     align-items: center;
@@ -408,22 +476,20 @@ user_header($me, 'Favorites', 'favorites');
     background: #a994c9;
 }
 
-/* ---------- Favorite Card ---------- */
+/* ---------- Favorite Card (same card and icons as the Browse page) ---------- */
 .user-favorites .favorite-card {
-    position: relative;
     display: flex;
     flex-direction: column;
     flex: 0 0 320px;
     width: 320px;
     min-width: 0;
-    min-height: 330px;
-    padding: 21px;
-    background: var(--fav-card);
+    padding: 19px;
     border: 1px solid #ece7f2;
     border-radius: 16px;
+    background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.045);
     scroll-snap-align: start;
-    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
 }
 
 .user-favorites .favorite-card:hover {
@@ -432,172 +498,158 @@ user_header($me, 'Favorites', 'favorites');
     box-shadow: 0 12px 28px rgba(40,26,70,.1);
 }
 
-.user-favorites .favorite-card-top {
+.user-favorites .opportunity-top {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 18px;
+    gap: 10px;
+    margin-bottom: 15px;
 }
 
-.user-favorites .favorite-company {
+.user-favorites .company-info {
     display: flex;
     align-items: center;
     gap: 11px;
     min-width: 0;
 }
 
-.user-favorites .favorite-company-logo {
+.user-favorites .company-logo {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 48px;
+    height: 48px;
     flex-shrink: 0;
-    width: 46px;
-    height: 46px;
-    color: #fff;
-    background: var(--fav-purple);
-    border-radius: 13px;
-    font-size: 1.05rem;
+    border-radius: 14px;
+    background: var(--fav-lavender);
+    color: var(--fav-purple);
+    font-size: 1.15rem;
     font-weight: 800;
 }
 
-.user-favorites .favorite-company-info {
+.user-favorites .company-details {
     min-width: 0;
 }
 
-.user-favorites .favorite-company-name {
-    margin: 0;
-    color: var(--fav-muted);
-    font-size: .8rem;
-    font-weight: 600;
-    line-height: 1.6;
-    overflow-wrap: anywhere;
-}
-
-.user-favorites .favorite-type {
-    display: inline-block;
-    margin-top: 4px;
-    padding: 4px 10px;
-    color: var(--fav-purple);
-    background: var(--fav-lavender);
-    border-radius: 30px;
-    font-size: .72rem;
-    font-weight: 750;
-}
-
-.user-favorites .favorite-remove-form {
-    flex-shrink: 0;
-    margin: 0;
-}
-
-.user-favorites .favorite-remove-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    color: #bd334d;
-    background: #fff1f2;
-    border: 1px solid #f1d4d8;
-    border-radius: 11px;
-    font-size: 1.2rem;
-    line-height: 1;
-    cursor: pointer;
-    transition: color .2s ease, background .2s ease, transform .2s ease;
-}
-
-.user-favorites .favorite-remove-btn:hover {
-    color: #fff;
-    background: var(--fav-danger);
-    transform: scale(1.04);
-}
-
-.user-favorites .favorite-title {
-    margin: 0 0 10px;
+.user-favorites .opportunity-title {
+    margin: 0 0 4px;
     color: var(--fav-text);
-    font-size: 1.05rem;
+    font-size: 1rem;
     font-weight: 750;
     line-height: 1.55;
     overflow-wrap: anywhere;
 }
 
-.user-favorites .favorite-description {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    overflow: hidden;
-    min-height: 66px;
-    margin: 0 0 18px;
-    color: #625b6d;
-    font-size: .85rem;
-    line-height: 1.75;
+.user-favorites .opportunity-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.user-favorites .opportunity-title a:hover {
+    color: var(--fav-purple);
+    text-decoration: underline;
+}
+
+.user-favorites .company-name {
+    color: var(--fav-muted);
+    font-size: .82rem;
+    line-height: 1.55;
     overflow-wrap: anywhere;
 }
 
-.user-favorites .favorite-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin: 0 0 20px;
+.user-favorites .favorite-form {
+    flex-shrink: 0;
+    margin: 0;
 }
 
-.user-favorites .favorite-meta-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 9px;
-    color: #625c70;
-    font-size: .8rem;
-    line-height: 1.6;
-    overflow-wrap: anywhere;
-}
-
-.user-favorites .favorite-meta-icon {
+.user-favorites .favorite-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    color: var(--fav-purple);
-    background: var(--fav-lavender);
-    border-radius: 7px;
-    font-size: .75rem;
+    width: 37px;
+    height: 37px;
+    padding: 0;
+    border: 1px solid #f1d4d8;
+    border-radius: 11px;
+    background: #fff1f2;
+    color: #bd334d;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform .18s ease, background .18s ease, border-color .18s ease;
 }
 
-.user-favorites .favorite-card-footer {
+.user-favorites .favorite-button:hover {
+    transform: translateY(-1px);
+    border-color: #e5b9c1;
+    background: #fff6f7;
+}
+
+.user-favorites .opportunity-description {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0 0 17px;
+    color: #625b6d;
+    font-size: .87rem;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.user-favorites .opportunity-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 17px;
+    color: var(--fav-muted);
+    font-size: .81rem;
+    line-height: 1.6;
+}
+
+.user-favorites .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    border-radius: 30px;
+    font-size: .76rem;
+    font-weight: 750;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.user-favorites .badge-course {
+    background: #e8f5ec;
+    color: #24653c;
+}
+
+.user-favorites .badge-program {
+    background: #eee8f8;
+    color: var(--fav-purple);
+}
+
+.user-favorites .badge-open {
+    background: #e8f5ec;
+    color: #24653c;
+}
+
+.user-favorites .badge-closed {
+    border: 1px solid #f1d4d8;
+    background: #fff1f2;
+    color: #9c263d;
+}
+
+.user-favorites .opportunity-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
     margin-top: auto;
-    padding-top: 15px;
+    padding-top: 14px;
     border-top: 1px solid #f0edf4;
-}
-
-.user-favorites .favorite-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--fav-muted);
-    font-size: .76rem;
-    font-weight: 700;
-}
-
-.user-favorites .favorite-status-dot {
-    width: 8px;
-    height: 8px;
-    flex-shrink: 0;
-    background: #c2bdcb;
-    border-radius: 50%;
-}
-
-.user-favorites .favorite-status.open .favorite-status-dot {
-    background: #2da66c;
-}
-
-.user-favorites .favorite-status.closed .favorite-status-dot {
-    background: #d65b65;
 }
 
 .user-favorites .favorite-details-btn {
@@ -605,8 +657,8 @@ user_header($me, 'Favorites', 'favorites');
     align-items: center;
     justify-content: center;
     gap: 7px;
-    min-height: 36px;
-    padding: 8px 13px;
+    min-height: 35px;
+    padding: 8px 12px;
     color: #fff;
     background: var(--fav-purple);
     border: 1px solid var(--fav-purple);
@@ -768,7 +820,13 @@ user_header($me, 'Favorites', 'favorites');
     <!-- Main content -->
     <div class="container favorites-container">
 
-    <?php if ($flashMessage): ?>
+    <?php if ($flashMessage && ($flashMessage['type'] ?? '') === 'success'): ?>
+            <div class="ufuq-toast" id="successToast" role="status" aria-live="polite">
+                <span class="ufuq-toast-icon" aria-hidden="true">✓</span>
+                <span><?= fav_e($flashMessage['text'] ?? '') ?></span>
+                <button type="button" class="ufuq-toast-close" aria-label="Close">&times;</button>
+            </div>
+        <?php elseif ($flashMessage): ?>
             <div class="favorites-alert <?= fav_e($flashMessage['type'] ?? 'success') ?>">
                 <span aria-hidden="true">
                     <?= ($flashMessage['type'] ?? '') === 'error' ? '&#9888;' : '&#10003;' ?>
@@ -881,8 +939,10 @@ user_header($me, 'Favorites', 'favorites');
                             $isClosed = true;
                         }
 
-                        $statusLabel = $isClosed ? 'Closed' : 'Available';
-                        $statusClass = $isClosed ? 'closed' : 'open';
+                        /* Same status badge as the Browse page: Open, or Closed after the deadline / when closed. */
+                        $statusLabel = $isClosed ? 'Closed' : 'Open';
+                        $statusClass = $isClosed ? 'badge-closed' : 'badge-open';
+                        $typeClass = strcasecmp($opportunityType, 'Course') === 0 ? 'badge-course' : 'badge-program';
 
                         $detailUrl = 'opportunity-detail.php?id='
                             . rawurlencode((string) $opportunityId);
@@ -890,131 +950,91 @@ user_header($me, 'Favorites', 'favorites');
 
                         <article class="favorite-card">
 
-                            <div class="favorite-card-top">
+                            <div class="opportunity-top">
 
-                                <div class="favorite-company">
+                                <div class="company-info">
 
-                                    <div
-                                        class="favorite-company-logo"
-                                        <?php if (function_exists('color_for')): ?>
-                                            style="background: <?= fav_e(color_for($companyName)) ?>;"
-                                        <?php endif; ?>
-                                        aria-hidden="true"
-                                    >
+                                    <div class="company-logo" aria-hidden="true">
                                         <?= fav_e(fav_initial($companyName)) ?>
                                     </div>
 
-                                    <div class="favorite-company-info">
-                                        <p class="favorite-company-name">
-                                            <?= fav_e($companyName) ?>
-                                        </p>
+                                    <div class="company-details">
 
-                                        <span class="favorite-type">
-                                            <?= fav_e($opportunityType) ?>
-                                        </span>
+                                        <h3 class="opportunity-title">
+                                            <a href="<?= fav_e($detailUrl) ?>"><?= fav_e($opportunityTitle) ?></a>
+                                        </h3>
+
+                                        <div class="company-name">
+                                            <?= fav_e($companyName) ?>
+                                        </div>
+
                                     </div>
 
                                 </div>
 
+                                <!-- Remove from favorites -->
                                 <form
-                                    class="favorite-remove-form"
+                                    class="favorite-form"
                                     method="POST"
                                     action="favorites.php"
                                     onsubmit="return confirm('Remove this opportunity from your favorites?');"
                                 >
-                                    <input
-                                        type="hidden"
-                                        name="csrf_token"
-                                        value="<?= fav_e($_SESSION['csrf_token']) ?>"
-                                    >
-
-                                    <input
-                                        type="hidden"
-                                        name="action"
-                                        value="remove_favorite"
-                                    >
-
-                                    <input
-                                        type="hidden"
-                                        name="opportunity_id"
-                                        value="<?= $opportunityId ?>"
-                                    >
+                                    <input type="hidden" name="csrf_token" value="<?= fav_e($_SESSION['csrf_token']) ?>">
+                                    <input type="hidden" name="action" value="remove_favorite">
+                                    <input type="hidden" name="opportunity_id" value="<?= $opportunityId ?>">
 
                                     <button
                                         type="submit"
-                                        class="favorite-remove-btn"
+                                        class="favorite-button"
                                         title="Remove from favorites"
                                         aria-label="Remove <?= fav_e($opportunityTitle) ?> from favorites"
                                     >
-                                        &#9829;
+                                        <span aria-hidden="true">♥</span>
                                     </button>
                                 </form>
 
                             </div>
 
-                            <h3 class="favorite-title">
-                                <?= fav_e($opportunityTitle) ?>
-                            </h3>
-
-                            <p class="favorite-description">
+                            <p class="opportunity-description">
                                 <?= $description !== ''
                                     ? fav_e($description)
-                                    : 'View the opportunity details to learn more about this program.' ?>
+                                    : 'No description provided.' ?>
                             </p>
 
-                            <div class="favorite-meta">
+                            <div class="opportunity-meta">
 
-                                <?php if ($location !== ''): ?>
-                                    <div class="favorite-meta-item">
-                                        <span class="favorite-meta-icon" aria-hidden="true">
-                                            &#9906;
-                                        </span>
+                                <span class="badge <?= $typeClass ?>">
+                                    <?= fav_e($opportunityType) ?>
+                                </span>
 
-                                        <span>
-                                            <?= fav_e($location) ?>
-                                        </span>
-                                    </div>
-                                <?php endif; ?>
+                                <span>
+                                    <span aria-hidden="true">⌖</span>
+                                    <?= fav_e($location !== '' ? $location : 'Location not specified') ?>
+                                </span>
 
-                                <?php if ($duration !== ''): ?>
-                                    <div class="favorite-meta-item">
-                                        <span class="favorite-meta-icon" aria-hidden="true">
-                                            &#9719;
-                                        </span>
-
-                                        <span>
-                                            <?= fav_e($duration) ?>
-                                        </span>
-                                    </div>
-                                <?php endif; ?>
+                                <span>
+                                    <span aria-hidden="true">◷</span>
+                                    <?= fav_e($duration !== '' ? $duration : 'Not specified') ?>
+                                </span>
 
                                 <?php if ($deadlineText !== ''): ?>
-                                    <div class="favorite-meta-item">
-                                        <span class="favorite-meta-icon" aria-hidden="true">
-                                            &#128197;
-                                        </span>
-
-                                        <span>
-                                            Deadline: <?= fav_e($deadlineText) ?>
-                                        </span>
-                                    </div>
+                                    <span>
+                                        <span aria-hidden="true">⧗</span>
+                                        Deadline: <?= fav_e($deadlineText) ?>
+                                    </span>
                                 <?php endif; ?>
 
                             </div>
 
-                            <div class="favorite-card-footer">
+                            <div class="opportunity-footer">
 
-                                <span class="favorite-status <?= fav_e($statusClass) ?>">
-                                    <span class="favorite-status-dot"></span>
+                                <span class="badge <?= $statusClass ?>">
                                     <?= fav_e($statusLabel) ?>
                                 </span>
 
-                                <a
-                                    class="favorite-details-btn"
-                                    href="<?= fav_e($detailUrl) ?>"
-                                >
+                                <a class="favorite-details-btn" href="<?= fav_e($detailUrl) ?>">
                                     View Details
-                                    <span aria-hidden="true">&#8594;</span>
+                                    <span aria-hidden="true">&rarr;</span>
                                 </a>
 
                             </div>
@@ -1035,7 +1055,7 @@ user_header($me, 'Favorites', 'favorites');
                     &#9829;
                 </div>
 
-                <h2>No Favorites Yet</h2>
+                <h2>No saved opportunities yet</h2>
 
                 <p>
                     You haven't saved any opportunities yet.
@@ -1055,5 +1075,29 @@ user_header($me, 'Favorites', 'favorites');
     </div>
 
 </div>
+
+<script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
+(function () {
+    const toast = document.getElementById('successToast');
+    if (!toast) return;
+
+    /* Move it to <body> so the page animations do not affect its fixed position. */
+    document.body.appendChild(toast);
+
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.ufuq-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+
+</script>
 
 <?php admin_footer(); ?>
