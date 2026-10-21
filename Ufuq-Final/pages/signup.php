@@ -5,7 +5,8 @@ require_once __DIR__ . '/bootstrap.php';   // database ($pdo), mail, e(), csrf_t
 require_once __DIR__ . '/auth.php';        // req(), errBox(), password rule, pwHelp()
 require_once __DIR__ . '/../includes/email_templates.php';
 require_once __DIR__ . '/../includes/verification.php';
-require_once __DIR__ . '/../includes/uploads.php';       // check_file(), store_file(), delete_files(), cleanup_orphan_uploads()
+require_once __DIR__ . '/../includes/uploads.php';    // check_file(), store_file(), delete_files(), cleanup_orphan_uploads()
+require_once __DIR__ . '/../includes/lists.php';   // shared lists (EDU_STATUSES, FIELDS, INDUSTRIES, CITIES)
 
 /* ================= Config ================= */
 const PHONE_USER  = '/^05[0-9]{8}$/';     // Saudi mobile: 05XXXXXXXX
@@ -29,14 +30,11 @@ const MAX_COMPANY     = 100;
 const MAX_DESCRIPTION = 500;
 const MAX_URL         = 255;
 
-$EDU_STATUSES = ['Student', 'Fresh Graduate', 'Employed', 'Job Seeker', 'Freelancer'];
-$FIELDS       = ['Computer Science', 'Information Technology', 'Information Systems', 'Software Engineering',
-                 'Computer Engineering', 'Cybersecurity', 'Artificial Intelligence', 'Data Science',
-                 'Networks & Communications', 'Web & Mobile Development', 'Other'];
-$INDUSTRIES   = ['Technology', 'Education & Training', 'Marketing', 'Trading', 'Media', 'Administration',
-                 'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 'Other'];
-$CITIES       = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk', 'Online'];
 
+$EDU_STATUSES = EDU_STATUSES;
+$FIELDS       = FIELDS;
+$INDUSTRIES   = INDUSTRIES;
+$CITIES       = CITIES;
 // Names shown in the error banner
 $LABELS_USER = ['first_name' => 'First name', 'last_name' => 'Last name', 'email' => 'Email', 'phone' => 'Phone',
                 'edu_status' => 'Educational status', 'field_of_study' => 'Field of study', 'dob' => 'Date of birth',
@@ -379,11 +377,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st = $pdo->prepare('SELECT 1 FROM company WHERE CrNumber = ?');
             $st->execute([$cr]);
             $dupCr = (bool)$st->fetchColumn();
-            if ($dupEmail) {
-                $errors['email'] = 'Email already registered';
-                $banner = 'Email already registered';
-            } elseif ($dupCr) {
-                $errors['cr_number'] = 'Company already registered';
+            if ($dupEmail || $dupCr) {
+                $errors[$dupEmail ? 'email' : 'cr_number'] = 'Company already registered';
                 $banner = 'Company already registered';
             }
         }

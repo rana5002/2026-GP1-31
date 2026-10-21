@@ -1,6 +1,6 @@
 <?php
 // Saves a VERIFIED registration into the database. Called only after the email code is confirmed.
-// Table and column names match the real database (checked against the structure export of 18 Oct 2026).
+// Text values inside SQL use SINGLE quotes: on some servers (e.g. Aiven) double quotes mean a column name.
 
 // Returns the new MemberID. Throws on failure (PDOException, errorInfo[1] === 1062 means "already registered").
 function signup_save(PDO $pdo, array $d): int
@@ -9,7 +9,7 @@ function signup_save(PDO $pdo, array $d): int
 
     try {
         if (($d['type'] ?? '') === 'User') {
-            $pdo->prepare('INSERT INTO member (Email, Password, Role) VALUES (?, ?, "User")')
+            $pdo->prepare("INSERT INTO member (Email, Password, Role) VALUES (?, ?, 'User')")
                 ->execute([$d['email'], $d['pass_hash']]);
             $uid = (int) $pdo->lastInsertId();
 
@@ -47,12 +47,12 @@ function signup_save(PDO $pdo, array $d): int
 
             $id = $uid;
         } else {
-            $pdo->prepare('INSERT INTO member (Email, Password, Role) VALUES (?, ?, "Company")')
+            $pdo->prepare("INSERT INTO member (Email, Password, Role) VALUES (?, ?, 'Company')")
                 ->execute([$d['email'], $d['pass_hash']]);
             $cid = (int) $pdo->lastInsertId();
 
-            $pdo->prepare('INSERT INTO company (CompanyID, CompanyName, CrNumber, Phone, IndustrySector, VerificationDocument, Status, Description, Location, WebsiteURL, Logo)
-                           VALUES (?, ?, ?, ?, ?, ?, "Pending", ?, ?, ?, ?)')
+            $pdo->prepare("INSERT INTO company (CompanyID, CompanyName, CrNumber, Phone, IndustrySector, VerificationDocument, Status, Description, Location, WebsiteURL, Logo)
+                           VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?)")
                 ->execute([$cid, $d['name'], $d['cr'], $d['phone'], $d['industry'], $d['doc'],
                            $d['desc'], $d['loc'], ($d['web'] ?? '') !== '' ? $d['web'] : null, $d['logo']]);
 
