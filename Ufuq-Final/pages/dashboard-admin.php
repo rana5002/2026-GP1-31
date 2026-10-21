@@ -218,20 +218,72 @@ admin_header('Admin Dashboard', $tab);
     animation: adminFadeUp .5s ease both;
 }
 
-/* Notice */
-.admin-dashboard .dashboard-notice {
+/* Toast: success message that slides down from the top, then disappears */
+.admin-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    z-index: 1000;
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 13px 16px;
-    margin-bottom: 22px;
-    border: 1px solid #e4dced;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc;
     border-radius: 13px;
-    background: #f7f4fb;
-    color: var(--admin-purple);
-    font-size: .9rem;
-    line-height: 1.6;
-    animation: adminFadeUp .35s ease both;
+    background: #eaf7ef;
+    color: #1f6b47;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%);
+    opacity: 0;
+    transition: transform .35s ease, opacity .35s ease;
+}
+
+.admin-toast.is-shown {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.admin-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2f8a5c;
+    color: #fff;
+    font-size: .85rem;
+}
+
+.admin-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #1f6b47;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.admin-toast-close:hover {
+    background: rgba(31,107,71,.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-toast { transition: none; }
 }
 
 /* Headings */
@@ -1098,6 +1150,8 @@ a.mini-card:hover {
         <!-- Feedback Messages -->
         <?php
         $messages = [
+            'added'    => 'Opportunity added successfully.',
+            'updated'  => 'Opportunity updated successfully.',
             'deleted'  => 'Opportunity deleted successfully.',
             'saved'    => 'Opportunity saved successfully.',
             'approved' => 'Company approved and notified by email.',
@@ -1107,9 +1161,10 @@ a.mini-card:hover {
         ?>
 
         <?php if ($notice !== ''): ?>
-            <div class="dashboard-notice" role="status">
-                <span aria-hidden="true">✓</span>
+            <div class="admin-toast" id="adminToast" role="status" aria-live="polite">
+                <span class="admin-toast-icon" aria-hidden="true">✓</span>
                 <span><?= e($notice) ?></span>
+                <button type="button" class="admin-toast-close" aria-label="Close">&times;</button>
             </div>
         <?php endif; ?>
 
@@ -1536,6 +1591,34 @@ a.mini-card:hover {
 </div>
 
 <script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
+(function () {
+    const toast = document.getElementById('adminToast');
+    if (!toast) return;
+
+    /* Move it to <body> so the page animations do not affect its fixed position. */
+    document.body.appendChild(toast);
+
+    /* Remove ?msg= from the address so a refresh does not show the message again. */
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('msg')) {
+        url.searchParams.delete('msg');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.admin-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+
 /* Most Viewed Opportunities: the triangle shows / hides the rest of the list. */
 (function () {
     const toggle = document.getElementById('rankToggle');

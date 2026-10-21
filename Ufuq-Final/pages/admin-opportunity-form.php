@@ -463,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
 
-            header('Location: dashboard-admin.php?tab=opportunities&msg=saved');
+            header('Location: dashboard-admin.php?tab=opportunities&msg=' . ($editing ? 'updated' : 'added'));
             exit;
 
         } catch (Throwable $ex) {

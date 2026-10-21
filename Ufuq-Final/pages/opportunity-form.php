@@ -23,8 +23,8 @@ $skillIds = [];
 $qualificationIds = [];
 $experienceIds = [];
 
-function opp_form_redirect(): never {
-    header('Location: dashboard-company.php?tab=opportunities');
+function opp_form_redirect(string $message = ''): never {
+    header('Location: dashboard-company.php?tab=opportunities' . ($message !== '' ? '&msg=' . rawurlencode($message) : ''));
     exit;
 }
 
@@ -328,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             opp_sync_links($pdo, $opportunityId, 'opportunityqualification', 'QualificationID', $qualificationIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityexperience', 'ExperienceID', $experienceIds);
             $pdo->commit();
-            opp_form_redirect();
+            opp_form_redirect($editing ? 'updated' : 'added');
         }
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
