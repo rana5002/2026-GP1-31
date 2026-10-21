@@ -20,6 +20,7 @@ $validApplicantStatuses = ['Pending', 'Accepted', 'Rejected'];
 
 $success = '';
 $error = '';
+$fieldError = null;
 
 function company_redirect(string $tab, string $message = ''): never {
     $url = 'dashboard-company.php?tab=' . rawurlencode($tab);
@@ -31,6 +32,7 @@ function company_redirect(string $tab, string $message = ''): never {
 if (isset($_GET['msg'])) {
     $messages = [
         'saved'   => 'Company profile updated successfully.',
+        'password' => 'Password changed successfully.',
         'added'   => 'Opportunity added successfully.',
         'updated' => 'Opportunity updated successfully.',
         'deleted' => 'Opportunity deleted successfully.',
@@ -107,20 +109,21 @@ try {
         /* ----- Company profile (each section saves on its own) ----- */
         if ($action === 'company_name') {
             $name = trim($_POST['company_name'] ?? '');
-            if ($name === '' || mb_strlen($name) > 100) throw new RuntimeException('Please enter a valid company name (up to 100 characters).');
+            if ($name === '') throw new FieldError('nameForm', 'company_name', 'This field is required.');
+            if (mb_strlen($name) > 100) throw new FieldError('nameForm', 'company_name', 'Please enter a valid company name (up to 100 characters).');
             $stmt = $pdo->prepare('UPDATE company SET CompanyName = ? WHERE CompanyID = ?');
             $stmt->execute([$name, $companyId]);
             company_redirect('profile', 'saved');
         }
 
         if ($action === 'company_logo') {
-            if (empty($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Please choose a company logo.');
+            if (empty($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) throw new FieldError('logoPanel', 'logoInput', 'Please choose a company logo.');
             $file = $_FILES['logo'];
-            if ($file['size'] > 3 * 1024 * 1024) throw new RuntimeException('Logo must be 3 MB or smaller.');
+            if ($file['size'] > 3 * 1024 * 1024) throw new FieldError('logoPanel', 'logoInput', 'Logo must be 3 MB or smaller.');
             $finfo = new finfo(FILEINFO_MIME_TYPE);
             $mime = $finfo->file($file['tmp_name']);
             $allowedLogo = ['image/jpeg' => 'jpg', 'image/png' => 'png'];
-            if (!isset($allowedLogo[$mime])) throw new RuntimeException('Please upload a PNG or JPG image.');
+            if (!isset($allowedLogo[$mime])) throw new FieldError('logoPanel', 'logoInput', 'Please upload a PNG, JPG or JPEG image.');
             $uploadDir = __DIR__ . '/../uploads/company/logos';
             if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) throw new RuntimeException('Could not create the logo upload folder.');
             $fileName = 'company_' . $companyId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedLogo[$mime];
@@ -133,33 +136,48 @@ try {
         if ($action === 'contact') {
             $phone = trim($_POST['phone'] ?? '');
             $email = trim($_POST['email'] ?? '');
-            $password = (string)($_POST['password'] ?? '');
 
+            if ($phone === '') throw new FieldError('contactForm', 'phone', 'This field is required.');
+            if ($email === '') throw new FieldError('contactForm', 'email', 'This field is required.');
             // Matches chk_company_phone in the database
             if (!preg_match('/^(05[0-9]{8}|011[0-9]{7})$/', $phone)) {
-                throw new RuntimeException('Please enter a valid phone number (05XXXXXXXX or 011XXXXXXX).');
+                throw new FieldError('contactForm', 'phone', 'Please enter a valid phone number (05XXXXXXXX or 011XXXXXXX).');
             }
             if ($email === '' || strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                throw new RuntimeException('Please enter a valid email address.');
+                throw new FieldError('contactForm', 'email', 'Please enter a valid email address.');
             }
-            if ($password !== '' && strlen($password) < 8) throw new RuntimeException('Password must be at least 8 characters.');
 
             $emailCheck = $pdo->prepare('SELECT MemberID FROM member WHERE Email = ? AND MemberID <> ?');
             $emailCheck->execute([$email, $companyId]);
-            if ($emailCheck->fetch()) throw new RuntimeException('Email already registered');
+            if ($emailCheck->fetch()) throw new FieldError('contactForm', 'email', 'Email already registered');
 
             $pdo->beginTransaction();
             $stmt = $pdo->prepare('UPDATE company SET Phone = ? WHERE CompanyID = ?');
             $stmt->execute([$phone, $companyId]);
-            if ($password !== '') {
-                $stmt = $pdo->prepare('UPDATE member SET Email = ?, Password = ? WHERE MemberID = ? AND Role = \'Company\'');
-                $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), $companyId]);
-            } else {
-                $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ? AND Role = \'Company\'');
-                $stmt->execute([$email, $companyId]);
-            }
+            $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ? AND Role = \'Company\'');
+            $stmt->execute([$email, $companyId]);
             $pdo->commit();
             company_redirect('profile', 'saved');
+        }
+
+        /* Change password: current password, then the new password (own section). */
+        if ($action === 'change_password') {
+            $current = (string)($_POST['current_password'] ?? '');
+            $new = (string)($_POST['new_password'] ?? '');
+
+            if ($current === '') throw new FieldError('passwordForm', 'current_password', 'This field is required.');
+            if ($new === '') throw new FieldError('passwordForm', 'new_password', 'This field is required.');
+
+            $stmt = $pdo->prepare('SELECT Password FROM member WHERE MemberID = ?');
+            $stmt->execute([$companyId]);
+            if (!password_verify($current, (string)$stmt->fetchColumn())) throw new FieldError('passwordForm', 'current_password', 'Current password is incorrect.');
+            if (!is_strong_password($new)) throw new FieldError('passwordForm', 'new_password', PW_MSG);
+            if ($new === $current) throw new FieldError('passwordForm', 'new_password', 'New password must be different from the current password.');
+
+            $stmt = $pdo->prepare('UPDATE member SET Password = ? WHERE MemberID = ?');
+            $stmt->execute([password_hash($new, PASSWORD_DEFAULT), $companyId]);
+            send_password_changed_email($pdo, $companyId);
+            company_redirect('profile', 'password');
         }
 
         if ($action === 'details') {
@@ -168,12 +186,14 @@ try {
             $website = trim($_POST['website'] ?? '');
             $description = trim($_POST['description'] ?? '');
 
-            if ($industry === '') throw new RuntimeException('Please select an industry sector.');
-            if ($location === '') throw new RuntimeException('Please select a location.');
+            if ($industry === '') throw new FieldError('detailsForm', 'industry', 'This field is required.');
+            if ($location === '') throw new FieldError('detailsForm', 'location', 'This field is required.');
+            if ($description === '') throw new FieldError('detailsForm', 'description', 'This field is required.');
+            if ($location === '') throw new FieldError('detailsForm', 'location', 'Please select a location.');
             // Matches chk_company_desc in the database
-            if (mb_strlen($description) < 15) throw new RuntimeException('Company description must be at least 15 characters.');
-            if (mb_strlen($description) > 500) throw new RuntimeException('Company description must be 500 characters or fewer.');
-            if ($website !== '' && (strlen($website) > 255 || !filter_var($website, FILTER_VALIDATE_URL))) throw new RuntimeException('Please enter a valid website URL.');
+            if (mb_strlen($description) < 15) throw new FieldError('detailsForm', 'description', 'Company description must be at least 15 characters.');
+            if (mb_strlen($description) > 500) throw new FieldError('detailsForm', 'description', 'Company description must be 500 characters or fewer.');
+            if ($website !== '' && (strlen($website) > 255 || !filter_var($website, FILTER_VALIDATE_URL))) throw new FieldError('detailsForm', 'website', 'Please enter a valid website URL.');
 
             $stmt = $pdo->prepare('UPDATE company SET IndustrySector = ?, Location = ?, WebsiteURL = ?, Description = ? WHERE CompanyID = ?');
             $stmt->execute([$industry, $location, $website !== '' ? $website : null, $description, $companyId]);
@@ -183,6 +203,12 @@ try {
 } catch (Throwable $ex) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $error = $ex instanceof PDOException ? 'Unable to save changes. Please check the information and try again.' : $ex->getMessage();
+    if ($ex instanceof FieldError) {
+        /* Shown under the field; the form reopens with what the company typed (no passwords). */
+        $old = array_filter($_POST, fn($v, $k) => is_string($v) && !in_array($k, ['csrf', 'action', 'tab', 'current_password', 'new_password'], true), ARRAY_FILTER_USE_BOTH);
+        $fieldError = ['form' => $ex->form, 'field' => $ex->field, 'message' => $error, 'old' => $old];
+        $error = '';
+    }
     /* Stay on the tab the form was sent from, so the error is shown next to it. */
     if (isset($tabAfter)) $activeTab = $tabAfter;
 }
@@ -696,6 +722,32 @@ $heroTitles = [
 .company-dashboard .profile-form textarea{resize:vertical}
 .company-dashboard .profile-form-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:19px}
 .company-dashboard .profile-hidden{display:none!important}
+/* Drop-down list with search (skills, experience, qualifications, ...) */
+.search-select{position:relative}
+.search-select > select{display:none!important}
+.search-select-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer;background:#fff}
+.search-select-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-select-text.is-placeholder{color:#8a8396}
+.search-select-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
+.search-select.is-open .search-select-caret{transform:rotate(180deg)}
+.search-select-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
+.search-select-panel[hidden]{display:none!important}
+.search-select-list{max-height:210px;margin-top:8px;overflow-y:auto;overscroll-behavior:contain}
+.search-select-option{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;color:#29243a;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+.search-select-option:hover,.search-select-option.is-selected{background:#f2ecfa}
+.search-select-option.is-selected{color:#281a46;font-weight:650}
+.search-select-option[hidden]{display:none!important}
+.search-select-option input{width:16px;height:16px;flex-shrink:0;margin:0;accent-color:#39265f;cursor:pointer}
+.search-select-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
+.search-select-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.search-select-chips:empty{display:none}
+.search-select-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:#281a46;font-size:.84rem;font-weight:700}
+.search-select-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:#39265f;font-size:1rem;line-height:1;cursor:pointer}
+.search-select-chip button:hover{color:#d94b56;background:rgba(217,75,86,.09)}
+/* Field validation: red field + message under it (same as the other forms) */
+.company-dashboard .form-control.invalid{border:1.5px solid #d94b56!important;background-color:#fff7f7!important;box-shadow:0 0 0 3px rgba(217,75,86,.08)}
+.company-dashboard .field-error{display:none;margin-top:7px;color:#c43643;font-size:.84rem;line-height:1.5}
+.company-dashboard .required-mark{color:#d94b56;font-weight:800;margin-left:2px}
 .company-dashboard .profile-edit-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:0;border-radius:9px;background:transparent;color:var(--c-purple);font:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:background .18s ease,color .18s ease}
 .company-dashboard .profile-edit-btn:hover{background:var(--c-lavender);color:var(--c-purple-dark)}
 .company-dashboard .profile-status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:30px;font-size:.76rem;font-weight:750;background:#fbf6eb;color:#76531d}
@@ -973,14 +1025,19 @@ $heroTitles = [
         </div>
       </div>
 
-      <form id="logoForm" method="post" enctype="multipart/form-data" class="profile-hidden">
-        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="company_logo"><input type="hidden" name="tab" value="profile">
-        <input type="file" id="logoInput" name="logo" accept=".png,.jpg,.jpeg,image/png,image/jpeg" onchange="if(this.files.length){this.form.submit();}">
-      </form>
+      <section class="profile-section profile-edit-panel profile-hidden" id="logoPanel">
+        <div class="profile-section-header"><h2>Change Company Logo</h2></div>
+        <form id="logoForm" method="post" enctype="multipart/form-data" class="profile-form" data-validate>
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="company_logo"><input type="hidden" name="tab" value="profile">
+          <input type="file" id="logoInput" name="logo" accept=".png,.jpg,.jpeg,image/png,image/jpeg" class="profile-hidden" required onchange="previewImage(this, 'logoPanel')">
+          <p class="company-help">Selected logo: <strong data-file-name></strong></p>
+          <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="cancelImage('logoInput', 'logoPanel')">Cancel</button></div>
+        </form>
+      </section>
 
       <section class="profile-section profile-edit-panel profile-hidden" id="nameForm">
         <div class="profile-section-header"><h2>Edit Company Name</h2></div>
-        <form method="post" class="profile-form">
+        <form method="post" class="profile-form" data-validate>
           <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="company_name"><input type="hidden" name="tab" value="profile">
           <div class="form-group"><label class="form-label" for="company_name">Company Name</label><input class="form-control" id="company_name" name="company_name" required maxlength="100" value="<?= e($company['CompanyName']) ?>"></div>
           <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('nameForm')">Cancel</button></div>
@@ -995,17 +1052,36 @@ $heroTitles = [
         <div class="profile-view-grid">
           <div class="profile-field"><div class="profile-field-label">Phone Number</div><div class="profile-field-value"><?= e($company['Phone'] ?: '—') ?></div></div>
           <div class="profile-field"><div class="profile-field-label">Official Email</div><div class="profile-field-value"><?= e($company['Email'] ?: '—') ?></div></div>
-          <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
         </div>
         <div id="contactForm" class="profile-edit-panel profile-hidden">
-          <form method="post" class="profile-form">
+          <form method="post" class="profile-form" data-validate>
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="contact"><input type="hidden" name="tab" value="profile">
             <div class="profile-view-grid">
               <div class="form-group"><label class="form-label" for="phone">Phone Number</label><input class="form-control" type="tel" id="phone" name="phone" required maxlength="10" pattern="(05[0-9]{8}|011[0-9]{7})" value="<?= e($company['Phone'] ?? '') ?>"><small class="company-help">Mobile (05XXXXXXXX) or landline (011XXXXXXX).</small></div>
               <div class="form-group"><label class="form-label" for="email">Official Email</label><input class="form-control" type="email" id="email" name="email" required maxlength="100" value="<?= e($company['Email']) ?>"></div>
-              <div class="form-group"><label class="form-label" for="password">New Password</label><input class="form-control" type="password" id="password" name="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password"><small class="company-help">At least 8 characters. Your password is securely hashed before storage.</small></div>
             </div>
             <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('contactForm')">Cancel</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="profile-section-header">
+          <h2>Password</h2>
+          <button type="button" class="profile-edit-btn" onclick="toggleProfileForm('passwordForm')"><?= icon('edit', 14) ?> Change Password</button>
+        </div>
+        <div class="profile-view-grid">
+          <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
+        </div>
+        <div id="passwordForm" class="profile-edit-panel profile-hidden">
+          <form method="post" class="profile-form" data-validate>
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="change_password"><input type="hidden" name="tab" value="profile">
+            <div class="profile-view-grid">
+              <div class="form-group"><label class="form-label" for="current_password">Current Password</label><input class="form-control" type="password" id="current_password" name="current_password" required autocomplete="current-password"></div>
+              <div class="form-group"><label class="form-label" for="new_password">New Password</label><input class="form-control" type="password" id="new_password" name="new_password" required minlength="8" autocomplete="new-password"><small class="company-help">At least 8 characters, including an uppercase and a lowercase letter.</small></div>
+              
+            </div>
+            <div class="profile-form-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('passwordForm')">Cancel</button></div>
           </form>
         </div>
       </section>
@@ -1022,11 +1098,11 @@ $heroTitles = [
           <div class="profile-field is-wide"><div class="profile-field-label">Description</div><div class="profile-field-value"><?= e($company['Description'] ?: '—') ?></div></div>
         </div>
         <div id="detailsForm" class="profile-edit-panel profile-hidden">
-          <form method="post" class="profile-form">
+          <form method="post" class="profile-form" data-validate>
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="details"><input type="hidden" name="tab" value="profile">
             <div class="profile-view-grid">
-              <div class="form-group"><label class="form-label" for="industry">Industry Sector</label><select class="form-control" id="industry" name="industry" required><option value="">Select industry</option><?php foreach ($industryOptions as $industry): ?><option value="<?= e($industry) ?>" <?= ($company['IndustrySector'] ?? '') === $industry ? 'selected' : '' ?>><?= e($industry) ?></option><?php endforeach; ?><?php if (!empty($company['IndustrySector']) && !in_array($company['IndustrySector'], $industryOptions, true)): ?><option selected value="<?= e($company['IndustrySector']) ?>"><?= e($company['IndustrySector']) ?></option><?php endif; ?></select></div>
-              <div class="form-group"><label class="form-label" for="location">Location</label><select class="form-control" id="location" name="location" required><option value="">Select location</option><?php foreach ($locationOptions as $city): ?><option value="<?= e($city) ?>" <?= ($company['Location'] ?? '') === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?><?php if (!empty($company['Location']) && !in_array($company['Location'], $locationOptions, true)): ?><option selected value="<?= e($company['Location']) ?>"><?= e($company['Location']) ?></option><?php endif; ?></select></div>
+              <div class="form-group"><label class="form-label" for="industry">Industry Sector</label><select class="form-control" id="industry" name="industry" required data-search><option value="">Select industry</option><?php foreach ($industryOptions as $industry): ?><option value="<?= e($industry) ?>" <?= ($company['IndustrySector'] ?? '') === $industry ? 'selected' : '' ?>><?= e($industry) ?></option><?php endforeach; ?><?php if (!empty($company['IndustrySector']) && !in_array($company['IndustrySector'], $industryOptions, true)): ?><option selected value="<?= e($company['IndustrySector']) ?>"><?= e($company['IndustrySector']) ?></option><?php endif; ?></select></div>
+              <div class="form-group"><label class="form-label" for="location">Location</label><select class="form-control" id="location" name="location" required data-search><option value="">Select location</option><?php foreach ($locationOptions as $city): ?><option value="<?= e($city) ?>" <?= ($company['Location'] ?? '') === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?><?php if (!empty($company['Location']) && !in_array($company['Location'], $locationOptions, true)): ?><option selected value="<?= e($company['Location']) ?>"><?= e($company['Location']) ?></option><?php endif; ?></select></div>
               <div class="form-group is-wide"><label class="form-label" for="website">Website URL</label><input class="form-control" type="url" id="website" name="website" maxlength="255" placeholder="https://example.com" value="<?= e($company['WebsiteURL'] ?? '') ?>"></div>
               <div class="form-group is-wide"><label class="form-label" for="description">Company Description</label><textarea class="form-control" id="description" name="description" rows="4" required minlength="15" maxlength="500"><?= e($company['Description'] ?? '') ?></textarea><small class="company-help">15&ndash;500 characters.</small></div>
             </div>
@@ -1070,6 +1146,312 @@ $heroTitles = [
         hide();
     });
 })();
+/* Drop-down list with search: turns <select data-search> into a list you can type in.
+   One choice (experience, qualification, city, ...) or several (skills, with chips).
+   The real <select> stays in the form, so saving works the same. */
+function makeSearchSelect(select) {
+    const multiple = select.multiple;
+    const wrap = document.createElement('div');
+    wrap.className = 'search-select';
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+
+    const firstEmpty = Array.from(select.options).find(function (o) { return o.value === ''; });
+    const placeholder = select.dataset.placeholder || (firstEmpty ? firstEmpty.textContent : 'Select...');
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'form-control search-select-toggle';
+    toggle.setAttribute('aria-haspopup', 'listbox');
+    toggle.setAttribute('aria-expanded', 'false');
+    if (select.id) toggle.id = select.id + 'Toggle';
+    toggle.innerHTML = '<span class="search-select-text"></span><span class="search-select-caret" aria-hidden="true">&#9662;</span>';
+    wrap.appendChild(toggle);
+    select._searchToggle = toggle;
+    if (select.id) {
+        const label = document.querySelector('label[for="' + select.id + '"]');
+        if (label) label.htmlFor = toggle.id;
+    }
+
+    const panel = document.createElement('div');
+    panel.className = 'search-select-panel';
+    panel.hidden = true;
+    panel.innerHTML = '<input type="text" class="form-control search-select-search" placeholder="Search..." autocomplete="off"><div class="search-select-list" role="listbox"></div><div class="search-select-empty" hidden>No matches found</div>';
+    wrap.appendChild(panel);
+    const search = panel.querySelector('.search-select-search');
+    const list = panel.querySelector('.search-select-list');
+    const empty = panel.querySelector('.search-select-empty');
+
+    let chips = null;
+    if (multiple) {
+        chips = document.createElement('div');
+        chips.className = 'search-select-chips';
+        wrap.appendChild(chips);
+    }
+
+    Array.from(select.options).forEach(function (opt) {
+        if (opt.value === '') return;
+        const row = document.createElement(multiple ? 'label' : 'div');
+        row.className = 'search-select-option';
+        row.dataset.value = opt.value;
+        row.dataset.text = opt.textContent.toLowerCase();
+        if (multiple) {
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = opt.selected;
+            box.addEventListener('change', function () {
+                opt.selected = box.checked;
+                select.dispatchEvent(new Event('change'));
+            });
+            row.appendChild(box);
+        } else {
+            row.setAttribute('role', 'option');
+            row.addEventListener('click', function () {
+                select.value = opt.value;
+                select.dispatchEvent(new Event('change'));
+                close();
+                toggle.focus();
+            });
+        }
+        const text = document.createElement('span');
+        text.textContent = opt.textContent;
+        row.appendChild(text);
+        list.appendChild(row);
+    });
+
+    function refresh() {
+        const chosen = Array.from(select.selectedOptions).filter(function (o) { return o.value !== ''; });
+        const textEl = toggle.querySelector('.search-select-text');
+        if (multiple) {
+            textEl.textContent = chosen.length ? chosen.length + ' selected' : placeholder;
+            list.querySelectorAll('.search-select-option').forEach(function (row) {
+                const opt = Array.from(select.options).find(function (o) { return o.value === row.dataset.value; });
+                row.querySelector('input').checked = !!(opt && opt.selected);
+            });
+            chips.innerHTML = '';
+            chosen.forEach(function (opt) {
+                const chip = document.createElement('span');
+                chip.className = 'search-select-chip';
+                chip.textContent = opt.textContent;
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.setAttribute('aria-label', 'Remove ' + opt.textContent);
+                remove.innerHTML = '&times;';
+                remove.addEventListener('click', function () {
+                    opt.selected = false;
+                    select.dispatchEvent(new Event('change'));
+                });
+                chip.appendChild(remove);
+                chips.appendChild(chip);
+            });
+        } else {
+            textEl.textContent = chosen.length ? chosen[0].textContent : placeholder;
+            list.querySelectorAll('.search-select-option').forEach(function (row) {
+                row.classList.toggle('is-selected', row.dataset.value === select.value);
+            });
+        }
+        textEl.classList.toggle('is-placeholder', chosen.length === 0);
+    }
+
+    function open() {
+        document.querySelectorAll('.search-select.is-open').forEach(function (other) {
+            if (other !== wrap) other._close();
+        });
+        panel.hidden = false;
+        wrap.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+        search.value = '';
+        filter();
+        search.focus();
+    }
+
+    function close() {
+        panel.hidden = true;
+        wrap.classList.remove('is-open');
+        toggle.setAttribute('aria-expanded', 'false');
+    }
+    wrap._close = close;
+
+    function filter() {
+        const q = search.value.trim().toLowerCase();
+        let shown = 0;
+        list.querySelectorAll('.search-select-option').forEach(function (row) {
+            const match = row.dataset.text.indexOf(q) !== -1;
+            row.hidden = !match;
+            if (match) shown++;
+        });
+        empty.hidden = shown !== 0;
+    }
+
+    toggle.addEventListener('click', function () { panel.hidden ? open() : close(); });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!multiple) {
+                const first = list.querySelector('.search-select-option:not([hidden])');
+                if (first) first.click();
+            }
+        }
+        if (e.key === 'Escape') { close(); toggle.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    select.addEventListener('change', refresh);
+    refresh();
+}
+
+document.querySelectorAll('select[data-search]').forEach(makeSearchSelect);
+
+/* Field validation (same as the other forms): the field turns red and the message shows under it.
+   Errors found by the server (for example "Email already registered") are shown the same way. */
+const PW_RULE = /^(?=.*[a-z])(?=.*[A-Z]).{8,}$/;
+const PW_TEXT = <?= json_encode(PW_MSG) ?>;
+const FIELD_RULES = {
+    phone: { msg: 'Please enter a valid phone number (05XXXXXXXX or 011XXXXXXX).' },
+    new_password: { strong: true, notSameAs: 'current_password' },
+    description: { minMsg: 'Company description must be at least 15 characters.' }
+};
+
+function setFieldError(el, msg) {
+    el.classList.toggle('invalid', !!msg);
+    if (el._searchToggle) el._searchToggle.classList.toggle('invalid', !!msg);
+    const holder = el.closest('.form-group') || el.closest('form');
+    let box = holder.querySelector(':scope > .field-error');
+    if (!box) {
+        box = document.createElement('div');
+        box.className = 'field-error';
+        holder.appendChild(box);
+    }
+    box.textContent = msg || '';
+    box.style.display = msg ? 'block' : 'none';
+}
+
+function checkField(el) {
+    const rule = FIELD_RULES[el.id] || {};
+    if (el.type === 'file') {
+        const file = el.files[0];
+        if (!file) return el.required ? 'Please choose an image.' : '';
+        return /\.(png|jpe?g)$/i.test(file.name) ? '' : 'Please upload a PNG, JPG or JPEG image.';
+    }
+    if (el.type === 'checkbox') return '';
+    const v = (el.value || '').trim();
+    if (el.required && v === '') return 'This field is required.';
+    if (v === '') return '';
+    if (el.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Please enter a valid email address.';
+    if (el.type === 'url') {
+        try { if (!/^https?:$/.test(new URL(v).protocol)) return 'Please enter a valid website URL.'; }
+        catch (_e) { return 'Please enter a valid website URL.'; }
+    }
+    if (el.getAttribute('pattern') && !new RegExp('^(?:' + el.getAttribute('pattern') + ')$').test(v)) return rule.msg || 'Please enter a valid value.';
+    if (el.type === 'number') {
+        const n = Number(v);
+        if (!Number.isInteger(n) || (el.min !== '' && n < Number(el.min)) || (el.max !== '' && n > Number(el.max))) return rule.msg || 'Please enter a valid number.';
+    }
+    if (el.type === 'date' && ((el.min && v < el.min) || (el.max && v > el.max))) return rule.msg || 'Please enter a valid date.';
+    if (rule.strong && !PW_RULE.test(el.value)) return PW_TEXT;
+    if (rule.notSameAs) {
+        const other = document.getElementById(rule.notSameAs);
+        if (other && other.value !== '' && other.value === el.value) return 'New password must be different from the current password.';
+    }
+    if (el.minLength > 0 && v.length < el.minLength) return rule.minMsg || ('Please enter at least ' + el.minLength + ' characters.');
+    if (rule.after) {
+        const start = document.getElementById(rule.after);
+        if (start && start.value && v < start.value) return rule.afterMsg;
+    }
+    return '';
+}
+
+document.querySelectorAll('form[data-validate]').forEach(function (form) {
+    form.noValidate = true;
+    const fields = Array.from(form.querySelectorAll('input, select, textarea'))
+        .filter(function (el) { return el.name && el.type !== 'hidden'; });
+
+    fields.forEach(function (el) {
+        /* Red star next to the label of each required field. */
+        if (el.required && el.id) {
+            const label = form.querySelector('label[for="' + el.id + '"], label[for="' + el.id + 'Toggle"]');
+            if (label && !label.querySelector('.required-mark')) label.insertAdjacentHTML('beforeend', '<span class="required-mark">*</span>');
+        }
+        ['input', 'change'].forEach(function (evt) {
+            el.addEventListener(evt, function () {
+                if (el.classList.contains('invalid')) setFieldError(el, checkField(el));
+            });
+        });
+    });
+
+    form.addEventListener('submit', function (e) {
+        let first = null;
+        fields.forEach(function (el) {
+            const msg = checkField(el);
+            setFieldError(el, msg);
+            if (msg && !first) first = el;
+        });
+        if (first) {
+            e.preventDefault();
+            if (first.type !== 'file') (first._searchToggle || first).focus();
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const serverError = <?= json_encode($fieldError) ?>;
+    if (!serverError) return;
+    const panel = document.getElementById(serverError.form);
+    if (panel && panel.classList.contains('profile-hidden')) {
+        if (serverError.field === 'pictureInput' || serverError.field === 'logoInput') panel.classList.remove('profile-hidden');
+        else toggleProfileForm(serverError.form);
+    }
+    /* Keep what the user typed (passwords are never sent back). */
+    Object.keys(serverError.old || {}).forEach(function (name) {
+        const el = panel ? panel.querySelector('[name="' + name + '"]') : null;
+        if (el && ['file', 'password', 'checkbox'].indexOf(el.type) === -1) {
+            el.value = serverError.old[name];
+            if (el.tagName === 'SELECT') el.dispatchEvent(new Event('change'));
+        }
+    });
+    const field = document.getElementById(serverError.field);
+    if (field) {
+        setFieldError(field, serverError.message);
+        if (field.type !== 'file') (field._searchToggle || field).focus();
+    }
+});
+
+/* New picture: show a preview, then save it only when "Save Changes" is clicked. */
+function previewImage(input, panelId) {
+    const panel = document.getElementById(panelId);
+    const avatar = document.querySelector('.profile-avatar');
+    if (!input.files.length || !panel || !avatar) return;
+    panel.querySelector('[data-file-name]').textContent = input.files[0].name;
+    panel.classList.remove('profile-hidden');
+    const formatError = checkField(input);
+    setFieldError(input, formatError);
+    if (formatError) {
+        if (avatar.dataset.original !== undefined) avatar.innerHTML = avatar.dataset.original;
+        return;
+    }
+    if (avatar.dataset.original === undefined) avatar.dataset.original = avatar.innerHTML;
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(input.files[0]);
+    img.alt = 'New picture preview';
+    avatar.innerHTML = '';
+    avatar.appendChild(img);
+    panel.querySelector('[data-file-name]').textContent = input.files[0].name;
+    panel.classList.remove('profile-hidden');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelImage(inputId, panelId) {
+    const input = document.getElementById(inputId);
+    const panel = document.getElementById(panelId);
+    const avatar = document.querySelector('.profile-avatar');
+    if (input) {
+        input.value = '';
+        setFieldError(input, '');
+    }
+    if (avatar && avatar.dataset.original !== undefined) avatar.innerHTML = avatar.dataset.original;
+    if (panel) panel.classList.add('profile-hidden');
+}
+
 function toggleProfileForm(id) {
   const target = document.getElementById(id);
   if (!target) return;

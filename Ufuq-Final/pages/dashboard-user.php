@@ -20,7 +20,7 @@ function profile_escape($value): string
 
 function profile_redirect(): void
 {
-    header('Location: profile.php');
+    header('Location: dashboard-user.php');
     exit;
 }
 
@@ -101,19 +101,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = trim($_POST['Email'] ?? '');
             $dob = trim($_POST['DateOfBirth'] ?? '');
             $gender = $_POST['Gender'] ?? '';
-            $password = $_POST['Password'] ?? '';
 
-            if ($phone === '' || strlen($phone) > 15 || !preg_match('/^\+?[0-9]{8,15}$/', $phone)) {
-                throw new RuntimeException('Please enter a valid phone number.');
+            if ($phone === '') throw new FieldError('contactForm', 'Phone', 'This field is required.');
+            if ($email === '') throw new FieldError('contactForm', 'Email', 'This field is required.');
+            if ($dob === '') throw new FieldError('contactForm', 'DateOfBirth', 'This field is required.');
+            if ($gender === '') throw new FieldError('contactForm', 'Gender', 'This field is required.');
+            if (strlen($phone) > 15 || !preg_match('/^\+?[0-9]{8,15}$/', $phone)) {
+                throw new FieldError('contactForm', 'Phone', 'Please enter a valid phone number.');
             }
             if (strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                throw new RuntimeException('Please enter a valid email address.');
+                throw new FieldError('contactForm', 'Email', 'Please enter a valid email address.');
             }
             if (!in_array($gender, ['M', 'F'], true)) {
-                throw new RuntimeException('Please select your gender.');
+                throw new FieldError('contactForm', 'Gender', 'Please select your gender.');
             }
             if ($dob === '') {
-                throw new RuntimeException('Please enter your date of birth.');
+                throw new FieldError('contactForm', 'DateOfBirth', 'Please enter your date of birth.');
             }
 
             $birthDate = profile_valid_date($dob);
@@ -124,16 +127,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (int)$birthDate->diff($today)->y < 15 ||
                 (int)$birthDate->diff($today)->y > 100
             ) {
-                throw new RuntimeException('Date of birth must correspond to an age between 15 and 100.');
-            }
-            if ($password !== '' && strlen($password) < 8) {
-                throw new RuntimeException('Password must be at least 8 characters.');
+                throw new FieldError('contactForm', 'DateOfBirth', 'Date of birth must correspond to an age between 15 and 100.');
             }
 
             $stmt = $pdo->prepare('SELECT MemberID FROM member WHERE Email = ? AND MemberID <> ? LIMIT 1');
             $stmt->execute([$email, $uid]);
             if ($stmt->fetchColumn()) {
-                throw new RuntimeException('Email already registered');
+                throw new FieldError('contactForm', 'Email', 'Email already registered');
             }
 
             $pdo->beginTransaction();
@@ -141,26 +141,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare('UPDATE `user` SET Phone = ?, DateOfBirth = ?, Gender = ? WHERE UserID = ?');
             $stmt->execute([$phone, $dob, $gender, $uid]);
 
-            if ($password !== '') {
-                $stmt = $pdo->prepare('UPDATE member SET Email = ?, Password = ? WHERE MemberID = ?');
-                $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), $uid]);
-            } else {
-                $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ?');
-                $stmt->execute([$email, $uid]);
-            }
+            $stmt = $pdo->prepare('UPDATE member SET Email = ? WHERE MemberID = ?');
+            $stmt->execute([$email, $uid]);
             $pdo->commit();
             profile_flash('success', 'Contact information updated successfully.');
+            profile_redirect();
+        }
+
+        /* Change password: current password, then the new password (own section). */
+        if ($action === 'change_password') {
+            $current = (string)($_POST['current_password'] ?? '');
+            $new = (string)($_POST['new_password'] ?? '');
+
+            if ($current === '') throw new FieldError('passwordForm', 'current_password', 'This field is required.');
+            if ($new === '') throw new FieldError('passwordForm', 'new_password', 'This field is required.');
+
+            $stmt = $pdo->prepare('SELECT Password FROM member WHERE MemberID = ?');
+            $stmt->execute([$uid]);
+            if (!password_verify($current, (string)$stmt->fetchColumn())) throw new FieldError('passwordForm', 'current_password', 'Current password is incorrect.');
+            if (!is_strong_password($new)) throw new FieldError('passwordForm', 'new_password', PW_MSG);
+            if ($new === $current) throw new FieldError('passwordForm', 'new_password', 'New password must be different from the current password.');
+
+            $stmt = $pdo->prepare('UPDATE member SET Password = ? WHERE MemberID = ?');
+            $stmt->execute([password_hash($new, PASSWORD_DEFAULT), $uid]);
+            send_password_changed_email($pdo, $uid);
+            profile_flash('success', 'Password changed successfully.');
             profile_redirect();
         }
 
         if ($action === 'name') {
             $firstName = trim($_POST['FirstName'] ?? '');
             $lastName = trim($_POST['LastName'] ?? '');
-            if ($firstName === '' || $lastName === '') {
-                throw new RuntimeException('First name and last name are required.');
-            }
+            if ($firstName === '') throw new FieldError('nameForm', 'FirstName', 'This field is required.');
+            if ($lastName === '') throw new FieldError('nameForm', 'LastName', 'This field is required.');
             if (mb_strlen($firstName) > 30 || mb_strlen($lastName) > 30) {
-                throw new RuntimeException('First name and last name must be 30 characters or fewer.');
+                throw new FieldError('nameForm', 'FirstName', 'First name and last name must be 30 characters or fewer.');
             }
             $stmt = $pdo->prepare('UPDATE `user` SET FirstName = ?, LastName = ? WHERE UserID = ?');
             $stmt->execute([$firstName, $lastName, $uid]);
@@ -172,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'education') {
             $status = trim($_POST['EducationalStatus'] ?? '');
             if (!in_array($status, PROFILE_EDU_STATUSES, true)) {
-                throw new RuntimeException('Please select a valid educational status.');
+                throw new FieldError('educationForm', 'EducationalStatus', 'Please select a valid educational status.');
             }
             $stmt = $pdo->prepare('UPDATE `user` SET EducationalStatus = ? WHERE UserID = ?');
             $stmt->execute([$status, $uid]);
@@ -187,17 +202,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $university = trim($_POST['UniversityName'] ?? '');
             $year = (int)($_POST['GraduationYear'] ?? 0);
 
-            if ($field === '' || $degree === '' || $university === '') {
-                throw new RuntimeException('Please complete the study fields.');
-            }
+            if ($degree === '') throw new FieldError('studyForm', 'StudyDegree', 'This field is required.');
+            if ($field === '') throw new FieldError('studyForm', 'StudyField', 'This field is required.');
+            if ($university === '') throw new FieldError('studyForm', 'UniversityName', 'This field is required.');
             if (mb_strlen($field) > 100 || mb_strlen($university) > 100) {
-                throw new RuntimeException('Field of study and university name must be 100 characters or fewer.');
+                throw new FieldError('studyForm', 'StudyField', 'Field of study and university name must be 100 characters or fewer.');
             }
             if (!in_array($degree, PROFILE_DEGREES, true)) {
-                throw new RuntimeException('Please select a valid degree level.');
+                throw new FieldError('studyForm', 'StudyDegree', 'Please select a valid degree level.');
             }
             if ($year < 1900 || $year > 2100) {
-                throw new RuntimeException('Please enter a valid graduation year.');
+                throw new FieldError('studyForm', 'GraduationYear', 'Please enter a valid graduation year.');
             }
 
             $stmt = $pdo->prepare(
@@ -241,17 +256,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'picture') {
             if (empty($_FILES['ProfilePicture']) || $_FILES['ProfilePicture']['error'] !== UPLOAD_ERR_OK) {
-                throw new RuntimeException('Please choose a profile picture.');
+                throw new FieldError('pictureForm', 'pictureInput', 'Please choose a profile picture.');
             }
             $file = $_FILES['ProfilePicture'];
             if ($file['size'] > 5 * 1024 * 1024) {
-                throw new RuntimeException('The image must be smaller than 5 MB.');
+                throw new FieldError('pictureForm', 'pictureInput', 'The image must be smaller than 5 MB.');
             }
             $finfo = new finfo(FILEINFO_MIME_TYPE);
             $mime = $finfo->file($file['tmp_name']);
             $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png'];
             if (!isset($allowed[$mime])) {
-                throw new RuntimeException('Please upload a PNG or JPG image.');
+                throw new FieldError('pictureForm', 'pictureInput', 'Please upload a PNG, JPG or JPEG image.');
             }
 
             $uploadDir = dirname(__DIR__) . '/uploads/profile-pictures/';
@@ -277,35 +292,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $startDate = trim($_POST['StartDate'] ?? '');
             $endDate = trim($_POST['EndDate'] ?? '');
 
-            if ($experienceId <= 0 || $jobTitle === '' || $organization === '' || $startDate === '') {
-                throw new RuntimeException('Please fill in the required experience fields.');
-            }
+            if ($experienceId <= 0) throw new FieldError('experienceForm', 'ExperienceID', 'This field is required.');
+            if ($jobTitle === '') throw new FieldError('experienceForm', 'JobTitle', 'This field is required.');
+            if ($organization === '') throw new FieldError('experienceForm', 'Organization', 'This field is required.');
+            if ($startDate === '') throw new FieldError('experienceForm', 'StartDate', 'This field is required.');
             if (mb_strlen($jobTitle) > 50) {
-                throw new RuntimeException('Job title must be 50 characters or fewer.');
+                throw new FieldError('experienceForm', 'JobTitle', 'Job title must be 50 characters or fewer.');
             }
             if (mb_strlen($organization) > 100) {
-                throw new RuntimeException('Organization must be 100 characters or fewer.');
+                throw new FieldError('experienceForm', 'Organization', 'Organization must be 100 characters or fewer.');
             }
 
             $start = profile_valid_date($startDate);
             $end = $endDate !== '' ? profile_valid_date($endDate) : null;
             if (!$start || ($endDate !== '' && !$end)) {
-                throw new RuntimeException('Please enter valid experience dates.');
+                throw new FieldError('experienceForm', 'StartDate', 'Please enter valid experience dates.');
             }
             if ($end && $end < $start) {
-                throw new RuntimeException('End date cannot be earlier than start date.');
+                throw new FieldError('experienceForm', 'EndDate', 'End date cannot be earlier than start date.');
             }
 
             $stmt = $pdo->prepare('SELECT 1 FROM experience WHERE ExperienceID = ?');
             $stmt->execute([$experienceId]);
             if (!$stmt->fetchColumn()) {
-                throw new RuntimeException('Please select a valid experience type.');
+                throw new FieldError('experienceForm', 'ExperienceID', 'Please select a valid experience type.');
             }
 
             $stmt = $pdo->prepare('SELECT 1 FROM userexperience WHERE UserID = ? AND ExperienceID = ?');
             $stmt->execute([$uid, $experienceId]);
             if ($stmt->fetchColumn()) {
-                throw new RuntimeException('You have already added this experience type.');
+                throw new FieldError('experienceForm', 'ExperienceID', 'You have already added this experience type.');
             }
 
             // Duration is a generated column in the database, so it is not inserted
@@ -325,33 +341,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $year = (int)($_POST['YearObtained'] ?? 0);
             $durationRaw = trim($_POST['Duration'] ?? '');
 
-            if ($qualificationId <= 0 || $institution === '') {
-                throw new RuntimeException('Please complete the qualification fields.');
-            }
+            if ($qualificationId <= 0) throw new FieldError('qualificationForm', 'QualificationID', 'This field is required.');
+            if ($institution === '') throw new FieldError('qualificationForm', 'Institution', 'This field is required.');
             if (mb_strlen($institution) > 100) {
-                throw new RuntimeException('Institution must be 100 characters or fewer.');
+                throw new FieldError('qualificationForm', 'Institution', 'Institution must be 100 characters or fewer.');
             }
             if ($year < 1900 || $year > (int)date('Y')) {
-                throw new RuntimeException('Please enter a valid year obtained.');
+                throw new FieldError('qualificationForm', 'YearObtained', 'Please enter a valid year obtained.');
             }
             $duration = null;
             if ($durationRaw !== '') {
                 $duration = (int)$durationRaw;
                 if ($duration < 1 || $duration > 120) {
-                    throw new RuntimeException('Duration must be between 1 and 120 months.');
+                    throw new FieldError('qualificationForm', 'Duration', 'Duration must be between 1 and 120 months.');
                 }
             }
 
             $stmt = $pdo->prepare('SELECT 1 FROM qualification WHERE QualificationID = ?');
             $stmt->execute([$qualificationId]);
             if (!$stmt->fetchColumn()) {
-                throw new RuntimeException('Please select a valid qualification.');
+                throw new FieldError('qualificationForm', 'QualificationID', 'Please select a valid qualification.');
             }
 
             $stmt = $pdo->prepare('SELECT 1 FROM userqualification WHERE UserID = ? AND QualificationID = ?');
             $stmt->execute([$uid, $qualificationId]);
             if ($stmt->fetchColumn()) {
-                throw new RuntimeException('You have already added this qualification.');
+                throw new FieldError('qualificationForm', 'QualificationID', 'You have already added this qualification.');
             }
 
             $stmt = $pdo->prepare(
@@ -385,6 +400,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         profile_flash('error', $e instanceof PDOException
             ? 'Unable to save your changes. Please check the information and try again.'
             : $e->getMessage());
+        if ($e instanceof FieldError) {
+            /* Shown under the field; the form reopens with what the user typed (no passwords). */
+            $old = array_filter($_POST, fn($v, $k) => is_string($v) && !in_array($k, ['action', 'current_password', 'new_password'], true), ARRAY_FILTER_USE_BOTH);
+            $_SESSION['profile_flash'] += ['form' => $e->form, 'field' => $e->field, 'old' => $old];
+        }
         profile_redirect();
     }
 }
@@ -435,6 +455,13 @@ $selectedSkills = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
 $flash = $_SESSION['profile_flash'] ?? null;
 unset($_SESSION['profile_flash']);
+
+/* Error that belongs to one field: shown under the field instead of at the top. */
+$fieldError = null;
+if ($flash && ($flash['type'] ?? '') === 'error' && !empty($flash['field'])) {
+    $fieldError = ['form' => $flash['form'], 'field' => $flash['field'], 'message' => $flash['message'], 'old' => $flash['old'] ?? []];
+    $flash = null;
+}
 
 $fullName = trim(($me['FirstName'] ?? '') . ' ' . ($me['LastName'] ?? ''));
 $firstInitial = mb_substr($me['FirstName'] ?? '', 0, 1);
@@ -611,6 +638,50 @@ user_header($me, 'My Profile', '');
     .profile-dashboard .profile-section { padding: 19px 16px; }
     .profile-dashboard .profile-view-grid, .profile-dashboard .profile-skills-grid { grid-template-columns: 1fr; gap: 17px; }
 }
+/* Success message: slides down from the top, then disappears (same as the other pages) */
+.ufuq-toast {
+    position: fixed; top: 18px; left: 50%; z-index: 1000; display: flex; align-items: center; gap: 11px;
+    width: max-content; max-width: calc(100% - 32px); padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc; border-radius: 13px; background: #eaf7ef; color: #1f6b47;
+    font-size: .92rem; font-weight: 700; line-height: 1.5; box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%); opacity: 0; transition: transform .35s ease, opacity .35s ease;
+}
+.ufuq-toast.is-shown { transform: translate(-50%, 0); opacity: 1; }
+.ufuq-toast-icon {
+    display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0;
+    border-radius: 50%; background: #2f8a5c; color: #fff; font-size: .85rem;
+}
+.ufuq-toast-close {
+    display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0;
+    padding: 0; border: 0; border-radius: 8px; background: none; color: #1f6b47; font-size: 1.2rem; line-height: 1; cursor: pointer;
+}
+.ufuq-toast-close:hover { background: rgba(31,107,71,.1); }
+/* Drop-down list with search (skills, experience, qualifications, ...) */
+.search-select{position:relative}
+.search-select > select{display:none!important}
+.search-select-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer;background:#fff}
+.search-select-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-select-text.is-placeholder{color:#8a8396}
+.search-select-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
+.search-select.is-open .search-select-caret{transform:rotate(180deg)}
+.search-select-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
+.search-select-panel[hidden]{display:none!important}
+.search-select-list{max-height:210px;margin-top:8px;overflow-y:auto;overscroll-behavior:contain}
+.search-select-option{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;color:#29243a;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+.search-select-option:hover,.search-select-option.is-selected{background:#f2ecfa}
+.search-select-option.is-selected{color:#281a46;font-weight:650}
+.search-select-option[hidden]{display:none!important}
+.search-select-option input{width:16px;height:16px;flex-shrink:0;margin:0;accent-color:#39265f;cursor:pointer}
+.search-select-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
+.search-select-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.search-select-chips:empty{display:none}
+.search-select-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:#281a46;font-size:.84rem;font-weight:700}
+.search-select-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:#39265f;font-size:1rem;line-height:1;cursor:pointer}
+.search-select-chip button:hover{color:#d94b56;background:rgba(217,75,86,.09)}
+/* Field validation: red field + message under it (same as the other forms) */
+.profile-dashboard .form-control.invalid{border:1.5px solid #d94b56!important;background-color:#fff7f7!important;box-shadow:0 0 0 3px rgba(217,75,86,.08)}
+.profile-dashboard .field-error{display:none;margin-top:7px;color:#c43643;font-size:.84rem;line-height:1.5}
+.profile-dashboard .required-mark{color:#d94b56;font-weight:800;margin-left:2px}
 @keyframes profileFadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes profileFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @media (prefers-reduced-motion: reduce) {
@@ -631,7 +702,13 @@ user_header($me, 'My Profile', '');
     </section>
 
     <div class="container profile-content">
-        <?php if ($flash): ?>
+        <?php if ($flash && ($flash['type'] ?? '') === 'success'): ?>
+            <div class="ufuq-toast" id="successToast" role="status" aria-live="polite">
+                <span class="ufuq-toast-icon" aria-hidden="true">✓</span>
+                <span><?= profile_escape($flash['message'] ?? '') ?></span>
+                <button type="button" class="ufuq-toast-close" aria-label="Close">&times;</button>
+            </div>
+        <?php elseif ($flash): ?>
             <div class="profile-alert <?= ($flash['type'] ?? '') === 'success' ? 'success' : 'error' ?>" role="status">
                 <span aria-hidden="true"><?= ($flash['type'] ?? '') === 'success' ? '✓' : '!' ?></span>
                 <span><?= profile_escape($flash['message'] ?? '') ?></span>
@@ -665,14 +742,22 @@ user_header($me, 'My Profile', '');
             </div>
         </section>
 
-        <form id="pictureInputForm" method="post" enctype="multipart/form-data" class="profile-hidden">
-            <input type="hidden" name="action" value="picture">
-            <input type="file" id="pictureInput" name="ProfilePicture" accept=".png,.jpg,.jpeg,image/png,image/jpeg" onchange="if(this.files.length){this.form.submit();}">
-        </form>
+        <section class="profile-section profile-hidden" id="pictureForm">
+            <div class="profile-section-header"><h2>Change Profile Picture</h2></div>
+            <form id="pictureInputForm" method="post" enctype="multipart/form-data" class="profile-form" data-validate>
+                <input type="hidden" name="action" value="picture">
+                <input type="file" id="pictureInput" name="ProfilePicture" accept=".png,.jpg,.jpeg,image/png,image/jpeg" class="profile-hidden" required onchange="previewImage(this, 'pictureForm')">
+                <p class="profile-empty">Selected image: <strong data-file-name></strong></p>
+                <div class="profile-form-actions">
+                    <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
+                    <button class="btn btn-ghost btn-sm" type="button" onclick="cancelImage('pictureInput', 'pictureForm')">Cancel</button>
+                </div>
+            </form>
+        </section>
 
         <section class="profile-section profile-hidden" id="nameForm">
             <div class="profile-section-header"><h2>Edit Name</h2></div>
-            <form method="post" class="profile-form">
+            <form method="post" class="profile-form" data-validate>
                 <input type="hidden" name="action" value="name">
                 <div class="profile-view-grid">
                     <div class="form-group">
@@ -702,10 +787,9 @@ user_header($me, 'My Profile', '');
                 <div class="profile-field"><div class="profile-field-label">Date of Birth</div><div class="profile-field-value"><?= profile_escape(profile_date($me['DateOfBirth'] ?? null)) ?></div></div>
                 <div class="profile-field"><div class="profile-field-label">Age</div><div class="profile-field-value"><?= profile_escape(profile_age($me['DateOfBirth'] ?? null)) ?></div></div>
                 <div class="profile-field"><div class="profile-field-label">Gender</div><div class="profile-field-value"><?= profile_escape(profile_gender_label($me['Gender'] ?? null)) ?></div></div>
-                <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
             </div>
             <div id="contactForm" class="profile-hidden">
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="contact">
                     <div class="profile-view-grid">
                         <div class="form-group">
@@ -728,15 +812,40 @@ user_header($me, 'My Profile', '');
                                 <option value="F" <?= $me['Gender'] === 'F' ? 'selected' : '' ?>>Female</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label" for="Password">New Password</label>
-                            <input class="form-control" id="Password" name="Password" type="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password">
-                            <small class="profile-empty">At least 8 characters. Your password is securely hashed before storage.</small>
-                        </div>
                     </div>
                     <div class="profile-form-actions">
                         <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('contactForm')">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="profile-section">
+            <div class="profile-section-header">
+                <h2>Password</h2>
+                <button type="button" class="icon-btn" onclick="toggleProfileForm('passwordForm')"><?= icon('edit', 14) ?> Change Password</button>
+            </div>
+            <div class="profile-view-grid">
+                <div class="profile-field"><div class="profile-field-label">Password</div><div class="profile-field-value">••••••••</div></div>
+            </div>
+            <div id="passwordForm" class="profile-hidden">
+                <form method="post" class="profile-form" data-validate>
+                    <input type="hidden" name="action" value="change_password">
+                    <div class="profile-view-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="current_password">Current Password</label>
+                            <input class="form-control" id="current_password" name="current_password" type="password" required autocomplete="current-password">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="new_password">New Password</label>
+                            <input class="form-control" id="new_password" name="new_password" type="password" required minlength="8" autocomplete="new-password">
+                            <small class="profile-empty">At least 8 characters, including an uppercase and a lowercase letter.</small>
+                        </div>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('passwordForm')">Cancel</button>
                     </div>
                 </form>
             </div>
@@ -756,7 +865,7 @@ user_header($me, 'My Profile', '');
             </div>
 
             <div id="educationForm" class="profile-hidden">
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="education">
                     <div class="form-group">
                         <label class="form-label" for="EducationalStatus">Educational Status</label>
@@ -793,7 +902,7 @@ user_header($me, 'My Profile', '');
             <?php endforeach; endif; ?>
 
             <div id="studyForm" class="profile-inline-form profile-hidden">
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="add_study">
                     <div class="profile-view-grid">
                         <div class="form-group">
@@ -859,11 +968,11 @@ user_header($me, 'My Profile', '');
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('experienceForm')">Close</button>
                     </div>
                 <?php else: ?>
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="add_experience">
                     <div class="form-group">
                         <label class="form-label" for="ExperienceID">Experience Type</label>
-                        <select class="form-control" id="ExperienceID" name="ExperienceID" required>
+                        <select class="form-control" id="ExperienceID" name="ExperienceID" required data-search>
                             <option value="">Select experience type</option>
                             <?php foreach ($experienceOptions as $opt): ?>
                                 <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
@@ -917,11 +1026,11 @@ user_header($me, 'My Profile', '');
                         <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('qualificationForm')">Close</button>
                     </div>
                 <?php else: ?>
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="add_qualification">
                     <div class="form-group">
                         <label class="form-label" for="QualificationID">Qualification</label>
-                        <select class="form-control" id="QualificationID" name="QualificationID" required>
+                        <select class="form-control" id="QualificationID" name="QualificationID" required data-search>
                             <option value="">Select qualification</option>
                             <?php foreach ($qualificationOptions as $opt): ?>
                                 <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
@@ -958,18 +1067,18 @@ user_header($me, 'My Profile', '');
                 <?php endforeach; endif; ?>
             </div>
             <div id="skillsForm" class="profile-hidden">
-                <form method="post" class="profile-form">
+                <form method="post" class="profile-form" data-validate>
                     <input type="hidden" name="action" value="skills">
                     <?php if (!$skills): ?>
                         <p class="profile-empty">No skills are available in the database yet.</p>
                     <?php else: ?>
-                        <div class="profile-skills-grid">
-                            <?php foreach ($skills as $skill): ?>
-                                <label class="profile-skill-option">
-                                    <input type="checkbox" name="Skills[]" value="<?= (int)$skill['SkillID'] ?>" <?= in_array((int)$skill['SkillID'], $selectedSkills, true) ? 'checked' : '' ?>>
-                                    <?= profile_escape($skill['SkillName']) ?>
-                                </label>
-                            <?php endforeach; ?>
+                        <div class="form-group">
+                            <label class="form-label" for="SkillsSelect">Skills</label>
+                            <select class="form-control" id="SkillsSelect" name="Skills[]" multiple data-search data-placeholder="Select skills">
+                                <?php foreach ($skills as $skill): ?>
+                                    <option value="<?= (int)$skill['SkillID'] ?>" <?= in_array((int)$skill['SkillID'], $selectedSkills, true) ? 'selected' : '' ?>><?= profile_escape($skill['SkillName']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     <?php endif; ?>
                     <div class="profile-form-actions">
@@ -983,12 +1092,339 @@ user_header($me, 'My Profile', '');
 </div>
 
 <script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
+(function () {
+    const toast = document.getElementById('successToast');
+    if (!toast) return;
+    document.body.appendChild(toast);
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.ufuq-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+
+/* Drop-down list with search: turns <select data-search> into a list you can type in.
+   One choice (experience, qualification, city, ...) or several (skills, with chips).
+   The real <select> stays in the form, so saving works the same. */
+function makeSearchSelect(select) {
+    const multiple = select.multiple;
+    const wrap = document.createElement('div');
+    wrap.className = 'search-select';
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+
+    const firstEmpty = Array.from(select.options).find(function (o) { return o.value === ''; });
+    const placeholder = select.dataset.placeholder || (firstEmpty ? firstEmpty.textContent : 'Select...');
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'form-control search-select-toggle';
+    toggle.setAttribute('aria-haspopup', 'listbox');
+    toggle.setAttribute('aria-expanded', 'false');
+    if (select.id) toggle.id = select.id + 'Toggle';
+    toggle.innerHTML = '<span class="search-select-text"></span><span class="search-select-caret" aria-hidden="true">&#9662;</span>';
+    wrap.appendChild(toggle);
+    select._searchToggle = toggle;
+    if (select.id) {
+        const label = document.querySelector('label[for="' + select.id + '"]');
+        if (label) label.htmlFor = toggle.id;
+    }
+
+    const panel = document.createElement('div');
+    panel.className = 'search-select-panel';
+    panel.hidden = true;
+    panel.innerHTML = '<input type="text" class="form-control search-select-search" placeholder="Search..." autocomplete="off"><div class="search-select-list" role="listbox"></div><div class="search-select-empty" hidden>No matches found</div>';
+    wrap.appendChild(panel);
+    const search = panel.querySelector('.search-select-search');
+    const list = panel.querySelector('.search-select-list');
+    const empty = panel.querySelector('.search-select-empty');
+
+    let chips = null;
+    if (multiple) {
+        chips = document.createElement('div');
+        chips.className = 'search-select-chips';
+        wrap.appendChild(chips);
+    }
+
+    Array.from(select.options).forEach(function (opt) {
+        if (opt.value === '') return;
+        const row = document.createElement(multiple ? 'label' : 'div');
+        row.className = 'search-select-option';
+        row.dataset.value = opt.value;
+        row.dataset.text = opt.textContent.toLowerCase();
+        if (multiple) {
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = opt.selected;
+            box.addEventListener('change', function () {
+                opt.selected = box.checked;
+                select.dispatchEvent(new Event('change'));
+            });
+            row.appendChild(box);
+        } else {
+            row.setAttribute('role', 'option');
+            row.addEventListener('click', function () {
+                select.value = opt.value;
+                select.dispatchEvent(new Event('change'));
+                close();
+                toggle.focus();
+            });
+        }
+        const text = document.createElement('span');
+        text.textContent = opt.textContent;
+        row.appendChild(text);
+        list.appendChild(row);
+    });
+
+    function refresh() {
+        const chosen = Array.from(select.selectedOptions).filter(function (o) { return o.value !== ''; });
+        const textEl = toggle.querySelector('.search-select-text');
+        if (multiple) {
+            textEl.textContent = chosen.length ? chosen.length + ' selected' : placeholder;
+            list.querySelectorAll('.search-select-option').forEach(function (row) {
+                const opt = Array.from(select.options).find(function (o) { return o.value === row.dataset.value; });
+                row.querySelector('input').checked = !!(opt && opt.selected);
+            });
+            chips.innerHTML = '';
+            chosen.forEach(function (opt) {
+                const chip = document.createElement('span');
+                chip.className = 'search-select-chip';
+                chip.textContent = opt.textContent;
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.setAttribute('aria-label', 'Remove ' + opt.textContent);
+                remove.innerHTML = '&times;';
+                remove.addEventListener('click', function () {
+                    opt.selected = false;
+                    select.dispatchEvent(new Event('change'));
+                });
+                chip.appendChild(remove);
+                chips.appendChild(chip);
+            });
+        } else {
+            textEl.textContent = chosen.length ? chosen[0].textContent : placeholder;
+            list.querySelectorAll('.search-select-option').forEach(function (row) {
+                row.classList.toggle('is-selected', row.dataset.value === select.value);
+            });
+        }
+        textEl.classList.toggle('is-placeholder', chosen.length === 0);
+    }
+
+    function open() {
+        document.querySelectorAll('.search-select.is-open').forEach(function (other) {
+            if (other !== wrap) other._close();
+        });
+        panel.hidden = false;
+        wrap.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+        search.value = '';
+        filter();
+        search.focus();
+    }
+
+    function close() {
+        panel.hidden = true;
+        wrap.classList.remove('is-open');
+        toggle.setAttribute('aria-expanded', 'false');
+    }
+    wrap._close = close;
+
+    function filter() {
+        const q = search.value.trim().toLowerCase();
+        let shown = 0;
+        list.querySelectorAll('.search-select-option').forEach(function (row) {
+            const match = row.dataset.text.indexOf(q) !== -1;
+            row.hidden = !match;
+            if (match) shown++;
+        });
+        empty.hidden = shown !== 0;
+    }
+
+    toggle.addEventListener('click', function () { panel.hidden ? open() : close(); });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!multiple) {
+                const first = list.querySelector('.search-select-option:not([hidden])');
+                if (first) first.click();
+            }
+        }
+        if (e.key === 'Escape') { close(); toggle.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    select.addEventListener('change', refresh);
+    refresh();
+}
+
+document.querySelectorAll('select[data-search]').forEach(makeSearchSelect);
+
+/* Field validation (same as the other forms): the field turns red and the message shows under it.
+   Errors found by the server (for example "Email already registered") are shown the same way. */
+const PW_RULE = /^(?=.*[a-z])(?=.*[A-Z]).{8,}$/;
+const PW_TEXT = <?= json_encode(PW_MSG) ?>;
+const FIELD_RULES = {
+    Phone: { msg: 'Please enter a valid phone number.' },
+    DateOfBirth: { msg: 'Date of birth must correspond to an age between 15 and 100.' },
+    new_password: { strong: true, notSameAs: 'current_password' },
+    GraduationYear: { msg: 'Please enter a valid graduation year.' },
+    YearObtained: { msg: 'Please enter a valid year obtained.' },
+    Duration: { msg: 'Duration must be between 1 and 120 months.' },
+    EndDate: { after: 'StartDate', afterMsg: 'End date cannot be earlier than start date.' }
+};
+
+function setFieldError(el, msg) {
+    el.classList.toggle('invalid', !!msg);
+    if (el._searchToggle) el._searchToggle.classList.toggle('invalid', !!msg);
+    const holder = el.closest('.form-group') || el.closest('form');
+    let box = holder.querySelector(':scope > .field-error');
+    if (!box) {
+        box = document.createElement('div');
+        box.className = 'field-error';
+        holder.appendChild(box);
+    }
+    box.textContent = msg || '';
+    box.style.display = msg ? 'block' : 'none';
+}
+
+function checkField(el) {
+    const rule = FIELD_RULES[el.id] || {};
+    if (el.type === 'file') {
+        const file = el.files[0];
+        if (!file) return el.required ? 'Please choose an image.' : '';
+        return /\.(png|jpe?g)$/i.test(file.name) ? '' : 'Please upload a PNG, JPG or JPEG image.';
+    }
+    if (el.type === 'checkbox') return '';
+    const v = (el.value || '').trim();
+    if (el.required && v === '') return 'This field is required.';
+    if (v === '') return '';
+    if (el.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Please enter a valid email address.';
+    if (el.type === 'url') {
+        try { if (!/^https?:$/.test(new URL(v).protocol)) return 'Please enter a valid website URL.'; }
+        catch (_e) { return 'Please enter a valid website URL.'; }
+    }
+    if (el.getAttribute('pattern') && !new RegExp('^(?:' + el.getAttribute('pattern') + ')$').test(v)) return rule.msg || 'Please enter a valid value.';
+    if (el.type === 'number') {
+        const n = Number(v);
+        if (!Number.isInteger(n) || (el.min !== '' && n < Number(el.min)) || (el.max !== '' && n > Number(el.max))) return rule.msg || 'Please enter a valid number.';
+    }
+    if (el.type === 'date' && ((el.min && v < el.min) || (el.max && v > el.max))) return rule.msg || 'Please enter a valid date.';
+    if (rule.strong && !PW_RULE.test(el.value)) return PW_TEXT;
+    if (rule.notSameAs) {
+        const other = document.getElementById(rule.notSameAs);
+        if (other && other.value !== '' && other.value === el.value) return 'New password must be different from the current password.';
+    }
+    if (el.minLength > 0 && v.length < el.minLength) return rule.minMsg || ('Please enter at least ' + el.minLength + ' characters.');
+    if (rule.after) {
+        const start = document.getElementById(rule.after);
+        if (start && start.value && v < start.value) return rule.afterMsg;
+    }
+    return '';
+}
+
+document.querySelectorAll('form[data-validate]').forEach(function (form) {
+    form.noValidate = true;
+    const fields = Array.from(form.querySelectorAll('input, select, textarea'))
+        .filter(function (el) { return el.name && el.type !== 'hidden'; });
+
+    fields.forEach(function (el) {
+        /* Red star next to the label of each required field. */
+        if (el.required && el.id) {
+            const label = form.querySelector('label[for="' + el.id + '"], label[for="' + el.id + 'Toggle"]');
+            if (label && !label.querySelector('.required-mark')) label.insertAdjacentHTML('beforeend', '<span class="required-mark">*</span>');
+        }
+        ['input', 'change'].forEach(function (evt) {
+            el.addEventListener(evt, function () {
+                if (el.classList.contains('invalid')) setFieldError(el, checkField(el));
+            });
+        });
+    });
+
+    form.addEventListener('submit', function (e) {
+        let first = null;
+        fields.forEach(function (el) {
+            const msg = checkField(el);
+            setFieldError(el, msg);
+            if (msg && !first) first = el;
+        });
+        if (first) {
+            e.preventDefault();
+            if (first.type !== 'file') (first._searchToggle || first).focus();
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const serverError = <?= json_encode($fieldError) ?>;
+    if (!serverError) return;
+    const panel = document.getElementById(serverError.form);
+    if (panel && panel.classList.contains('profile-hidden')) {
+        if (serverError.field === 'pictureInput' || serverError.field === 'logoInput') panel.classList.remove('profile-hidden');
+        else toggleProfileForm(serverError.form);
+    }
+    /* Keep what the user typed (passwords are never sent back). */
+    Object.keys(serverError.old || {}).forEach(function (name) {
+        const el = panel ? panel.querySelector('[name="' + name + '"]') : null;
+        if (el && ['file', 'password', 'checkbox'].indexOf(el.type) === -1) {
+            el.value = serverError.old[name];
+            if (el.tagName === 'SELECT') el.dispatchEvent(new Event('change'));
+        }
+    });
+    const field = document.getElementById(serverError.field);
+    if (field) {
+        setFieldError(field, serverError.message);
+        if (field.type !== 'file') (field._searchToggle || field).focus();
+    }
+});
+
+/* New picture: show a preview, then save it only when "Save Changes" is clicked. */
+function previewImage(input, panelId) {
+    const panel = document.getElementById(panelId);
+    const avatar = document.querySelector('.profile-avatar');
+    if (!input.files.length || !panel || !avatar) return;
+    panel.querySelector('[data-file-name]').textContent = input.files[0].name;
+    panel.classList.remove('profile-hidden');
+    const formatError = checkField(input);
+    setFieldError(input, formatError);
+    if (formatError) {
+        if (avatar.dataset.original !== undefined) avatar.innerHTML = avatar.dataset.original;
+        return;
+    }
+    if (avatar.dataset.original === undefined) avatar.dataset.original = avatar.innerHTML;
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(input.files[0]);
+    img.alt = 'New picture preview';
+    avatar.innerHTML = '';
+    avatar.appendChild(img);
+    panel.querySelector('[data-file-name]').textContent = input.files[0].name;
+    panel.classList.remove('profile-hidden');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelImage(inputId, panelId) {
+    const input = document.getElementById(inputId);
+    const panel = document.getElementById(panelId);
+    const avatar = document.querySelector('.profile-avatar');
+    if (input) {
+        input.value = '';
+        setFieldError(input, '');
+    }
+    if (avatar && avatar.dataset.original !== undefined) avatar.innerHTML = avatar.dataset.original;
+    if (panel) panel.classList.add('profile-hidden');
+}
+
 function toggleProfileForm(id) {
     const target = document.getElementById(id);
     if (!target) return;
     const willOpen = target.classList.contains('profile-hidden');
 
-    document.querySelectorAll('.profile-inline-form, #nameForm, #contactForm, #educationForm, #skillsForm')
+    document.querySelectorAll('.profile-inline-form, #nameForm, #contactForm, #passwordForm, #educationForm, #skillsForm')
         .forEach(form => form.classList.add('profile-hidden'));
 
     if (willOpen) {

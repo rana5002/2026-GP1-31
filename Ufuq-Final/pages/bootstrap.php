@@ -23,6 +23,44 @@ function close_expired_opportunities(PDO $pdo): void {
 }
 close_expired_opportunities($pdo);
 
+/* Name of the reset password page (used in the "password changed" email). Change it if your page has another name. */
+const RESET_PASSWORD_PAGE = 'reset-password.php';
+
+/* Full link to a page of the site, used inside emails. */
+function app_url(string $page): string {
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return ($https ? 'https' : 'http') . '://' . $host . $dir . '/' . ltrim($page, '/');
+}
+
+/* After a password change: email the member that the password was changed,
+   with a link to reset it if they did not make the change. */
+function send_password_changed_email(PDO $pdo, int $memberId): void {
+    if (!function_exists('send_mail')) return;
+    try {
+        $stmt = $pdo->prepare("SELECT m.Email, COALESCE(u.FirstName, c.CompanyName, '') AS Name
+                               FROM member m
+                               LEFT JOIN `user` u ON u.UserID = m.MemberID
+                               LEFT JOIN company c ON c.CompanyID = m.MemberID
+                               WHERE m.MemberID = ?");
+        $stmt->execute([$memberId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || empty($row['Email'])) return;
+
+        $resetUrl = app_url(RESET_PASSWORD_PAGE);
+        $html = '<p>Hello ' . e($row['Name']) . ',</p>'
+            . '<p>Your Ufuq password was changed successfully on ' . e(date('d M Y, g:i A')) . '.</p>'
+            . '<p>If you did not make this change, please reset your password right away:</p>'
+            . '<p><a href="' . e($resetUrl) . '">Reset Password</a></p>'
+            . '<p>Ufuq</p>';
+        send_mail($row['Email'], 'Ufuq: your password has been changed', $html);
+    } catch (Throwable $ex) {
+        error_log('Password changed email failed: ' . $ex->getMessage());
+    }
+}
+
 /* User Story 37: one in-system notification for the given users (shown on their Notifications page).
    Emails are used only for company approval, account verification and password reset. */
 function notify_users(PDO $pdo, array $userIds, string $type, int $opportunityId, string $message): void {
@@ -44,7 +82,7 @@ function notify_users(PDO $pdo, array $userIds, string $type, int $opportunityId
 }
 
 /* User Story 37: tell users who match a newly published opportunity
-   (they have at least one of its required skills). */
+   (they have at least one of its required skills or qualifications). */
 function notify_matching_users(PDO $pdo, int $opportunityId): void {
     try {
         $opp = $pdo->prepare("SELECT Title FROM opportunity WHERE OpportunityID = ? AND Status = 'Open'");
@@ -52,10 +90,14 @@ function notify_matching_users(PDO $pdo, int $opportunityId): void {
         $title = $opp->fetchColumn();
         if ($title === false) return;
 
-        $users = $pdo->prepare('SELECT DISTINCT us.UserID FROM userskill us
+        $users = $pdo->prepare('SELECT us.UserID FROM userskill us
                                 JOIN opportunityskill os ON os.SkillID = us.SkillID
-                                WHERE os.OpportunityID = ?');
-        $users->execute([$opportunityId]);
+                                WHERE os.OpportunityID = ?
+                                UNION
+                                SELECT uq.UserID FROM userqualification uq
+                                JOIN opportunityqualification oq ON oq.QualificationID = uq.QualificationID
+                                WHERE oq.OpportunityID = ?');
+        $users->execute([$opportunityId, $opportunityId]);
         $userIds = $users->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $ex) {
         error_log('Matching users failed: ' . $ex->getMessage());
@@ -63,7 +105,7 @@ function notify_matching_users(PDO $pdo, int $opportunityId): void {
     }
 
     notify_users($pdo, $userIds, 'NewOpportunity', $opportunityId,
-        'A new opportunity that matches your skills has been published: "' . $title . '".');
+        'A new opportunity that matches your profile has been published: "' . $title . '".');
 }
 
 /* User Story 37: remind users about opportunities in their favorites when the
@@ -104,6 +146,13 @@ function send_deadline_reminders(PDO $pdo): void {
 
 const OPPORTUNITY_TYPES = ['Training', 'Course'];
 const CITIES = ['Riyadh','Jeddah','Mecca','Medina','Dammam','Khobar','Dhahran','Taif','Abha','Tabuk','Online','Other'];
+
+/* A validation error that belongs to one form field: the page shows it under that field in red. */
+class FieldError extends RuntimeException {
+    public function __construct(public string $form, public string $field, string $message) {
+        parent::__construct($message);
+    }
+}
 
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
