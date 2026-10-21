@@ -1,4 +1,3 @@
-
 <?php
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
@@ -746,6 +745,71 @@ user_header($me, 'Application History', 'history');
     font-weight: 800;
 }
 
+/* ---------- Toast (success message from the top) ---------- */
+
+.ufuq-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc;
+    border-radius: 13px;
+    background: #eaf7ef;
+    color: #1f6b47;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%);
+    opacity: 0;
+    transition: transform .35s ease, opacity .35s ease;
+}
+
+.ufuq-toast.is-shown {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.ufuq-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2f8a5c;
+    color: #fff;
+    font-size: .85rem;
+}
+
+.ufuq-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #1f6b47;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.ufuq-toast-close:hover {
+    background: rgba(31,107,71,.1);
+}
+
 /* ---------- Empty state ---------- */
 
 .history-dashboard .empty-state {
@@ -978,7 +1042,14 @@ user_header($me, 'Application History', 'history');
     <div class="container dashboard-content">
 
         <!-- Feedback -->
-        <?php if ($notice !== ''): ?>
+        <?php if ($notice !== '' && $noticeType === 'success'): ?>
+            <!-- Success message: slides down from the top, then disappears (same as the other pages) -->
+            <div class="ufuq-toast" id="successToast" role="status" aria-live="polite">
+                <span class="ufuq-toast-icon" aria-hidden="true">✓</span>
+                <span><?= e($notice) ?></span>
+                <button type="button" class="ufuq-toast-close" aria-label="Close">&times;</button>
+            </div>
+        <?php elseif ($notice !== ''): ?>
             <div
                 class="dashboard-notice <?= $noticeType === 'success'
                     ? 'notice-success'
@@ -1036,10 +1107,7 @@ user_header($me, 'Application History', 'history');
                 <div class="application-list-heading">
                     <h2>Your Applications</h2>
 
-                   <div class="stat-row">
-                    <span class="stat-label">Total Applications</span>
-                    <span class="stat-value"><?= $totalApplications ?></span>
-                </div>
+                    <span class="application-count" title="Total applications"><?= (int)$totalApplications ?></span>
                 </div>
 
                 <p class="section-description">
@@ -1067,7 +1135,7 @@ user_header($me, 'Application History', 'history');
                             </svg>
                         </div>
 
-                        <h3>No Applications Yet</h3>
+                        <h3>No applications submitted through Ufuq yet</h3>
 
                         <p>
                             You haven't applied to any training opportunities
@@ -1355,4 +1423,33 @@ user_header($me, 'Application History', 'history');
 
 </div>
 
-<?php user_footer(); ?>
+<script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed. */
+(function () {
+    const toast = document.getElementById('successToast');
+    if (!toast) return;
+
+    document.body.appendChild(toast);
+
+    /* Remove ?msg= from the address so a refresh does not show the message again. */
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('msg')) {
+        url.searchParams.delete('msg');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.ufuq-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+</script>
+
+<?php admin_footer(); ?>

@@ -10,6 +10,19 @@ require_once __DIR__ . '/../config/db.php';
 // Email sending through Gmail: send_mail($to, $subject, $htmlBody)
 require_once __DIR__ . '/../includes/mail.php';
 
+/* Applications close automatically once the application deadline has passed,
+   even if the company did not close the opportunity by hand (User Story 28). */
+function close_expired_opportunities(PDO $pdo): void {
+    try {
+        $pdo->prepare("UPDATE opportunity SET Status = 'Closed'
+                       WHERE Status = 'Open' AND ApplicationDeadLine IS NOT NULL AND ApplicationDeadLine < ?")
+            ->execute([date('Y-m-d')]);
+    } catch (Throwable $ex) {
+        error_log('Auto-close failed: ' . $ex->getMessage());
+    }
+}
+close_expired_opportunities($pdo);
+
 const OPPORTUNITY_TYPES = ['Training', 'Course'];
 const CITIES = ['Riyadh','Jeddah','Mecca','Medina','Dammam','Khobar','Dhahran','Taif','Abha','Tabuk','Online','Other'];
 

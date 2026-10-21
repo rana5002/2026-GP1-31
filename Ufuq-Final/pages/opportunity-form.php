@@ -468,7 +468,7 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
         <h1><?= $editing ? 'Edit Opportunity' : 'Add Opportunity' ?></h1>
         <p>Publish a training program or course for students to discover and apply to.</p>
       </div>
-      <div class="hero-icon" aria-hidden="true">✦</div>
+      <div class="hero-icon" aria-hidden="true"><?php if ($editing): ?><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z"/><path d="M14.5 7.5l3 3"/></svg><?php else: ?><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 3.5H14l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M14 3.5V9h5"/><path d="M12.5 12v6M9.5 15h6"/></svg><?php endif; ?></div>
     </div>
   </section>
   <div class="page-content container" style="padding-top:24px"><div style="max-width:960px;width:100%;margin:0 auto">

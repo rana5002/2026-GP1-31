@@ -1681,7 +1681,7 @@ user_header($me, 'Opportunity Details', 'browse');
             </p>
         </div>
 
-        <div class="detail-hero-icon" aria-hidden="true">✦</div>
+        <div class="detail-hero-icon" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 3h6v3H9z"/><path d="M9 11h6M9 14.5h6M9 18h4"/></svg></div>
     </div>
 </section>
 
@@ -2103,7 +2103,7 @@ user_header($me, 'Opportunity Details', 'browse');
                             <form
                                 method="POST"
                                 action="opportunity-detail.php?id=<?= (int) $opportunityId ?>"
-                                onsubmit="return confirm('Do you want to apply for this opportunity?');"
+                                onsubmit="return confirm('Do you want to apply for this opportunity? Your application will use the qualifications, experience and skills in your profile.');"
                             >
                                 <input
                                     type="hidden"
@@ -2122,6 +2122,11 @@ user_header($me, 'Opportunity Details', 'browse');
                                     <span aria-hidden="true">&#8594;</span>
                                 </button>
                             </form>
+
+                            <p class="apply-note">
+                                Your application uses the qualifications, experience and skills in your profile.
+                                Update your profile first if anything is missing.
+                            </p>
 
                         <?php endif; ?>
 

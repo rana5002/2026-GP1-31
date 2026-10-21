@@ -34,6 +34,8 @@ if (isset($_GET['msg'])) {
         'added'   => 'Opportunity added successfully.',
         'updated' => 'Opportunity updated successfully.',
         'deleted' => 'Opportunity deleted successfully.',
+        'closed'  => 'Applications for this opportunity are now closed.',
+        'reopened'=> 'The opportunity is open for applications again.',
         'status'  => 'Application status updated successfully.'
     ];
     $success = $messages[$_GET['msg']] ?? '';
@@ -53,6 +55,22 @@ try {
             company_redirect('opportunities', 'deleted');
         }
 
+        /* Close Opportunity: no more applications (User Story 28). Reopen is allowed while the deadline has not passed. */
+        if ($action === 'close_opportunity' || $action === 'reopen_opportunity') {
+            $oppId = (int)($_POST['opportunity_id'] ?? 0);
+            if ($action === 'reopen_opportunity') {
+                $check = $pdo->prepare('SELECT ApplicationDeadLine FROM opportunity WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
+                $check->execute([$oppId, $companyId]);
+                $deadline = $check->fetchColumn();
+                if ($deadline !== false && $deadline !== null && $deadline < date('Y-m-d')) {
+                    throw new RuntimeException('The application deadline has passed. Edit the opportunity and set a new deadline before reopening it.');
+                }
+            }
+            $stmt = $pdo->prepare('UPDATE opportunity SET Status = ? WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
+            $stmt->execute([$action === 'close_opportunity' ? 'Closed' : 'Open', $oppId, $companyId]);
+            company_redirect('opportunities', $action === 'close_opportunity' ? 'closed' : 'reopened');
+        }
+
         if ($action === 'update_application_status') {
             $oppId = (int)($_POST['opportunity_id'] ?? 0);
             $userId = (int)($_POST['applicant_id'] ?? 0);
@@ -61,8 +79,27 @@ try {
             $check = $pdo->prepare('SELECT 1 FROM opportunity WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
             $check->execute([$oppId, $companyId]);
             if (!$check->fetchColumn()) throw new RuntimeException('You cannot update this application.');
+            $before = $pdo->prepare('SELECT ApplicationStatus FROM application WHERE UserID = ? AND OpportunityID = ?');
+            $before->execute([$userId, $oppId]);
+            $oldStatus = $before->fetchColumn();
+
+            $pdo->beginTransaction();
             $update = $pdo->prepare('UPDATE application SET ApplicationStatus = ? WHERE UserID = ? AND OpportunityID = ?');
             $update->execute([$status, $userId, $oppId]);
+
+            /* When the application is accepted, the user gets a notification on the Notifications page.
+               The company then contacts the applicant outside Ufuq, using the email shown on the applicant list and profile. */
+            if ($status === 'Accepted' && $oldStatus !== false && $oldStatus !== 'Accepted') {
+                $nameStmt = $pdo->prepare('SELECT CompanyName FROM company WHERE CompanyID = ?');
+                $nameStmt->execute([$companyId]);
+                $message = 'Your application has been accepted by ' . (string)$nameStmt->fetchColumn()
+                    . '. The company will contact you by email about the next steps.';
+                $pdo->prepare("INSERT INTO notification (Message, Type, OpportunityID) VALUES (?, 'ApplicationUpdate', ?)")
+                    ->execute([mb_substr($message, 0, 255, 'UTF-8'), $oppId]);
+                $pdo->prepare('INSERT INTO usernotification (UserID, NotificationID, IsRead) VALUES (?, ?, 0)')
+                    ->execute([$userId, (int)$pdo->lastInsertId()]);
+            }
+            $pdo->commit();
             company_redirect('applicants', 'status');
         }
 
@@ -145,6 +182,8 @@ try {
 } catch (Throwable $ex) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $error = $ex instanceof PDOException ? 'Unable to save changes. Please check the information and try again.' : $ex->getMessage();
+    /* Stay on the tab the form was sent from, so the error is shown next to it. */
+    if (isset($tabAfter)) $activeTab = $tabAfter;
 }
 
 $stmt = $pdo->prepare('SELECT c.*, m.Email FROM company c JOIN member m ON m.MemberID = c.CompanyID WHERE c.CompanyID = ? AND m.Role = \'Company\'');
@@ -167,6 +206,7 @@ $opportunities = $stmt->fetchAll();
  */
 $stmt = $pdo->prepare("SELECT a.UserID, a.OpportunityID, a.SubmissionDate, a.ApplicationStatus,
     u.*, o.Title,
+    (SELECT m.Email FROM member m WHERE m.MemberID = a.UserID) AS Email,
     (SELECT GROUP_CONCAT(s.SkillName ORDER BY s.SkillName SEPARATOR ', ')
        FROM userskill us JOIN skill s ON s.SkillID = us.SkillID
        WHERE us.UserID = a.UserID) AS Skills,
@@ -182,7 +222,10 @@ $stmt = $pdo->prepare("SELECT a.UserID, a.OpportunityID, a.SubmissionDate, a.App
        WHERE ue.UserID = a.UserID) AS Experience,
     (SELECT GROUP_CONCAT(us2.SkillID) FROM userskill us2 WHERE us2.UserID = a.UserID) AS SkillIDs,
     (SELECT GROUP_CONCAT(uq2.QualificationID) FROM userqualification uq2 WHERE uq2.UserID = a.UserID) AS QualificationIDs,
-    (SELECT GROUP_CONCAT(ue2.ExperienceID) FROM userexperience ue2 WHERE ue2.UserID = a.UserID) AS ExperienceIDs
+    (SELECT GROUP_CONCAT(ue2.ExperienceID) FROM userexperience ue2 WHERE ue2.UserID = a.UserID) AS ExperienceIDs,
+    (SELECT GROUP_CONCAT(DISTINCT e3.ExperienceName ORDER BY e3.ExperienceName SEPARATOR ', ')
+       FROM userexperience ue3 JOIN experience e3 ON e3.ExperienceID = ue3.ExperienceID
+       WHERE ue3.UserID = a.UserID) AS ExperienceNames
     FROM application a
     JOIN opportunity o ON o.OpportunityID = a.OpportunityID
     LEFT JOIN `user` u ON u.UserID = a.UserID
@@ -190,6 +233,43 @@ $stmt = $pdo->prepare("SELECT a.UserID, a.OpportunityID, a.SubmissionDate, a.App
     ORDER BY a.SubmissionDate DESC, a.OpportunityID DESC");
 $stmt->execute([$companyId]);
 $applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+/* Applicants table (columns): each applicant's skills, qualifications and experience as [id, name],
+   and what each opportunity requires, so the matching items can be marked ✓. */
+function company_group_rows(PDO $pdo, string $sql, array $params): array {
+    $out = [];
+    if (!$params) return $out;
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll(PDO::FETCH_NUM) as [$key, $id, $name]) {
+        $out[(int)$key][] = ['id' => (int)$id, 'name' => (string)$name];
+    }
+    return $out;
+}
+$applicantIds = array_values(array_unique(array_map(static fn($a) => (int)$a['UserID'], $applicants)));
+$inUsers = implode(',', array_fill(0, count($applicantIds), '?'));
+$userSkillItems = company_group_rows($pdo, "SELECT us.UserID, s.SkillID, s.SkillName FROM userskill us JOIN skill s ON s.SkillID = us.SkillID WHERE us.UserID IN ($inUsers) ORDER BY s.SkillName", $applicantIds);
+$userQualItems = company_group_rows($pdo, "SELECT uq.UserID, q.QualificationID, q.QualificationName FROM userqualification uq JOIN qualification q ON q.QualificationID = uq.QualificationID WHERE uq.UserID IN ($inUsers) ORDER BY q.QualificationName", $applicantIds);
+$userExpItems = company_group_rows($pdo, "SELECT ue.UserID, e.ExperienceID, e.ExperienceName FROM userexperience ue JOIN experience e ON e.ExperienceID = ue.ExperienceID WHERE ue.UserID IN ($inUsers) ORDER BY ue.StartDate DESC", $applicantIds);
+$userDegrees = company_group_rows($pdo, "SELECT st.UserID, 0, st.DegreeLevel FROM userstudy st WHERE st.UserID IN ($inUsers) AND st.DegreeLevel <> '' ORDER BY st.GraduationYear DESC", $applicantIds);
+
+$companyOppIds = array_map(static fn($o) => (int)$o['OpportunityID'], $opportunities);
+$inOpps = implode(',', array_fill(0, count($companyOppIds), '?'));
+$oppSkillReq = company_group_rows($pdo, "SELECT os.OpportunityID, s.SkillID, s.SkillName FROM opportunityskill os JOIN skill s ON s.SkillID = os.SkillID WHERE os.OpportunityID IN ($inOpps) ORDER BY s.SkillName", $companyOppIds);
+$oppQualReq = company_group_rows($pdo, "SELECT oq.OpportunityID, q.QualificationID, q.QualificationName FROM opportunityqualification oq JOIN qualification q ON q.QualificationID = oq.QualificationID WHERE oq.OpportunityID IN ($inOpps) ORDER BY q.QualificationName", $companyOppIds);
+$oppExpReq = company_group_rows($pdo, "SELECT oe.OpportunityID, e.ExperienceID, e.ExperienceName FROM opportunityexperience oe JOIN experience e ON e.ExperienceID = oe.ExperienceID WHERE oe.OpportunityID IN ($inOpps) ORDER BY e.ExperienceName", $companyOppIds);
+
+/* One column of the applicants table: items required by the opportunity are green with ✓. */
+function applicant_item_list(array $items, array $required): string {
+    if (!$items) return '<span class="item-none">None added</span>';
+    $requiredIds = array_map(static fn($r) => $r['id'], $required);
+    $html = '<ul class="item-list">';
+    foreach ($items as $item) {
+        $match = $item['id'] > 0 && in_array($item['id'], $requiredIds, true);
+        $html .= '<li class="' . ($match ? 'is-match' : '') . '">' . ($match ? '✓ ' : '') . e($item['name']) . '</li>';
+    }
+    return $html . '</ul>';
+}
 
 foreach ($applicants as &$applicantRow) {
     $applicantRow['Qualifications'] = implode(', ', array_filter([
@@ -244,9 +324,11 @@ function applicant_has_all(?string $csv, array $selectedIds): bool {
    and scrolls for the rest. Selected items are listed first. */
 function lookup_box(string $name, string $label, string $searchPlaceholder, array $options, array $selectedIds): string {
     $checked = $unchecked = [];
+    $selectedKeys = array_map('strval', $selectedIds);
     foreach ($options as $optId => $optName) {
-        if (in_array((int)$optId, $selectedIds, true)) $checked[$optId] = $optName; else $unchecked[$optId] = $optName;
+        if (in_array((string)$optId, $selectedKeys, true)) $checked[$optId] = $optName; else $unchecked[$optId] = $optName;
     }
+    $hasSearch = count($options) > 5;
     /* Collapsed by default; opened when something in it is selected. The triangle opens / closes it. */
     $isOpen = (bool)$selectedIds;
     $boxId = 'lookup-' . preg_replace('/[^a-z0-9_-]/i', '', $name);
@@ -257,11 +339,11 @@ function lookup_box(string $name, string $label, string $searchPlaceholder, arra
             <span class="lookup-caret" aria-hidden="true"></span>
         </button>
         <div class="lookup-box" id="<?= e($boxId) ?>" <?= $isOpen ? '' : 'hidden' ?>>
-            <input type="text" class="form-control lookup-search" placeholder="<?= e($searchPlaceholder) ?>" autocomplete="off" aria-label="<?= e($searchPlaceholder) ?>">
-            <div class="lookup-list" role="group" aria-label="<?= e($label) ?>">
+            <?php if ($hasSearch): ?><input type="text" class="form-control lookup-search" placeholder="<?= e($searchPlaceholder) ?>" autocomplete="off" aria-label="<?= e($searchPlaceholder) ?>"><?php endif; ?>
+            <div class="lookup-list <?= $hasSearch ? '' : 'no-search' ?>" role="group" aria-label="<?= e($label) ?>">
                 <?php foreach ($checked + $unchecked as $optId => $optName): ?>
                     <label class="lookup-option" data-text="<?= e(mb_strtolower((string)$optName, 'UTF-8')) ?>">
-                        <input type="checkbox" name="<?= e($name) ?>[]" value="<?= (int)$optId ?>" <?= isset($checked[$optId]) ? 'checked' : '' ?>>
+                        <input type="checkbox" name="<?= e($name) ?>[]" value="<?= e((string)$optId) ?>" <?= isset($checked[$optId]) ? 'checked' : '' ?>>
                         <span><?= e($optName) ?></span>
                     </label>
                 <?php endforeach; ?>
@@ -279,30 +361,29 @@ $experienceOptions = company_lookup_options($pdo, 'experience', 'ExperienceID', 
 $studyOptions = $pdo->query('SELECT DISTINCT FieldOfStudy FROM userstudy WHERE FieldOfStudy <> \'\' ORDER BY FieldOfStudy')->fetchAll(PDO::FETCH_COLUMN);
 
 // Filters are scoped to the opportunities owned by the logged-in company.
-$selectedOpportunity = (int)($_GET['opportunity_filter'] ?? 0);
-$selectedStatus = trim((string)($_GET['status_filter'] ?? ''));
+/* Opportunity, status and field of study: one or more ticked values (any of them matches). */
+$companyOpportunityIds = array_map(static fn($o) => (int)$o['OpportunityID'], $opportunities);
+$opportunityFilter = array_values(array_intersect(company_filter_ids($_GET['opportunity_filter'] ?? [], array_flip($companyOpportunityIds)), $companyOpportunityIds));
+$statusFilter = array_values(array_intersect(array_map('strval', (array)($_GET['status_filter'] ?? [])), $validApplicantStatuses));
 $skillFilter = company_filter_ids($_GET['skill_filter'] ?? [], $skillOptions);
 $qualificationFilter = company_filter_ids($_GET['qualification_filter'] ?? [], $qualificationOptions);
 $experienceFilter = company_filter_ids($_GET['experience_filter'] ?? [], $experienceOptions);
-$studyFilter = trim((string)($_GET['study_filter'] ?? ''));
-if (!in_array($selectedStatus, $validApplicantStatuses, true)) $selectedStatus = '';
-$companyOpportunityIds = array_map(static fn($o) => (int)$o['OpportunityID'], $opportunities);
-if ($selectedOpportunity && !in_array($selectedOpportunity, $companyOpportunityIds, true)) $selectedOpportunity = 0;
+$studyFilter = array_values(array_intersect(array_map('strval', (array)($_GET['study_filter'] ?? [])), $studyOptions));
 
-$applicantsForDisplay = array_values(array_filter($applicants, static function ($a) use ($selectedOpportunity, $selectedStatus, $skillFilter, $qualificationFilter, $experienceFilter, $studyFilter) {
-    if ($selectedOpportunity && (int)$a['OpportunityID'] !== $selectedOpportunity) return false;
-    if ($selectedStatus !== '' && (string)($a['ApplicationStatus'] ?? '') !== $selectedStatus) return false;
+$applicantsForDisplay = array_values(array_filter($applicants, static function ($a) use ($opportunityFilter, $statusFilter, $skillFilter, $qualificationFilter, $experienceFilter, $studyFilter) {
+    if ($opportunityFilter && !in_array((int)$a['OpportunityID'], $opportunityFilter, true)) return false;
+    if ($statusFilter && !in_array((string)($a['ApplicationStatus'] ?? ''), $statusFilter, true)) return false;
     if (!applicant_has_all($a['SkillIDs'] ?? '', $skillFilter)) return false;
     if (!applicant_has_all($a['QualificationIDs'] ?? '', $qualificationFilter)) return false;
     if (!applicant_has_all($a['ExperienceIDs'] ?? '', $experienceFilter)) return false;
-    if (!applicant_matches_text(applicant_profile_value($a, ['FieldOfStudy']), $studyFilter)) return false;
+    if ($studyFilter && !array_intersect(array_map('trim', explode(',', (string)($a['FieldOfStudy'] ?? ''))), $studyFilter)) return false;
     return true;
 }));
 $applicantsByOpportunity = [];
 foreach ($applicantsForDisplay as $applicantRow) {
     $applicantsByOpportunity[(int)$applicantRow['OpportunityID']][] = $applicantRow;
 }
-$activeFilterCount = ($selectedOpportunity > 0 ? 1 : 0) + ($selectedStatus !== '' ? 1 : 0) + count($skillFilter) + count($qualificationFilter) + count($experienceFilter) + ($studyFilter !== '' ? 1 : 0);
+$activeFilterCount = count($opportunityFilter) + count($statusFilter) + count($skillFilter) + count($qualificationFilter) + count($experienceFilter) + count($studyFilter);
 $hasApplicantFilters = $activeFilterCount > 0;
 
 $stmt = $pdo->prepare('SELECT COUNT(*) FROM review r JOIN opportunity o ON o.OpportunityID = r.OpportunityID WHERE o.CreatedByCompanyID = ?');
@@ -430,6 +511,10 @@ $heroTitles = [
 .company-dashboard .btn-outline{border-radius:9px}
 .company-dashboard .text-muted{color:var(--c-muted)}
 .company-dashboard .company-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+/* Opportunities table: Close / Reopen, Edit and Delete stay on one line, lined up in every row */
+.company-dashboard .opp-actions{flex-wrap:nowrap;gap:4px}
+.company-dashboard .opp-actions .company-inline-form{margin:0}
+.company-dashboard .opp-status-btn{min-width:150px;white-space:nowrap;justify-content:center}
 .company-dashboard .company-inline-form{display:inline;margin:0}
 .company-dashboard .status-select{padding:7px 9px;min-width:135px}
 
@@ -442,7 +527,7 @@ $heroTitles = [
 
 /* Applicants */
 /* Applicants: filter sidebar on the left, shown / hidden with the Filters button */
-.company-dashboard .applicants-toolbar{display:flex;align-items:center;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 16px}
+.company-dashboard .applicants-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 16px}
 .company-dashboard .applicants-toolbar .filter-toggle{flex-shrink:0}
 .company-dashboard .applicants-toolbar .section-description{margin:0;flex:1 1 320px}
 .company-dashboard .filter-toggle{display:inline-flex;align-items:center;gap:8px}
@@ -461,11 +546,12 @@ $heroTitles = [
 .company-dashboard .applicant-filter-actions .btn{flex:1}
 .company-dashboard .applicant-filter-note{font-size:.8rem;line-height:1.55;color:var(--c-muted);margin:0}
 .company-dashboard .applicant-view-link{margin-top:6px;font-size:.82rem}
+.company-dashboard .applicant-summary{margin-top:4px;font-size:.8rem;line-height:1.55;color:var(--c-muted);overflow-wrap:anywhere}
+.company-dashboard .applicant-summary strong{color:var(--c-text);font-weight:650}
 
 /* Only the filter moves left, into the empty space beside the page; the applicant cards stay in place.
    The shift is the filter width + gap (312px), or less on screens without enough space on the left. */
 .company-dashboard #tab-applicants{--filter-shift:min(312px, max(0px, calc((100vw - 100%) / 2 - 16px)))}
-.company-dashboard .applicants-toolbar,
 .company-dashboard .applicants-layout{margin-left:calc(-1 * var(--filter-shift))}
 .company-dashboard .applicants-layout.filters-hidden{margin-left:0}
 
@@ -491,7 +577,7 @@ $heroTitles = [
 .company-dashboard .lookup-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
 @media(max-width:900px){
   .company-dashboard .applicants-layout{grid-template-columns:minmax(0,1fr)}
-  .company-dashboard .applicants-toolbar,.company-dashboard .applicants-layout{margin-left:0}
+  .company-dashboard .applicants-layout{margin-left:0}
 }
 .company-dashboard .applicant-opportunity-card{margin:0 0 22px;border:1px solid var(--c-border);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 5px 18px rgba(40,26,70,.045);animation:companyFadeUp .35s ease both}
 .company-dashboard .applicant-opportunity-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:18px 20px;background:#f7f4fb;border-bottom:1px solid #e6deef}
@@ -499,6 +585,50 @@ $heroTitles = [
 .company-dashboard .applicant-opportunity-heading p{margin:5px 0 0;color:var(--c-muted);font-size:.86rem}
 .company-dashboard .applicant-count{flex-shrink:0;padding:7px 11px;border-radius:999px;background:#ece6f8;color:var(--c-purple);font-size:.82rem;font-weight:700}
 .company-dashboard .applicant-opportunity-card .company-table-wrap{border:0;border-radius:0;box-shadow:none}
+/* Applicants of one opportunity: triangle opens / closes the table */
+.company-dashboard .opp-heading-text{flex:1;min-width:0}
+.company-dashboard .lookup-list.no-search{margin-top:0}
+.company-dashboard .opp-toggle{display:flex;align-items:center;gap:14px;flex:1;min-width:0;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.company-dashboard .opp-toggle:focus-visible{outline:2px solid var(--c-purple);outline-offset:4px;border-radius:8px}
+.company-dashboard .opp-title{display:block;color:var(--c-purple);font-size:1.05rem;font-weight:700}
+.company-dashboard .opp-sub{display:block;margin-top:5px;color:var(--c-muted);font-size:.86rem}
+.company-dashboard .opp-caret{flex-shrink:0;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--c-purple);transition:transform .2s ease}
+.company-dashboard .opp-caret{transform:rotate(180deg)}
+.company-dashboard .applicant-opportunity-card.is-collapsed .opp-caret{transform:none}
+.company-dashboard .applicant-opportunity-card.is-collapsed .applicant-opportunity-heading{border-bottom:0}
+.company-dashboard .applicant-opportunity-card.is-collapsed .company-table-wrap{display:none}
+/* Applicants table with columns */
+.company-dashboard .applicant-opportunity-card .company-table-wrap{overflow:visible}
+.company-dashboard .applicants-table{width:100%;table-layout:fixed}
+.company-dashboard .applicants-table td{overflow-wrap:anywhere}
+.company-dashboard .applicants-table td{vertical-align:top}
+.company-dashboard .applicants-table .col-applicant{width:25%}
+.company-dashboard .applicants-table .col-status{width:20%}
+.company-dashboard .applicants-table th,.company-dashboard .applicants-table td{padding:13px 12px}
+.company-dashboard .applicant-name{display:block;font-size:.95rem;color:var(--c-text)}
+.company-dashboard .applicant-meta{display:block;margin-top:3px;font-size:.82rem;color:var(--c-muted)}
+.company-dashboard .applicant-mail{display:block;margin-top:4px;font-size:.82rem;font-weight:700;color:var(--c-purple);overflow-wrap:anywhere}
+.company-dashboard .item-list{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none;font-size:.86rem;line-height:1.45}
+.company-dashboard .item-list li::before{content:"• ";color:#b3a9c4}
+.company-dashboard .item-list li.is-match{color:#176b3a;font-weight:700}
+.company-dashboard .item-list li.is-match::before{content:""}
+.company-dashboard .item-none{font-size:.84rem;color:var(--c-muted)}
+.company-dashboard .status-pill{display:inline-flex;padding:5px 11px;border-radius:999px;font-size:.76rem;font-weight:800}
+.company-dashboard .status-pill.is-pending{background:#fff4dc;color:#8a5d12}
+.company-dashboard .status-pill.is-accepted{background:#e5f5eb;color:#247244}
+.company-dashboard .status-pill.is-rejected{background:#fdeaea;color:#a32e37}
+.company-dashboard .applicants-table .applicant-status-form{margin-top:10px;flex-wrap:wrap;gap:6px;min-width:0}
+.company-dashboard .applicants-table .applicant-status-form .status-select{min-width:0}
+.company-dashboard .applicants-table .status-select{min-width:0;width:100%}
+.company-dashboard .applicants-table .applicant-status-form .btn{width:100%}
+/* Small screens: each applicant becomes a stacked card, still without sideways scroll */
+@media(max-width:760px){
+  .company-dashboard .applicants-table thead{display:none}
+  .company-dashboard .applicants-table,.company-dashboard .applicants-table tbody,.company-dashboard .applicants-table tr,.company-dashboard .applicants-table td{display:block;width:100%}
+  .company-dashboard .applicants-table tr{border-bottom:1px solid #eee8f4;padding:6px 0}
+  .company-dashboard .applicants-table td{border:0;padding:8px 16px}
+  .company-dashboard .applicants-table td[data-label]::before{content:attr(data-label);display:block;margin-bottom:4px;color:var(--c-purple);font-size:.78rem;font-weight:800}
+}
 .company-dashboard .applicant-status-form{min-width:245px}
 .company-dashboard .applicant-profile-details{margin-top:8px;font-size:.82rem;color:#596579}
 .company-dashboard .applicant-profile-details summary{cursor:pointer;color:var(--c-purple);font-weight:700;list-style-position:inside}
@@ -609,7 +739,15 @@ $heroTitles = [
           <p><?= e($heroTitles[$activeTab][1]) ?></p>
         <?php endif; ?>
       </div>
-      <div class="hero-icon" aria-hidden="true">✦</div>
+      <?php
+        $heroIcons = [
+          'opportunities' => '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8.5 7V5a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 5v2"/><path d="M3 12.5h18"/></svg>',
+          'applicants'    => '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 4.9a3.2 3.2 0 0 1 0 6.2"/><path d="M17.5 14.7c2.1.6 3.5 2.5 3.5 5.3"/></svg>',
+          'reviews'       => '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4v-14Z"/><path d="M8 9.5h8"/><path d="M8 12.5h5"/></svg>',
+          'profile'       => '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20.5V5a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 15 5v15.5"/><path d="M15 9.5h3.5A1.5 1.5 0 0 1 20 11v9.5"/><path d="M2.5 20.5h19"/><path d="M8 7.5h3M8 11h3M8 14.5h3"/></svg>',
+        ];
+      ?>
+      <div class="hero-icon" aria-hidden="true"><?= $heroIcons[$activeTab] ?? '✦' ?></div>
     </div>
   </section>
 
@@ -671,60 +809,39 @@ $heroTitles = [
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Click "Add Opportunity" to publish your first training program or course.</p></div>
       <?php else: ?>
         <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
-        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions"><a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>
+        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; ?><form method="post" class="company-inline-form" <?= $isOpenOpp ? 'onsubmit="return confirm(\'Close applications for this opportunity? Users will no longer be able to apply.\');"' : '' ?>><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="<?= $isOpenOpp ? 'close_opportunity' : 'reopen_opportunity' ?>"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-outline btn-sm opp-status-btn" type="submit"><?= $isOpenOpp ? 'Close Opportunity' : 'Reopen' ?></button></form><a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>
         </tbody></table></div>
       <?php endif; ?>
     </section>
 
     <!-- Applicants -->
     <section class="tab-panel <?= $activeTab === 'applicants' ? 'active' : '' ?>" id="tab-applicants">
-      <div class="applicants-toolbar">
-        <button type="button" class="btn btn-outline btn-sm filter-toggle" id="filterToggle" aria-controls="applicantFilterPanel" aria-expanded="true">
-          <span class="filter-toggle-text">Hide Filters</span>
-          <?php if ($activeFilterCount > 0): ?><span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span><?php endif; ?>
-        </button>
-        <p class="section-description">Applicants are grouped under each opportunity. Use the filters to find candidates by skills, qualifications, experience, field of study, or application status.</p>
-      </div>
-
       <div class="applicants-layout" id="applicantsLayout">
 
       <!-- Filter sidebar (left) -->
       <form method="get" class="applicant-filter-panel" id="applicantFilterPanel">
         <input type="hidden" name="tab" value="applicants">
         <h3 class="applicant-filter-title">Filter Applicants</h3>
-        <div class="applicant-filter-field">
-          <label for="opportunity_filter">Opportunity</label>
-          <select id="opportunity_filter" name="opportunity_filter" class="form-control">
-            <option value="0">All Opportunities</option>
-            <?php foreach ($opportunities as $filterOpportunity): ?>
-              <option value="<?= (int)$filterOpportunity['OpportunityID'] ?>" <?= $selectedOpportunity === (int)$filterOpportunity['OpportunityID'] ? 'selected' : '' ?>><?= e($filterOpportunity['Title']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="applicant-filter-field">
-          <label for="status_filter">Application Status</label>
-          <select id="status_filter" name="status_filter" class="form-control">
-            <option value="">All Statuses</option>
-            <?php foreach ($validApplicantStatuses as $filterStatus): ?>
-              <option value="<?= e($filterStatus) ?>" <?= $selectedStatus === $filterStatus ? 'selected' : '' ?>><?= e($filterStatus) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
+        <?php $opportunityOptions = []; foreach ($opportunities as $fo) { $opportunityOptions[(int)$fo['OpportunityID']] = (string)$fo['Title']; } ?>
+        <?= lookup_box('opportunity_filter', 'Opportunity', 'Search opportunities...', $opportunityOptions, $opportunityFilter) ?>
+        <?= lookup_box('status_filter', 'Application Status', 'Search statuses...', array_combine($validApplicantStatuses, $validApplicantStatuses), $statusFilter) ?>
         <?= lookup_box('skill_filter', 'Skills', 'Search skills...', $skillOptions, $skillFilter) ?>
         <?= lookup_box('qualification_filter', 'Qualifications', 'Search qualifications...', $qualificationOptions, $qualificationFilter) ?>
         <?= lookup_box('experience_filter', 'Experience', 'Search experience...', $experienceOptions, $experienceFilter) ?>
-        <div class="applicant-filter-field">
-          <label for="study_filter">Field of Study</label>
-          <input id="study_filter" name="study_filter" class="form-control" list="studyOptions" autocomplete="off" value="<?= e($studyFilter) ?>" placeholder="Type or choose a field">
-          <datalist id="studyOptions">
-            <?php foreach ($studyOptions as $studyOption): ?><option value="<?= e($studyOption) ?>"></option><?php endforeach; ?>
-          </datalist>
-        </div>
+        <?= lookup_box('study_filter', 'Field of Study', 'Search fields of study...', $studyOptions ? array_combine($studyOptions, $studyOptions) : [], $studyFilter) ?>
         <div class="applicant-filter-actions"><button type="submit" class="btn btn-primary">Apply</button><a href="dashboard-company.php?tab=applicants" class="btn btn-ghost">Reset</a></div>
-        <p class="applicant-filter-note">When several skills, qualifications or experiences are selected, only applicants who have all of them are shown.</p>
+        <p class="applicant-filter-note">Skills, qualifications and experience: applicants must have all the ones you tick. Opportunity, status and field of study: any of the ones you tick.</p>
       </form>
 
       <div class="applicants-results">
+      <!-- Filters button: on the right, above the applicant counts -->
+      <div class="applicants-toolbar">
+        <p class="section-description">Applicants are grouped under each opportunity. Use the filters to find candidates by skills, qualifications, experience, field of study, or application status.</p>
+        <button type="button" class="btn btn-outline btn-sm filter-toggle" id="filterToggle" aria-controls="applicantFilterPanel" aria-expanded="true">
+          <span class="filter-toggle-text">Hide Filters</span>
+          <?php if ($activeFilterCount > 0): ?><span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span><?php endif; ?>
+        </button>
+      </div>
       <?php if (!$opportunities): ?>
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Publish an opportunity first. Applicants will appear under each opportunity when they apply through Ufuq.</p><a href="opportunity-form.php" class="btn btn-primary">Add Opportunity</a></div>
       <?php elseif (!$applicantsForDisplay && $hasApplicantFilters): ?>
@@ -733,41 +850,58 @@ $heroTitles = [
         <?php foreach ($opportunities as $opportunity): ?>
           <?php
             $opportunityId = (int)$opportunity['OpportunityID'];
-            if ($selectedOpportunity && $selectedOpportunity !== $opportunityId) continue;
+            if ($opportunityFilter && !in_array($opportunityId, $opportunityFilter, true)) continue;
             $opportunityApplicants = $applicantsByOpportunity[$opportunityId] ?? [];
             if ($hasApplicantFilters && !$opportunityApplicants) continue;
           ?>
-          <article class="applicant-opportunity-card">
+          <?php
+            $reqSkills = $oppSkillReq[$opportunityId] ?? [];
+            $reqQuals = $oppQualReq[$opportunityId] ?? [];
+            $reqExps = $oppExpReq[$opportunityId] ?? [];
+            $reqNames = array_map(static fn($r) => $r['name'], array_merge($reqSkills, $reqQuals, $reqExps));
+          ?>
+          <article class="applicant-opportunity-card" data-opp-card="<?= $opportunityId ?>">
             <div class="applicant-opportunity-heading">
-              <div><h3><?= e($opportunity['Title']) ?></h3><p><?= e($opportunity['Type'] ?? 'Training opportunity') ?></p></div>
-              <span class="applicant-count"><?= count($opportunityApplicants) ?> <?= count($opportunityApplicants) === 1 ? 'Applicant' : 'Applicants' ?></span>
+              <button type="button" class="opp-toggle" aria-expanded="true" aria-controls="opp-applicants-<?= $opportunityId ?>">
+                <span class="opp-heading-text">
+                  <span class="opp-title"><?= e($opportunity['Title']) ?></span>
+                  <span class="opp-sub"><?= e($opportunity['Type'] ?? 'Training opportunity') ?><?php if ($reqNames): ?> &middot; Requires: <?= e(implode(', ', $reqNames)) ?><?php endif; ?></span>
+                </span>
+                <span class="applicant-count"><?= count($opportunityApplicants) ?> <?= count($opportunityApplicants) === 1 ? 'Applicant' : 'Applicants' ?></span>
+                <span class="opp-caret" aria-hidden="true"></span>
+              </button>
             </div>
-            <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Applied On</th><th>Status</th></tr></thead><tbody>
+            <div class="company-table-wrap" id="opp-applicants-<?= $opportunityId ?>"><table class="data-table applicants-table"><thead><tr><th class="col-applicant">Applicant</th><th>Skills</th><th>Qualifications</th><th>Experience</th><th class="col-status">Status</th></tr></thead><tbody>
               <?php if (!$opportunityApplicants): ?>
-                <tr><td colspan="3" class="text-muted">No applicants for this opportunity yet.</td></tr>
-              <?php else: foreach ($opportunityApplicants as $a): ?>
+                <tr><td colspan="5" class="text-muted">No applicants for this opportunity yet.</td></tr>
+              <?php else: foreach ($opportunityApplicants as $a): $aid = (int)$a['UserID']; $st = (string)($a['ApplicationStatus'] ?? 'Pending'); ?>
                 <tr>
                   <td>
-                    <strong><?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? '')) ?: 'Unknown') ?></strong>
+                    <strong class="applicant-name"><?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? '')) ?: 'Unknown') ?></strong>
                     <?php $appStudy = applicant_profile_value($a, ['FieldOfStudy']); ?>
-                    <?php if ($appStudy !== ''): ?><div class="company-help"><?= e($appStudy) ?></div><?php endif; ?>
-                    <a href="applicant-profile.php?id=<?= (int)$a['UserID'] ?>&amp;opportunity=<?= (int)$a['OpportunityID'] ?>" class="dashboard-link applicant-view-link">View Profile &rarr;</a>
+                    <?php if ($appStudy !== ''): ?><span class="applicant-meta"><?= e($appStudy) ?></span><?php endif; ?>
+                    <?php if (!empty($a['Email'])): ?><a class="applicant-mail" href="mailto:<?= e($a['Email']) ?>"><?= e($a['Email']) ?></a><?php endif; ?>
+                    <a href="applicant-profile.php?id=<?= $aid ?>&amp;opportunity=<?= (int)$a['OpportunityID'] ?>" class="dashboard-link applicant-view-link">View Profile &rarr;</a>
                   </td>
-                  <td><?= display_date($a['SubmissionDate']) ?></td>
-                  <td>
+                  <td data-label="Skills"><?= applicant_item_list($userSkillItems[$aid] ?? [], $reqSkills) ?></td>
+                  <td data-label="Qualifications"><?= applicant_item_list(array_merge($userDegrees[$aid] ?? [], $userQualItems[$aid] ?? []), $reqQuals) ?></td>
+                  <td data-label="Experience"><?= applicant_item_list($userExpItems[$aid] ?? [], $reqExps) ?></td>
+                  <td data-label="Status">
+                    <span class="status-pill is-<?= e(strtolower($st)) ?>"><?= e($st) ?></span>
                     <form method="post" class="company-actions applicant-status-form">
                       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                       <input type="hidden" name="action" value="update_application_status">
                       <input type="hidden" name="tab" value="applicants">
-                      <input type="hidden" name="applicant_id" value="<?= (int)$a['UserID'] ?>">
+                      <input type="hidden" name="applicant_id" value="<?= $aid ?>">
                       <input type="hidden" name="opportunity_id" value="<?= (int)$a['OpportunityID'] ?>">
-                      <select name="application_status" class="form-control status-select" aria-label="Application status">
-                        <?php foreach ($validApplicantStatuses as $st): ?>
-                          <option value="<?= e($st) ?>" <?= ($a['ApplicationStatus'] ?? '') === $st ? 'selected' : '' ?>><?= e($st) ?></option>
+                      <select name="application_status" class="form-control status-select" aria-label="Application status of <?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? ''))) ?>">
+                        <?php foreach ($validApplicantStatuses as $opt): ?>
+                          <option value="<?= e($opt) ?>" <?= $st === $opt ? 'selected' : '' ?>><?= e($opt) ?></option>
                         <?php endforeach; ?>
                       </select>
                       <button type="submit" class="btn btn-primary btn-sm">Update</button>
                     </form>
+                    <span class="applicant-meta">Applied <?= display_date($a['SubmissionDate']) ?></span>
                   </td>
                 </tr>
               <?php endforeach; endif; ?>
@@ -927,6 +1061,29 @@ function toggleProfileForm(id) {
   }
 }
 
+/* Applicants of each opportunity: the triangle opens / closes the table (remembered in this browser). */
+(function () {
+  const key = 'ufuqCollapsedOpportunities';
+  let closed = [];
+  try { closed = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) {}
+  document.querySelectorAll('[data-opp-card]').forEach(function (card) {
+    const id = card.dataset.oppCard;
+    const btn = card.querySelector('.opp-toggle');
+    function set(collapsed) {
+      card.classList.toggle('is-collapsed', collapsed);
+      btn.setAttribute('aria-expanded', String(!collapsed));
+    }
+    set(closed.indexOf(id) !== -1);
+    btn.addEventListener('click', function () {
+      const collapsed = !card.classList.contains('is-collapsed');
+      set(collapsed);
+      closed = closed.filter(function (x) { return x !== id; });
+      if (collapsed) closed.push(id);
+      try { localStorage.setItem(key, JSON.stringify(closed)); } catch (e) {}
+    });
+  });
+})();
+
 /* Applicants: show / hide the filter sidebar (remembered in this browser). */
 (function () {
   const layout = document.getElementById('applicantsLayout');
@@ -961,7 +1118,7 @@ document.querySelectorAll('[data-lookup-box]').forEach(function (field) {
     box.hidden = !willOpen;
     field.classList.toggle('is-open', willOpen);
     header.setAttribute('aria-expanded', String(willOpen));
-    if (willOpen) search.focus();
+    if (willOpen && search) search.focus();
   });
 
   function updateCount() {
@@ -969,18 +1126,20 @@ document.querySelectorAll('[data-lookup-box]').forEach(function (field) {
     countEl.textContent = n ? '(' + n + ' selected)' : '';
   }
 
-  search.addEventListener('input', function () {
-    const q = search.value.trim().toLowerCase();
-    let visible = 0;
-    options.forEach(function (opt) {
-      const match = opt.dataset.text.indexOf(q) !== -1;
-      opt.hidden = !match;
-      if (match) visible++;
+  if (search) {
+    search.addEventListener('input', function () {
+      const q = search.value.trim().toLowerCase();
+      let visible = 0;
+      options.forEach(function (opt) {
+        const match = opt.dataset.text.indexOf(q) !== -1;
+        opt.hidden = !match;
+        if (match) visible++;
+      });
+      empty.hidden = visible !== 0;
     });
-    empty.hidden = visible !== 0;
-  });
-  /* Enter in the search box should not submit the filters. */
-  search.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+    /* Enter in the search box should not submit the filters. */
+    search.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  }
   field.addEventListener('change', updateCount);
   updateCount();
 });
