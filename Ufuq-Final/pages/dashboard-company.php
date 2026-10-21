@@ -11,7 +11,7 @@ require_login('Company');
 
 $companyId = (int) $_SESSION['user_id'];
 
-$validTabs = ['overview', 'opportunities', 'applicants', 'engagement', 'reviews', 'profile'];
+$validTabs = ['overview', 'opportunities', 'applicants', 'reviews', 'profile'];
 $activeTab = $_GET['tab'] ?? 'overview';
 if (!in_array($activeTab, $validTabs, true)) $activeTab = 'overview';
 
@@ -177,7 +177,10 @@ $stmt = $pdo->prepare("SELECT a.UserID, a.OpportunityID, a.SubmissionDate, a.App
        WHERE uq.UserID = a.UserID) AS Certificates,
     (SELECT GROUP_CONCAT(CONCAT(e.ExperienceName, ' (', ue.JobTitle, ', ', ue.Organization, ')') ORDER BY ue.StartDate DESC SEPARATOR '; ')
        FROM userexperience ue JOIN experience e ON e.ExperienceID = ue.ExperienceID
-       WHERE ue.UserID = a.UserID) AS Experience
+       WHERE ue.UserID = a.UserID) AS Experience,
+    (SELECT GROUP_CONCAT(us2.SkillID) FROM userskill us2 WHERE us2.UserID = a.UserID) AS SkillIDs,
+    (SELECT GROUP_CONCAT(uq2.QualificationID) FROM userqualification uq2 WHERE uq2.UserID = a.UserID) AS QualificationIDs,
+    (SELECT GROUP_CONCAT(ue2.ExperienceID) FROM userexperience ue2 WHERE ue2.UserID = a.UserID) AS ExperienceIDs
     FROM application a
     JOIN opportunity o ON o.OpportunityID = a.OpportunityID
     LEFT JOIN `user` u ON u.UserID = a.UserID
@@ -210,35 +213,95 @@ function applicant_matches_text(string $value, string $filter): bool {
     return function_exists('mb_stripos') ? mb_stripos($value, $filter) !== false : stripos($value, $filter) !== false;
 }
 
+/* Lookup lists for the filter dropdowns, read from the database as [ID => Name]. */
+function company_lookup_options(PDO $pdo, string $table, string $idCol, string $nameCol): array {
+    $rows = $pdo->query("SELECT `$idCol` AS id, `$nameCol` AS name FROM `$table` ORDER BY `$nameCol`")->fetchAll(PDO::FETCH_ASSOC);
+    $out = [];
+    foreach ($rows as $row) $out[(int)$row['id']] = (string)$row['name'];
+    return $out;
+}
+
+/* Keep only the posted IDs that exist in the lookup list. */
+function company_filter_ids($value, array $options): array {
+    $ids = [];
+    foreach ((array)$value as $item) {
+        $id = filter_var($item, FILTER_VALIDATE_INT);
+        if ($id !== false && isset($options[$id])) $ids[$id] = $id;
+    }
+    return array_values($ids);
+}
+
+/* True when the comma-separated IDs of an applicant contain every selected ID. */
+function applicant_has_all(?string $csv, array $selectedIds): bool {
+    if (!$selectedIds) return true;
+    $have = array_map('intval', array_filter(explode(',', (string)$csv), 'strlen'));
+    return !array_diff($selectedIds, $have);
+}
+
+/* Always-visible checkbox list with a search box on top. The box shows about 5 items
+   and scrolls for the rest. Selected items are listed first. */
+function lookup_box(string $name, string $label, string $searchPlaceholder, array $options, array $selectedIds): string {
+    $checked = $unchecked = [];
+    foreach ($options as $optId => $optName) {
+        if (in_array((int)$optId, $selectedIds, true)) $checked[$optId] = $optName; else $unchecked[$optId] = $optName;
+    }
+    /* Collapsed by default; opened when something in it is selected. The triangle opens / closes it. */
+    $isOpen = (bool)$selectedIds;
+    $boxId = 'lookup-' . preg_replace('/[^a-z0-9_-]/i', '', $name);
+    ob_start(); ?>
+    <div class="applicant-filter-field lookup-field <?= $isOpen ? 'is-open' : '' ?>" data-lookup-box>
+        <button type="button" class="lookup-header" aria-expanded="<?= $isOpen ? 'true' : 'false' ?>" aria-controls="<?= e($boxId) ?>">
+            <span class="applicant-filter-label"><?= e($label) ?> <span class="lookup-count"><?= $selectedIds ? '(' . count($selectedIds) . ' selected)' : '' ?></span></span>
+            <span class="lookup-caret" aria-hidden="true"></span>
+        </button>
+        <div class="lookup-box" id="<?= e($boxId) ?>" <?= $isOpen ? '' : 'hidden' ?>>
+            <input type="text" class="form-control lookup-search" placeholder="<?= e($searchPlaceholder) ?>" autocomplete="off" aria-label="<?= e($searchPlaceholder) ?>">
+            <div class="lookup-list" role="group" aria-label="<?= e($label) ?>">
+                <?php foreach ($checked + $unchecked as $optId => $optName): ?>
+                    <label class="lookup-option" data-text="<?= e(mb_strtolower((string)$optName, 'UTF-8')) ?>">
+                        <input type="checkbox" name="<?= e($name) ?>[]" value="<?= (int)$optId ?>" <?= isset($checked[$optId]) ? 'checked' : '' ?>>
+                        <span><?= e($optName) ?></span>
+                    </label>
+                <?php endforeach; ?>
+                <div class="lookup-empty" hidden>No matches found</div>
+            </div>
+        </div>
+    </div>
+    <?php
+    return (string)ob_get_clean();
+}
+
+$skillOptions = company_lookup_options($pdo, 'skill', 'SkillID', 'SkillName');
+$qualificationOptions = company_lookup_options($pdo, 'qualification', 'QualificationID', 'QualificationName');
+$experienceOptions = company_lookup_options($pdo, 'experience', 'ExperienceID', 'ExperienceName');
+$studyOptions = $pdo->query('SELECT DISTINCT FieldOfStudy FROM userstudy WHERE FieldOfStudy <> \'\' ORDER BY FieldOfStudy')->fetchAll(PDO::FETCH_COLUMN);
+
 // Filters are scoped to the opportunities owned by the logged-in company.
 $selectedOpportunity = (int)($_GET['opportunity_filter'] ?? 0);
 $selectedStatus = trim((string)($_GET['status_filter'] ?? ''));
-$qualificationFilter = trim((string)($_GET['qualification_filter'] ?? ''));
-$skillFilter = trim((string)($_GET['skill_filter'] ?? ''));
+$skillFilter = company_filter_ids($_GET['skill_filter'] ?? [], $skillOptions);
+$qualificationFilter = company_filter_ids($_GET['qualification_filter'] ?? [], $qualificationOptions);
+$experienceFilter = company_filter_ids($_GET['experience_filter'] ?? [], $experienceOptions);
 $studyFilter = trim((string)($_GET['study_filter'] ?? ''));
-$experienceFilter = trim((string)($_GET['experience_filter'] ?? ''));
 if (!in_array($selectedStatus, $validApplicantStatuses, true)) $selectedStatus = '';
 $companyOpportunityIds = array_map(static fn($o) => (int)$o['OpportunityID'], $opportunities);
 if ($selectedOpportunity && !in_array($selectedOpportunity, $companyOpportunityIds, true)) $selectedOpportunity = 0;
 
-$applicantsForDisplay = array_values(array_filter($applicants, static function ($a) use ($selectedOpportunity, $selectedStatus, $qualificationFilter, $skillFilter, $studyFilter, $experienceFilter) {
+$applicantsForDisplay = array_values(array_filter($applicants, static function ($a) use ($selectedOpportunity, $selectedStatus, $skillFilter, $qualificationFilter, $experienceFilter, $studyFilter) {
     if ($selectedOpportunity && (int)$a['OpportunityID'] !== $selectedOpportunity) return false;
     if ($selectedStatus !== '' && (string)($a['ApplicationStatus'] ?? '') !== $selectedStatus) return false;
-    $qualification = applicant_profile_value($a, ['Qualifications']);
-    $skills = applicant_profile_value($a, ['Skills']);
-    $study = applicant_profile_value($a, ['FieldOfStudy']);
-    $experience = applicant_profile_value($a, ['Experience']);
-    if (!applicant_matches_text($qualification, $qualificationFilter)) return false;
-    if (!applicant_matches_text($skills, $skillFilter)) return false;
-    if (!applicant_matches_text($study, $studyFilter)) return false;
-    if (!applicant_matches_text($experience, $experienceFilter)) return false;
+    if (!applicant_has_all($a['SkillIDs'] ?? '', $skillFilter)) return false;
+    if (!applicant_has_all($a['QualificationIDs'] ?? '', $qualificationFilter)) return false;
+    if (!applicant_has_all($a['ExperienceIDs'] ?? '', $experienceFilter)) return false;
+    if (!applicant_matches_text(applicant_profile_value($a, ['FieldOfStudy']), $studyFilter)) return false;
     return true;
 }));
 $applicantsByOpportunity = [];
 foreach ($applicantsForDisplay as $applicantRow) {
     $applicantsByOpportunity[(int)$applicantRow['OpportunityID']][] = $applicantRow;
 }
-$hasApplicantFilters = $selectedOpportunity > 0 || $selectedStatus !== '' || $qualificationFilter !== '' || $skillFilter !== '' || $studyFilter !== '' || $experienceFilter !== '';
+$activeFilterCount = ($selectedOpportunity > 0 ? 1 : 0) + ($selectedStatus !== '' ? 1 : 0) + count($skillFilter) + count($qualificationFilter) + count($experienceFilter) + ($studyFilter !== '' ? 1 : 0);
+$hasApplicantFilters = $activeFilterCount > 0;
 
 $stmt = $pdo->prepare('SELECT COUNT(*) FROM review r JOIN opportunity o ON o.OpportunityID = r.OpportunityID WHERE o.CreatedByCompanyID = ?');
 $stmt->execute([$companyId]);
@@ -270,7 +333,6 @@ function display_date($date): string { return $date ? e(date('M j, Y', strtotime
 $heroTitles = [
     'opportunities' => ['Opportunities', 'Manage the training programs and courses you publish.'],
     'applicants'    => ['Applicants', 'Review candidates and update their application status.'],
-    'engagement'    => ['Engagement', 'See how students interact with your opportunities.'],
     'reviews'       => ['Reviews', 'Read what students are saying about your opportunities.'],
     'profile'       => ['Company Profile', 'Keep your company information up to date.'],
 ];
@@ -370,12 +432,58 @@ $heroTitles = [
 .company-dashboard .empty-state .btn{margin-top:14px}
 
 /* Applicants */
-.company-dashboard .applicant-filter-bar{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:0 0 22px;padding:18px;background:#fff;border:1px solid var(--c-border);border-radius:16px;box-shadow:0 5px 18px rgba(40,26,70,.045)}
-.company-dashboard .applicant-filter-field{display:flex;flex-direction:column;gap:7px;flex:1 1 220px;min-width:180px}
-.company-dashboard .applicant-filter-field label{font-size:.86rem;font-weight:700;color:var(--c-text)}
+/* Applicants: filter sidebar on the left, shown / hidden with the Filters button */
+.company-dashboard .applicants-toolbar{display:flex;align-items:center;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 16px}
+.company-dashboard .applicants-toolbar .filter-toggle{flex-shrink:0}
+.company-dashboard .applicants-toolbar .section-description{margin:0;flex:1 1 320px}
+.company-dashboard .filter-toggle{display:inline-flex;align-items:center;gap:8px}
+.company-dashboard .filter-toggle-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--c-gold);color:#fff;font-size:.74rem;font-weight:800}
+.company-dashboard .applicants-layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:22px;align-items:start}
+.company-dashboard .applicants-layout.filters-hidden{grid-template-columns:minmax(0,1fr)}
+.company-dashboard .applicants-layout.filters-hidden .applicant-filter-panel{display:none}
+.company-dashboard .applicants-results{min-width:0}
+.company-dashboard .applicant-filter-panel{display:flex;flex-direction:column;gap:16px;padding:18px;background:#fff;border:1px solid var(--c-border);border-radius:16px;box-shadow:0 5px 18px rgba(40,26,70,.045);animation:companyFadeUp .3s ease both}
+.company-dashboard .applicant-filter-title{display:flex;align-items:center;gap:9px;margin:0;padding-bottom:12px;border-bottom:1px solid #eee8f4;color:var(--c-text);font-size:1rem;font-weight:750}
+.company-dashboard .applicant-filter-title::before{content:"";display:block;width:5px;height:20px;border-radius:5px;background:var(--c-gold)}
+.company-dashboard .applicant-filter-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.company-dashboard .applicant-filter-field > label,.company-dashboard .applicant-filter-label{font-size:.86rem;font-weight:700;color:var(--c-text)}
 .company-dashboard .applicant-filter-field .form-control{width:100%;min-height:42px;border:1px solid #ddd5e8;border-radius:9px;background:#fff;padding:9px 11px}
-.company-dashboard .applicant-filter-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.company-dashboard .applicant-filter-note{flex-basis:100%;font-size:.8rem;color:var(--c-muted);margin-top:-4px}
+.company-dashboard .applicant-filter-actions{display:flex;gap:8px;align-items:center}
+.company-dashboard .applicant-filter-actions .btn{flex:1}
+.company-dashboard .applicant-filter-note{font-size:.8rem;line-height:1.55;color:var(--c-muted);margin:0}
+.company-dashboard .applicant-view-link{margin-top:6px;font-size:.82rem}
+
+/* Only the filter moves left, into the empty space beside the page; the applicant cards stay in place.
+   The shift is the filter width + gap (312px), or less on screens without enough space on the left. */
+.company-dashboard #tab-applicants{--filter-shift:min(312px, max(0px, calc((100vw - 100%) / 2 - 16px)))}
+.company-dashboard .applicants-toolbar,
+.company-dashboard .applicants-layout{margin-left:calc(-1 * var(--filter-shift))}
+.company-dashboard .applicants-layout.filters-hidden{margin-left:0}
+
+/* Category header with a triangle that opens / closes its list */
+.company-dashboard .lookup-header{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:4px 2px;border:0;background:none;font:inherit;text-align:left;cursor:pointer;border-radius:8px}
+.company-dashboard .lookup-header:hover .applicant-filter-label{color:var(--c-purple)}
+.company-dashboard .lookup-header:focus-visible{outline:2px solid var(--c-purple);outline-offset:2px}
+.company-dashboard .lookup-caret{flex-shrink:0;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid var(--c-purple);transition:transform .2s ease}
+.company-dashboard .lookup-field.is-open .lookup-caret{transform:rotate(180deg)}
+.company-dashboard .lookup-box[hidden]{display:none!important}
+
+/* Checkbox list box with search: shows 5 items, scroll for the rest */
+.company-dashboard .lookup-count{color:var(--c-purple);font-weight:650;font-size:.8rem}
+.company-dashboard .lookup-box{padding:8px;border:1px solid #ddd5e8;border-radius:10px;background:#fff;animation:companyFadeUp .2s ease both}
+.company-dashboard .lookup-box:focus-within{border-color:var(--c-purple);box-shadow:0 0 0 3px rgba(57,38,95,.10)}
+.company-dashboard .applicant-filter-field .lookup-box .lookup-search{min-height:36px;padding:7px 10px;font-size:.85rem}
+.company-dashboard .lookup-list{max-height:180px;margin-top:6px;overflow-y:auto;overscroll-behavior:contain}
+.company-dashboard .lookup-option{display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 8px;border-radius:8px;font-size:.87rem;line-height:1.4;cursor:pointer;overflow-wrap:anywhere}
+.company-dashboard .lookup-option:hover{background:var(--c-lavender)}
+.company-dashboard .lookup-option:has(input:checked){background:#f2ecfa;color:var(--c-purple-dark);font-weight:650}
+.company-dashboard .lookup-option[hidden]{display:none!important}
+.company-dashboard .lookup-option input{width:16px;height:16px;flex-shrink:0;margin:0;accent-color:var(--c-purple);cursor:pointer}
+.company-dashboard .lookup-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
+@media(max-width:900px){
+  .company-dashboard .applicants-layout{grid-template-columns:minmax(0,1fr)}
+  .company-dashboard .applicants-toolbar,.company-dashboard .applicants-layout{margin-left:0}
+}
 .company-dashboard .applicant-opportunity-card{margin:0 0 22px;border:1px solid var(--c-border);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 5px 18px rgba(40,26,70,.045);animation:companyFadeUp .35s ease both}
 .company-dashboard .applicant-opportunity-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:18px 20px;background:#f7f4fb;border-bottom:1px solid #e6deef}
 .company-dashboard .applicant-opportunity-heading h3{margin:0;color:var(--c-purple);font-size:1.05rem}
@@ -448,9 +556,7 @@ $heroTitles = [
   .company-dashboard .stat-grid{grid-template-columns:1fr;gap:12px}
   .company-dashboard .stat-card{min-height:130px}
   .company-dashboard .dashboard-card{padding:16px}
-  .company-dashboard .applicant-filter-bar{padding:14px}
-  .company-dashboard .applicant-filter-field{flex-basis:100%;min-width:0}
-  .company-dashboard .applicant-filter-actions{width:100%}
+  .company-dashboard .applicant-filter-panel{padding:14px}
   .company-dashboard .applicant-opportunity-heading{align-items:flex-start;padding:15px;flex-direction:column}
   .company-dashboard .applicant-status-form{min-width:0}
   .company-dashboard .applicant-status-form .status-select{min-width:115px}
@@ -473,7 +579,7 @@ $heroTitles = [
 <header id="site-header" class="site-header">
   <div class="container">
     <a href="../index.php" class="brand" style="text-decoration:none"><img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent"> Ufuq</a>
-    <nav class="nav-links"><a href="dashboard-company.php?tab=overview" class="<?= in_array($activeTab, ['overview', 'engagement', 'reviews', 'profile'], true) ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
+    <nav class="nav-links"><a href="dashboard-company.php?tab=overview" class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
     <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
   </div>
 </header>
@@ -515,7 +621,7 @@ $heroTitles = [
           <div class="stat-top"><span class="stat-title">Total Applicants</span><span class="stat-icon" aria-hidden="true"><?= icon('userMale', 22) ?></span></div>
           <div><span class="stat-number"><?= $totalApplicants ?></span><span class="stat-note">Across all your opportunities.</span></div>
         </a>
-        <a href="dashboard-company.php?tab=engagement" class="dashboard-card stat-card">
+        <a href="dashboard-company.php?tab=opportunities" class="dashboard-card stat-card">
           <div class="stat-top"><span class="stat-title">Total Views</span><span class="stat-icon" aria-hidden="true"><?= icon('goal', 22) ?></span></div>
           <div><span class="stat-number"><?= (int)$totalViews ?></span><span class="stat-note">Visits to your opportunity pages.</span></div>
         </a>
@@ -563,10 +669,20 @@ $heroTitles = [
 
     <!-- Applicants -->
     <section class="tab-panel <?= $activeTab === 'applicants' ? 'active' : '' ?>" id="tab-applicants">
-      <p class="section-description" style="margin:0 0 16px">Applicants are grouped under each opportunity. Use the filters to find candidates by qualification, skills, field of study, experience, or application status.</p>
+      <div class="applicants-toolbar">
+        <button type="button" class="btn btn-outline btn-sm filter-toggle" id="filterToggle" aria-controls="applicantFilterPanel" aria-expanded="true">
+          <span class="filter-toggle-text">Hide Filters</span>
+          <?php if ($activeFilterCount > 0): ?><span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span><?php endif; ?>
+        </button>
+        <p class="section-description">Applicants are grouped under each opportunity. Use the filters to find candidates by skills, qualifications, experience, field of study, or application status.</p>
+      </div>
 
-      <form method="get" class="applicant-filter-bar">
+      <div class="applicants-layout" id="applicantsLayout">
+
+      <!-- Filter sidebar (left) -->
+      <form method="get" class="applicant-filter-panel" id="applicantFilterPanel">
         <input type="hidden" name="tab" value="applicants">
+        <h3 class="applicant-filter-title">Filter Applicants</h3>
         <div class="applicant-filter-field">
           <label for="opportunity_filter">Opportunity</label>
           <select id="opportunity_filter" name="opportunity_filter" class="form-control">
@@ -585,26 +701,21 @@ $heroTitles = [
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="applicant-filter-field">
-          <label for="qualification_filter">Qualification</label>
-          <input id="qualification_filter" name="qualification_filter" class="form-control" value="<?= e($qualificationFilter) ?>" placeholder="e.g. Bachelor's Degree, Cisco CCNA">
-        </div>
-        <div class="applicant-filter-field">
-          <label for="skill_filter">Skill</label>
-          <input id="skill_filter" name="skill_filter" class="form-control" value="<?= e($skillFilter) ?>" placeholder="e.g. Python, SQL">
-        </div>
+        <?= lookup_box('skill_filter', 'Skills', 'Search skills...', $skillOptions, $skillFilter) ?>
+        <?= lookup_box('qualification_filter', 'Qualifications', 'Search qualifications...', $qualificationOptions, $qualificationFilter) ?>
+        <?= lookup_box('experience_filter', 'Experience', 'Search experience...', $experienceOptions, $experienceFilter) ?>
         <div class="applicant-filter-field">
           <label for="study_filter">Field of Study</label>
-          <input id="study_filter" name="study_filter" class="form-control" value="<?= e($studyFilter) ?>" placeholder="e.g. Computer Science">
+          <input id="study_filter" name="study_filter" class="form-control" list="studyOptions" autocomplete="off" value="<?= e($studyFilter) ?>" placeholder="Type or choose a field">
+          <datalist id="studyOptions">
+            <?php foreach ($studyOptions as $studyOption): ?><option value="<?= e($studyOption) ?>"></option><?php endforeach; ?>
+          </datalist>
         </div>
-        <div class="applicant-filter-field">
-          <label for="experience_filter">Experience</label>
-          <input id="experience_filter" name="experience_filter" class="form-control" value="<?= e($experienceFilter) ?>" placeholder="e.g. Volunteering, Web Development">
-        </div>
-        <div class="applicant-filter-actions"><button type="submit" class="btn btn-primary">Apply Filters</button><a href="dashboard-company.php?tab=applicants" class="btn btn-ghost">Reset</a></div>
-        <div class="applicant-filter-note">Text filters match part of the information saved in the applicant's profile.</div>
+        <div class="applicant-filter-actions"><button type="submit" class="btn btn-primary">Apply</button><a href="dashboard-company.php?tab=applicants" class="btn btn-ghost">Reset</a></div>
+        <p class="applicant-filter-note">When several skills, qualifications or experiences are selected, only applicants who have all of them are shown.</p>
       </form>
 
+      <div class="applicants-results">
       <?php if (!$opportunities): ?>
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Publish an opportunity first. Applicants will appear under each opportunity when they apply through Ufuq.</p><a href="opportunity-form.php" class="btn btn-primary">Add Opportunity</a></div>
       <?php elseif (!$applicantsForDisplay && $hasApplicantFilters): ?>
@@ -629,22 +740,9 @@ $heroTitles = [
                 <tr>
                   <td>
                     <strong><?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? '')) ?: 'Unknown') ?></strong>
-                    <?php
-                      $appQualification = applicant_profile_value($a, ['Qualifications']);
-                      $appSkills = applicant_profile_value($a, ['Skills']);
-                      $appStudy = applicant_profile_value($a, ['FieldOfStudy']);
-                      $appExperience = applicant_profile_value($a, ['Experience']);
-                    ?>
-                    <?php if ($appQualification !== '' || $appSkills !== '' || $appStudy !== '' || $appExperience !== ''): ?>
-                      <details class="applicant-profile-details"><summary>View profile details</summary>
-                        <div class="applicant-profile-grid">
-                          <?php if ($appQualification !== ''): ?><span><strong>Qualification:</strong> <?= e($appQualification) ?></span><?php endif; ?>
-                          <?php if ($appSkills !== ''): ?><span><strong>Skills:</strong> <?= e($appSkills) ?></span><?php endif; ?>
-                          <?php if ($appStudy !== ''): ?><span><strong>Field of study:</strong> <?= e($appStudy) ?></span><?php endif; ?>
-                          <?php if ($appExperience !== ''): ?><span><strong>Experience:</strong> <?= e($appExperience) ?></span><?php endif; ?>
-                        </div>
-                      </details>
-                    <?php endif; ?>
+                    <?php $appStudy = applicant_profile_value($a, ['FieldOfStudy']); ?>
+                    <?php if ($appStudy !== ''): ?><div class="company-help"><?= e($appStudy) ?></div><?php endif; ?>
+                    <a href="applicant-profile.php?id=<?= (int)$a['UserID'] ?>&amp;opportunity=<?= (int)$a['OpportunityID'] ?>" class="dashboard-link applicant-view-link">View Profile &rarr;</a>
                   </td>
                   <td><?= display_date($a['SubmissionDate']) ?></td>
                   <td>
@@ -668,19 +766,8 @@ $heroTitles = [
           </article>
         <?php endforeach; ?>
       <?php endif; ?>
-    </section>
-
-    <!-- Engagement -->
-    <section class="tab-panel <?= $activeTab === 'engagement' ? 'active' : '' ?>" id="tab-engagement">
-      <p class="section-description" style="margin:0 0 16px">How students are interacting with each of your opportunities.</p>
-      <?php if (!$opportunities): ?>
-        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('goal', 30, 'icon-muted') ?></div><h3>No engagement data yet</h3><p>Publish an opportunity to start tracking applications and favorites.</p></div>
-      <?php else: ?>
-        <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Opportunity</th><th>Views</th><th>Applications</th><th>Favorites</th></tr></thead><tbody>
-        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= (int)($o['ViewsCount'] ?? 0) ?></td><td><?= (int)$o['ApplicationCount'] ?></td><td><?= (int)$o['FavouriteCount'] ?></td></tr><?php endforeach; ?>
-        </tbody></table></div>
-        <p class="company-help" style="margin-top:10px">Views come from the ViewCount column of each opportunity, which increases when students open the opportunity details page.</p>
-      <?php endif; ?>
+      </div>
+      </div>
     </section>
 
     <!-- Reviews -->
@@ -803,6 +890,64 @@ function toggleProfileForm(id) {
     target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
+
+/* Applicants: show / hide the filter sidebar (remembered in this browser). */
+(function () {
+  const layout = document.getElementById('applicantsLayout');
+  const btn = document.getElementById('filterToggle');
+  if (!layout || !btn) return;
+  const text = btn.querySelector('.filter-toggle-text');
+  function setHidden(hidden) {
+    layout.classList.toggle('filters-hidden', hidden);
+    btn.setAttribute('aria-expanded', String(!hidden));
+    text.textContent = hidden ? 'Show Filters' : 'Hide Filters';
+    try { localStorage.setItem('ufuqApplicantFiltersHidden', hidden ? '1' : '0'); } catch (e) {}
+  }
+  let hidden = false;
+  try { hidden = localStorage.getItem('ufuqApplicantFiltersHidden') === '1'; } catch (e) {}
+  setHidden(hidden);
+  btn.addEventListener('click', function () { setHidden(!layout.classList.contains('filters-hidden')); });
+})();
+
+/* Checkbox list boxes (skills / qualifications / experience): search and selected count. */
+document.querySelectorAll('[data-lookup-box]').forEach(function (field) {
+  const search = field.querySelector('.lookup-search');
+  const options = field.querySelectorAll('.lookup-option');
+  const boxes = field.querySelectorAll('input[type="checkbox"]');
+  const empty = field.querySelector('.lookup-empty');
+  const countEl = field.querySelector('.lookup-count');
+  const header = field.querySelector('.lookup-header');
+  const box = field.querySelector('.lookup-box');
+
+  /* Triangle: open / close this category's list. */
+  header.addEventListener('click', function () {
+    const willOpen = box.hidden;
+    box.hidden = !willOpen;
+    field.classList.toggle('is-open', willOpen);
+    header.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) search.focus();
+  });
+
+  function updateCount() {
+    const n = Array.from(boxes).filter(function (b) { return b.checked; }).length;
+    countEl.textContent = n ? '(' + n + ' selected)' : '';
+  }
+
+  search.addEventListener('input', function () {
+    const q = search.value.trim().toLowerCase();
+    let visible = 0;
+    options.forEach(function (opt) {
+      const match = opt.dataset.text.indexOf(q) !== -1;
+      opt.hidden = !match;
+      if (match) visible++;
+    });
+    empty.hidden = visible !== 0;
+  });
+  /* Enter in the search box should not submit the filters. */
+  search.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  field.addEventListener('change', updateCount);
+  updateCount();
+});
 </script>
 </body>
 </html>

@@ -10,9 +10,10 @@ require __DIR__ . '/auth.php';
 require_login('Administrator');
 $adminId = (int)$_SESSION['user_id'];
 
-$tab = $_GET['tab'] ?? 'verification';
-if (!in_array($tab, ['verification', 'opportunities'], true)) {
-    $tab = 'verification';
+/* Tabs: dashboard (overview numbers), verification (companies), opportunities (admin-added). */
+$tab = $_GET['tab'] ?? 'dashboard';
+if (!in_array($tab, ['dashboard', 'verification', 'opportunities'], true)) {
+    $tab = 'dashboard';
 }
 
 /* ---------- Delete opportunity (admin-created only) ---------- */
@@ -44,12 +45,22 @@ $reviewed = $pdo->query("
     ORDER BY CompanyID
 ")->fetchAll();
 
+/* Admin-added opportunities, with views (ViewCount) and how many users saved them (favorite). */
 $opps = $pdo->query("
-    SELECT OpportunityID, Title, OpportunityProvider, Type, Status
-    FROM opportunity
-    WHERE CreatedByAdminID IS NOT NULL
-    ORDER BY OpportunityID DESC
+    SELECT o.OpportunityID, o.Title, o.OpportunityProvider, o.Type, o.Status,
+           o.ViewCount AS ViewsCount,
+           (SELECT COUNT(*) FROM favorite f WHERE f.OpportunityID = o.OpportunityID) AS FavouriteCount
+    FROM opportunity o
+    WHERE o.CreatedByAdminID IS NOT NULL
+    ORDER BY o.OpportunityID DESC
 ")->fetchAll();
+
+/* Platform-wide numbers (company and admin opportunities). */
+$platform = $pdo->query("
+    SELECT SUM(Status = 'Open') AS OpenCount,
+           COALESCE(SUM(ViewCount), 0) AS TotalViews
+    FROM opportunity
+")->fetch();
 
 /* ---------- Overview numbers ---------- */
 $pendingCount  = count($pending);
@@ -60,8 +71,28 @@ foreach ($reviewed as $r) {
     elseif ($r['Status'] === 'Rejected') $rejectedCount++;
 }
 $oppCount = count($opps);
+$openCount = (int)($platform['OpenCount'] ?? 0);
+$totalViews = (int)($platform['TotalViews'] ?? 0);
 
-$adminName = trim($_SESSION['admin_name'] ?? 'Hatoon');
+/* Name of the logged-in administrator, from the administrator table. */
+$st = $pdo->prepare('SELECT FirstName FROM administrator WHERE AdminID = ?');
+$st->execute([$adminId]);
+$adminName = trim((string)($st->fetchColumn() ?: '')) ?: 'Admin';
+
+/* Dashboard panels: most viewed opportunities on the platform, and the newest companies waiting for review. */
+$topOpportunities = $pdo->query("
+    SELECT o.OpportunityID, o.Title, o.OpportunityProvider, o.ViewCount,
+           (SELECT COUNT(*) FROM favorite f WHERE f.OpportunityID = o.OpportunityID) AS FavouriteCount,
+           (SELECT COUNT(*) FROM application a WHERE a.OpportunityID = o.OpportunityID) AS ApplicationCount
+    FROM opportunity o
+    ORDER BY o.ViewCount DESC, o.OpportunityID DESC
+    LIMIT 10
+")->fetchAll();
+/* The panel shows the top 3; the triangle opens the rest (up to 10). */
+$rankVisible = 3;
+$maxViews = max(1, (int)($topOpportunities[0]['ViewCount'] ?? 0));
+$pendingPreview = array_slice($pending, 0, 3);
+$companyTotal = $pendingCount + $verifiedCount + $rejectedCount;
 
 admin_header('Admin Dashboard', $tab);
 ?>
@@ -263,7 +294,8 @@ admin_header('Admin Dashboard', $tab);
 /* Overview stat cards */
 .admin-dashboard .stat-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    /* 6 cards: two even rows of 3 */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px;
     margin-bottom: 28px;
 }
@@ -555,9 +587,426 @@ admin_header('Admin Dashboard', $tab);
     background: linear-gradient(90deg, transparent, #dcd2e9, transparent);
 }
 
+/* ===== Dashboard tab ===== */
+
+/* Overview: highlighted card + small cards */
+.admin-dashboard .highlight-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.admin-dashboard .highlight-card {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px;
+    border-radius: 16px;
+    background: linear-gradient(125deg, #281a46 0%, #39265f 55%, #49316f 100%);
+    color: #fff;
+    text-decoration: none;
+    box-shadow: 0 10px 26px rgba(40,26,70,.18);
+    transition: transform .22s ease, box-shadow .22s ease;
+    animation: adminFadeUp .45s ease both;
+}
+
+.admin-dashboard .highlight-card::after {
+    content: "";
+    position: absolute;
+    right: -60px;
+    top: -60px;
+    width: 170px;
+    height: 170px;
+    border: 26px solid rgba(255,255,255,.07);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.admin-dashboard .highlight-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 32px rgba(40,26,70,.24);
+}
+
+.admin-dashboard .highlight-title {
+    display: block;
+    color: rgba(255,255,255,.85);
+    font-size: .95rem;
+    font-weight: 700;
+}
+
+.admin-dashboard .highlight-number {
+    display: block;
+    margin: 10px 0 4px;
+    color: #fff;
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.admin-dashboard .highlight-note {
+    display: block;
+    color: rgba(255,255,255,.75);
+    font-size: .86rem;
+    line-height: 1.6;
+}
+
+.admin-dashboard .highlight-btn {
+    align-self: flex-start;
+    padding: 9px 15px;
+    border-radius: 9px;
+    background: var(--admin-gold);
+    color: #fff;
+    font-size: .86rem;
+    font-weight: 700;
+    transition: background .18s ease;
+}
+
+.admin-dashboard .highlight-card:hover .highlight-btn {
+    background: #c48b2c;
+}
+
+.admin-dashboard .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.admin-dashboard .mini-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    color: var(--admin-text);
+    text-decoration: none;
+    animation: adminFadeUp .45s ease both;
+}
+
+a.mini-card:hover {
+    transform: translateY(-3px);
+}
+
+.admin-dashboard .mini-card .stat-icon {
+    width: 38px;
+    height: 38px;
+    font-weight: 800;
+}
+
+.admin-dashboard .mini-number {
+    display: block;
+    color: var(--admin-purple);
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.admin-dashboard .mini-title {
+    display: block;
+    margin-top: 2px;
+    font-size: .84rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+/* Panels */
+.admin-dashboard .panel-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    align-items: start;
+    gap: 18px;
+    margin-top: 6px;
+}
+
+.admin-dashboard .panel-card {
+    padding: 20px 22px;
+    animation: adminFadeUp .5s ease both;
+}
+
+.admin-dashboard .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #eee8f4;
+}
+
+.admin-dashboard .panel-head h3 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.admin-dashboard .panel-head h3::before {
+    content: "";
+    display: block;
+    width: 5px;
+    height: 19px;
+    border-radius: 5px;
+    background: var(--admin-gold);
+}
+
+.admin-dashboard .panel-hint {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--admin-lavender);
+    color: var(--admin-purple);
+    font-size: .74rem;
+    font-weight: 700;
+}
+
+.admin-dashboard .panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-dashboard .panel-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 12px;
+    border: 1px solid #eee9f5;
+    border-radius: 12px;
+    background: #faf9fd;
+}
+
+.admin-dashboard .company-icon.small {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+}
+
+.admin-dashboard .panel-list-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-dashboard .panel-list-main strong {
+    color: var(--admin-text);
+    font-size: .92rem;
+    overflow-wrap: anywhere;
+}
+
+.admin-dashboard .panel-list-main span {
+    color: var(--admin-muted);
+    font-size: .8rem;
+}
+
+.admin-dashboard .panel-empty {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px;
+    border: 1px dashed #d8cde7;
+    border-radius: 13px;
+    background: #fbf9fd;
+}
+
+.admin-dashboard .panel-empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 14px;
+    background: var(--admin-lavender);
+    color: var(--admin-purple);
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.admin-dashboard .panel-empty strong {
+    color: var(--admin-text);
+    font-size: .95rem;
+}
+
+.admin-dashboard .panel-empty p {
+    margin: 3px 0 0;
+    color: var(--admin-muted);
+    font-size: .84rem;
+}
+
+/* Triangle beside "Most Viewed Opportunities": opens / closes the rest of the list */
+.admin-dashboard .panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 4px 2px 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.admin-dashboard .panel-toggle {
+    color: inherit;
+}
+
+.admin-dashboard .panel-toggle:hover {
+    color: var(--admin-purple);
+}
+
+.admin-dashboard .panel-toggle:focus-visible {
+    outline: 2px solid var(--admin-purple);
+    outline-offset: 3px;
+}
+
+.admin-dashboard .panel-caret {
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 7px solid var(--admin-purple);
+    transition: transform .2s ease;
+}
+
+.admin-dashboard .panel-toggle[aria-expanded="true"] .panel-caret {
+    transform: rotate(180deg);
+}
+
+.admin-dashboard .rank-list li[hidden] {
+    display: none;
+}
+
+.admin-dashboard .rank-list li.rank-extra:not([hidden]) {
+    animation: adminFadeUp .25s ease both;
+}
+
+.admin-dashboard .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* Most viewed ranking */
+.admin-dashboard .rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-dashboard .rank-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.admin-dashboard .rank-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    background: var(--admin-lavender);
+    color: var(--admin-purple);
+    font-size: .82rem;
+    font-weight: 800;
+}
+
+.admin-dashboard .rank-list li:first-child .rank-num {
+    background: var(--admin-gold);
+    color: #fff;
+}
+
+.admin-dashboard .rank-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-dashboard .rank-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.admin-dashboard .rank-top strong {
+    overflow: hidden;
+    color: var(--admin-text);
+    font-size: .9rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-dashboard .rank-views {
+    flex-shrink: 0;
+    color: var(--admin-purple);
+    font-size: .8rem;
+    font-weight: 750;
+}
+
+.admin-dashboard .rank-bar {
+    height: 6px;
+    margin: 7px 0 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #efeaf6;
+}
+
+.admin-dashboard .rank-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #49316f, #7a5aa6);
+}
+
+.admin-dashboard .rank-meta {
+    color: var(--admin-muted);
+    font-size: .78rem;
+    overflow-wrap: anywhere;
+}
+
+/* Clickable company names in Reviewed Companies */
+.admin-dashboard .reviewed-company-link {
+    color: var(--admin-purple);
+    font-weight: 700;
+    text-decoration: none;
+    text-underline-offset: 3px;
+}
+
+.admin-dashboard .reviewed-company-link:hover,
+.admin-dashboard .reviewed-company-link:focus-visible {
+    color: var(--admin-purple-dark);
+    text-decoration: underline;
+}
+
 @media (max-width: 900px) {
     .admin-dashboard .stat-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-dashboard .highlight-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-dashboard .panel-grid {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
@@ -580,6 +1029,10 @@ admin_header('Admin Dashboard', $tab);
 
     .admin-dashboard .stat-card {
         min-height: 130px;
+    }
+
+    .admin-dashboard .mini-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .admin-dashboard .dashboard-card {
@@ -614,19 +1067,6 @@ admin_header('Admin Dashboard', $tab);
         scroll-behavior: auto !important;
     }
 }
-
-/* Clickable company names in Reviewed Companies */
-.admin-dashboard .reviewed-company-link {
-    color: var(--admin-purple);
-    font-weight: 700;
-    text-decoration: none;
-    text-underline-offset: 3px;
-}
-.admin-dashboard .reviewed-company-link:hover,
-.admin-dashboard .reviewed-company-link:focus-visible {
-    color: var(--admin-purple-dark);
-    text-decoration: underline;
-}
 </style>
 
 <div class="admin-dashboard">
@@ -638,8 +1078,7 @@ admin_header('Admin Dashboard', $tab);
             <div>
                 <div class="welcome-label">
                     <span aria-hidden="true">✦</span>
-                    <span>Ufuq Administration</span>
-                </div>
+                    <span>Ufuq Administration Space</span>                </div>
 
                 <h1>Welcome back, <?= e($adminName) ?>!</h1>
 
@@ -674,60 +1113,170 @@ admin_header('Admin Dashboard', $tab);
             </div>
         <?php endif; ?>
 
-        <!-- Overview -->
-        <section class="stat-grid" aria-label="Dashboard overview">
+        <?php if ($tab === 'dashboard'): ?>
 
-            <a href="dashboard-admin.php?tab=verification"
-               class="dashboard-card stat-card <?= $tab === 'verification' ? 'is-active' : '' ?>">
-                <div class="stat-top">
-                    <span class="stat-title">Pending Review</span>
-                    <span class="stat-icon" aria-hidden="true"><?= icon('company', 22) ?></span>
-                </div>
+        <!-- Dashboard: overview -->
+        <div class="card-heading-row">
+            <div>
+                <h2 class="section-heading" style="margin-bottom:7px;">Overview</h2>
+                <p class="section-description" style="margin:0;">
+                    A quick look at companies and opportunities on the platform.
+                </p>
+            </div>
+        </div>
+
+        <!-- Overview cards: Pending Review highlighted, the rest as small cards -->
+        <section class="highlight-grid" aria-label="Dashboard overview">
+
+            <a href="dashboard-admin.php?tab=verification" class="highlight-card">
                 <div>
-                    <span class="stat-number"><?= $pendingCount ?></span>
-                    <span class="stat-note">Companies waiting for verification.</span>
+                    <span class="highlight-title">Pending Review</span>
+                    <span class="highlight-number"><?= $pendingCount ?></span>
+                    <span class="highlight-note">
+                        <?= $pendingCount === 0
+                            ? 'No companies are waiting for your decision.'
+                            : ($pendingCount === 1 ? 'Company waiting for your decision.' : 'Companies waiting for your decision.') ?>
+                    </span>
                 </div>
+                <span class="highlight-btn">Review companies &rarr;</span>
             </a>
 
-            <a href="dashboard-admin.php?tab=verification"
-               class="dashboard-card stat-card">
-                <div class="stat-top">
-                    <span class="stat-title">Verified Companies</span>
+            <div class="mini-grid">
+
+                <a href="dashboard-admin.php?tab=verification" class="dashboard-card mini-card">
                     <span class="stat-icon" aria-hidden="true">✓</span>
-                </div>
-                <div>
-                    <span class="stat-number"><?= $verifiedCount ?></span>
-                    <span class="stat-note">Approved to publish opportunities.</span>
-                </div>
-            </a>
+                    <div>
+                        <span class="mini-number"><?= $verifiedCount ?></span>
+                        <span class="mini-title">Verified</span>
+                    </div>
+                </a>
 
-            <a href="dashboard-admin.php?tab=verification"
-               class="dashboard-card stat-card">
-                <div class="stat-top">
-                    <span class="stat-title">Rejected Companies</span>
+                <a href="dashboard-admin.php?tab=verification" class="dashboard-card mini-card">
                     <span class="stat-icon" aria-hidden="true">✕</span>
-                </div>
-                <div>
-                    <span class="stat-number"><?= $rejectedCount ?></span>
-                    <span class="stat-note">Registrations that were declined.</span>
-                </div>
-            </a>
+                    <div>
+                        <span class="mini-number"><?= $rejectedCount ?></span>
+                        <span class="mini-title">Rejected</span>
+                    </div>
+                </a>
 
-            <a href="dashboard-admin.php?tab=opportunities"
-               class="dashboard-card stat-card <?= $tab === 'opportunities' ? 'is-active' : '' ?>">
-                <div class="stat-top">
-                    <span class="stat-title">My Opportunities</span>
-                    <span class="stat-icon" aria-hidden="true"><?= icon('training', 22) ?></span>
-                </div>
-                <div>
-                    <span class="stat-number"><?= $oppCount ?></span>
-                    <span class="stat-note">Opportunities added by the admin.</span>
-                </div>
-            </a>
+                <a href="dashboard-admin.php?tab=verification" class="dashboard-card mini-card">
+                    <span class="stat-icon" aria-hidden="true"><?= icon('company', 20) ?></span>
+                    <div>
+                        <span class="mini-number"><?= $companyTotal ?></span>
+                        <span class="mini-title">All Companies</span>
+                    </div>
+                </a>
 
+                <div class="dashboard-card mini-card">
+                    <span class="stat-icon" aria-hidden="true"><?= icon('training', 20) ?></span>
+                    <div>
+                        <span class="mini-number"><?= $openCount ?></span>
+                        <span class="mini-title">Open Opportunities</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-card mini-card">
+                    <span class="stat-icon" aria-hidden="true"><?= icon('goal', 20) ?></span>
+                    <div>
+                        <span class="mini-number"><?= number_format($totalViews) ?></span>
+                        <span class="mini-title">Total Views</span>
+                    </div>
+                </div>
+
+                <a href="dashboard-admin.php?tab=opportunities" class="dashboard-card mini-card">
+                    <span class="stat-icon" aria-hidden="true"><?= icon('training', 20) ?></span>
+                    <div>
+                        <span class="mini-number"><?= $oppCount ?></span>
+                        <span class="mini-title">My Opportunities</span>
+                    </div>
+                </a>
+
+            </div>
         </section>
 
-        <?php if ($tab === 'verification'): ?>
+        <!-- Panels -->
+        <div class="panel-grid">
+
+            <section class="dashboard-card panel-card">
+                <div class="panel-head">
+                    <h3>Waiting for Review</h3>
+                    <a href="dashboard-admin.php?tab=verification" class="dashboard-link">View all &rarr;</a>
+                </div>
+
+                <?php if (!$pendingPreview): ?>
+                    <div class="panel-empty">
+                        <span class="panel-empty-icon" aria-hidden="true">✓</span>
+                        <div>
+                            <strong>All caught up</strong>
+                            <p>No companies are waiting for review.</p>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <ul class="panel-list">
+                        <?php foreach ($pendingPreview as $c): ?>
+                            <li>
+                                <span class="company-icon small" aria-hidden="true"><?= icon('company', 18, 'icon-primary') ?></span>
+                                <div class="panel-list-main">
+                                    <strong><?= e($c['CompanyName']) ?></strong>
+                                    <span><?= e($c['IndustrySector']) ?> &middot; <?= e($c['Location']) ?></span>
+                                </div>
+                                <a href="admin-company-review.php?id=<?= (int)$c['CompanyID'] ?>" class="btn btn-outline btn-sm">Review</a>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </section>
+
+            <section class="dashboard-card panel-card">
+                <div class="panel-head">
+                    <?php if (count($topOpportunities) > $rankVisible): ?>
+                        <h3>
+                            <button type="button" class="panel-toggle" id="rankToggle" aria-expanded="false" aria-controls="rankList">
+                                Most Viewed Opportunities
+                                <span class="panel-caret" aria-hidden="true"></span>
+                                <span class="visually-hidden">Show more opportunities</span>
+                            </button>
+                        </h3>
+                    <?php else: ?>
+                        <h3>Most Viewed Opportunities</h3>
+                    <?php endif; ?>
+                    <span class="panel-hint">Whole platform</span>
+                </div>
+
+                <?php if (!$topOpportunities): ?>
+                    <div class="panel-empty">
+                        <span class="panel-empty-icon" aria-hidden="true">✦</span>
+                        <div>
+                            <strong>No opportunities yet</strong>
+                            <p>Views will appear here once opportunities are published.</p>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <ol class="rank-list" id="rankList">
+                        <?php foreach ($topOpportunities as $i => $o): ?>
+                            <li <?= $i >= $rankVisible ? 'class="rank-extra" hidden' : '' ?>>
+                                <span class="rank-num"><?= $i + 1 ?></span>
+                                <div class="rank-main">
+                                    <div class="rank-top">
+                                        <strong title="<?= e($o['Title']) ?>"><?= e($o['Title']) ?></strong>
+                                        <span class="rank-views"><?= number_format((int)$o['ViewCount']) ?> <?= (int)$o['ViewCount'] === 1 ? 'view' : 'views' ?></span>
+                                    </div>
+                                    <div class="rank-bar" aria-hidden="true"><span style="width:<?= round((int)$o['ViewCount'] / $maxViews * 100, 2) ?>%"></span></div>
+                                    <div class="rank-meta">
+                                        <?= e($o['OpportunityProvider']) ?>
+                                        &middot; <?= (int)$o['FavouriteCount'] ?> <?= (int)$o['FavouriteCount'] === 1 ? 'favorite' : 'favorites' ?>
+                                        &middot; <?= (int)$o['ApplicationCount'] ?> <?= (int)$o['ApplicationCount'] === 1 ? 'application' : 'applications' ?>
+                                    </div>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ol>
+                <?php endif; ?>
+            </section>
+
+        </div>
+
+        <?php elseif ($tab === 'verification'): ?>
 
             <!-- Pending Review -->
             <section class="dashboard-section">
@@ -905,6 +1454,8 @@ admin_header('Admin Dashboard', $tab);
                                     <th>Company</th>
                                     <th>Type</th>
                                     <th>Status</th>
+                                    <th>Views</th>
+                                    <th>Favorites</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -926,6 +1477,10 @@ admin_header('Admin Dashboard', $tab);
                                                 <?= e($o['Status']) ?>
                                             </span>
                                         </td>
+
+                                        <td><strong><?= (int)$o['ViewsCount'] ?></strong></td>
+
+                                        <td><strong><?= (int)$o['FavouriteCount'] ?></strong></td>
 
                                         <td>
                                             <div class="admin-action-buttons">
@@ -979,5 +1534,21 @@ admin_header('Admin Dashboard', $tab);
 
     </div>
 </div>
+
+<script>
+/* Most Viewed Opportunities: the triangle shows / hides the rest of the list. */
+(function () {
+    const toggle = document.getElementById('rankToggle');
+    if (!toggle) return;
+    const extras = document.querySelectorAll('#rankList .rank-extra');
+    const label = toggle.querySelector('.visually-hidden');
+    toggle.addEventListener('click', function () {
+        const open = toggle.getAttribute('aria-expanded') !== 'true';
+        extras.forEach(function (li) { li.hidden = !open; });
+        toggle.setAttribute('aria-expanded', String(open));
+        label.textContent = open ? 'Show fewer opportunities' : 'Show more opportunities';
+    });
+})();
+</script>
 
 <?php admin_footer(); ?>

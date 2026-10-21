@@ -37,6 +37,10 @@ $v = [
     'start_date' => '',
     'end_date' => '',
     'application_deadline' => '',
+    'application_open_date' => '',
+    'screening_date' => '',
+    'interview_date' => '',
+    'acceptance_date' => '',
     'price_status' => 'Unknown',
     'price' => ''
 ];
@@ -44,7 +48,6 @@ $v = [
 $skillIds = [];
 $qualificationIds = [];
 $experienceIds = [];
-$timelineRows = [];
 $errors = [];
 $requiredEmpty = false;
 
@@ -117,58 +120,76 @@ function opp_sync_links(PDO $pdo, int $opportunityId, string $linkTable, string 
     }
 }
 
-/* Timeline stages live in the `timeline` table (TimelineID, OpportunityID, TimelineName, TimelineDate).
-   The forms post them as timeline_name[] / timeline_date[]. A row left completely empty is ignored. */
-function opp_posted_timeline($names, $dates, ?string &$error): array
+/* Timeline stages are columns of `opportunity`: ApplicationOpenDate, ApplicationDeadLine,
+   ScreeningDate, InterviewDate and AcceptanceDate. An empty date is saved as NULL.
+   The order matches the CHECK constraints in the database:
+   open <= deadline <= screening / interview / acceptance <= start date. */
+const TIMELINE_FIELDS = [
+    'application_open_date' => 'Application opening',
+    'application_deadline'  => 'Application deadline',
+    'screening_date'        => 'Initial screening',
+    'interview_date'        => 'Interview',
+    'acceptance_date'       => 'Acceptance',
+];
+
+function opp_valid_date(string $date): bool
 {
-    $rows = [];
-    $names = is_array($names) ? array_values($names) : [];
-    $dates = is_array($dates) ? array_values($dates) : [];
-    $count = max(count($names), count($dates));
+    $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+    return $parsed && $parsed->format('Y-m-d') === $date;
+}
 
-    for ($i = 0; $i < $count; $i++) {
-        $name = trim((string)($names[$i] ?? ''));
-        $date = trim((string)($dates[$i] ?? ''));
+/* Returns [field => message]. $required lists the stages that must not be empty. */
+function opp_timeline_errors(array $dates, string $start, array $required): array
+{
+    $errors = [];
 
-        if ($name === '' && $date === '') {
+    foreach (TIMELINE_FIELDS as $key => $_) {
+        $date = $dates[$key] ?? '';
+        if ($date === '') {
+            if (in_array($key, $required, true)) {
+                $errors[$key] = 'This field is required.';
+            }
+        } elseif (!opp_valid_date($date)) {
+            $errors[$key] = 'Please enter a valid date.';
+        }
+    }
+
+    $has = function (string $key) use (&$errors, $dates): bool {
+        return ($dates[$key] ?? '') !== '' && !isset($errors[$key]);
+    };
+    $start = opp_valid_date($start) ? $start : '';
+
+    if ($has('application_deadline') && $start !== '' && $dates['application_deadline'] > $start) {
+        $errors['application_deadline'] = 'Application deadline should be on or before the start date.';
+    }
+
+    if ($has('application_open_date')) {
+        if ($has('application_deadline') && $dates['application_open_date'] > $dates['application_deadline']) {
+            $errors['application_open_date'] = 'Applications must open on or before the application deadline.';
+        } elseif ($start !== '' && $dates['application_open_date'] > $start) {
+            $errors['application_open_date'] = 'Applications must open on or before the start date.';
+        }
+    }
+
+    $prev = null;
+    foreach (['screening_date', 'interview_date', 'acceptance_date'] as $key) {
+        if (!$has($key)) {
             continue;
         }
-
-        if ($name === '' || $date === '') {
-            $error ??= 'Each timeline stage needs both a name and a date.';
-        } elseif (mb_strlen($name, 'UTF-8') > 100) {
-            $error ??= 'Timeline stage names must not exceed 100 characters.';
-        } else {
-            $parsed = DateTime::createFromFormat('!Y-m-d', $date);
-            if (!$parsed || $parsed->format('Y-m-d') !== $date) {
-                $error ??= 'Please enter valid timeline dates.';
-            }
+        $label = TIMELINE_FIELDS[$key];
+        if ($has('application_deadline') && $dates[$key] < $dates['application_deadline']) {
+            $errors[$key] = "$label must be on or after the application deadline.";
+        } elseif ($start !== '' && $dates[$key] > $start) {
+            $errors[$key] = "$label must be on or before the start date.";
+        } elseif ($prev !== null && $dates[$key] < $dates[$prev]) {
+            $errors[$key] = $label . ' must be on or after the ' . strtolower(TIMELINE_FIELDS[$prev]) . '.';
         }
-
-        $rows[] = ['name' => $name, 'date' => $date];
+        if (!isset($errors[$key])) {
+            $prev = $key;
+        }
     }
 
-    return $rows;
-}
-function opp_load_timeline(PDO $pdo, int $opportunityId): array
-{
-    $stmt = $pdo->prepare('SELECT TimelineName, TimelineDate FROM timeline WHERE OpportunityID = ? ORDER BY TimelineDate, TimelineID');
-    $stmt->execute([$opportunityId]);
-    $rows = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $rows[] = ['name' => (string)$row['TimelineName'], 'date' => (string)$row['TimelineDate']];
-    }
-    return $rows;
-}
-/* Replace the timeline rows of one opportunity. */
-function opp_sync_timeline(PDO $pdo, int $opportunityId, array $rows): void
-{
-    usort($rows, fn($a, $b) => strcmp($a['date'], $b['date']));
-    $pdo->prepare('DELETE FROM timeline WHERE OpportunityID = ?')->execute([$opportunityId]);
-    $ins = $pdo->prepare('INSERT INTO timeline (OpportunityID, TimelineName, TimelineDate) VALUES (?, ?, ?)');
-    foreach ($rows as $row) {
-        $ins->execute([$opportunityId, $row['name'], $row['date']]);
-    }
+    return $errors;
 }
 
 /* Searchable multi-select dropdown. Selected items are shown as chips below it. */
@@ -214,6 +235,10 @@ if ($editing) {
         'start_date' => $editing['StartDate'] ?? '',
         'end_date' => $editing['EndDate'] ?? '',
         'application_deadline' => $editing['ApplicationDeadLine'] ?? '',
+        'application_open_date' => $editing['ApplicationOpenDate'] ?? '',
+        'screening_date' => $editing['ScreeningDate'] ?? '',
+        'interview_date' => $editing['InterviewDate'] ?? '',
+        'acceptance_date' => $editing['AcceptanceDate'] ?? '',
         /* Price status is stored in PriceStatus and the amount in Retail. */
         'price_status' => in_array($editing['PriceStatus'] ?? '', ['Paid', 'Free', 'Unknown'], true)
             ? $editing['PriceStatus']
@@ -226,7 +251,6 @@ if ($editing) {
     $skillIds = opp_selected_ids($pdo, 'opportunityskill', 'SkillID', $editId);
     $qualificationIds = opp_selected_ids($pdo, 'opportunityqualification', 'QualificationID', $editId);
     $experienceIds = opp_selected_ids($pdo, 'opportunityexperience', 'ExperienceID', $editId);
-    $timelineRows = opp_load_timeline($pdo, $editId);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -247,13 +271,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v['price'] = '';
     }
 
-    /* Timeline is optional here; a stage needs both a name and a date. */
-    $timelineError = null;
-    $timelineRows = opp_posted_timeline($_POST['timeline_name'] ?? [], $_POST['timeline_date'] ?? [], $timelineError);
-    if ($timelineError) {
-        $errors['timeline'] = $timelineError;
-    }
-
     $badSkill = $badQualification = $badExperience = false;
     $skillIds = opp_posted_ids($_POST['skills'] ?? [], $skillOptions, $badSkill);
     $qualificationIds = opp_posted_ids($_POST['qualifications'] ?? [], $qualificationOptions, $badQualification);
@@ -269,7 +286,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'location',
         'start_date',
         'end_date',
-        'application_deadline',
         'external_url'
     ] as $k) {
         if ($v[$k] === '') {
@@ -355,18 +371,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['end_date'] = 'End date must be after the start date.';
     }
 
-    /* Paid needs an amount (> 0); Free is stored as 0; Unknown as NULL (the price field stays empty). */
+    /* Timeline: Application Opens and Application Deadline are required; the other stages are optional.
+       The dates must follow the order of the stages. */
+    $timelineDates = [];
+    foreach (TIMELINE_FIELDS as $k => $_) {
+        $timelineDates[$k] = $v[$k];
+    }
+    if ($v['application_open_date'] === '' || $v['application_deadline'] === '') {
+        $requiredEmpty = true;
+    }
+    $errors += opp_timeline_errors($timelineDates, $v['start_date'], ['application_open_date', 'application_deadline']);
+
+    /* Paid needs an amount (0 = paid, price not known yet); Free is stored as 0; Unknown as NULL (the price field stays empty). */
     $price = null;
 
     if (!in_array($v['price_status'], ['Paid', 'Free', 'Unknown'], true)) {
         $errors['price_status'] = 'Please select a price status.';
     } elseif ($v['price_status'] === 'Paid') {
         if (
-            !preg_match('/^\d{1,8}(\.\d{1,2})?$/', $v['price']) ||
-            (float)$v['price'] <= 0
+            !preg_match('/^\d{1,8}(\.\d{1,2})?$/', $v['price'])
         ) {
             $errors['price'] =
-                'A valid price amount greater than 0 is required when the status is Paid.';
+                'Enter the price when the status is Paid, or 0 if the price is not known yet.';
         } else {
             $price = number_format((float)$v['price'], 2, '.', '');
         }
@@ -388,7 +414,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $v['external_url'],
                 $v['start_date'],
                 $v['end_date'],
-                $v['application_deadline'],
+                /* Empty timeline dates are saved as NULL. */
+                $v['application_open_date'] ?: null,
+                $v['application_deadline'] ?: null,
+                $v['screening_date'] ?: null,
+                $v['interview_date'] ?: null,
+                $v['acceptance_date'] ?: null,
                 $v['location'],
                 $v['industry_sector'],
                 $v['price_status'],
@@ -402,8 +433,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      SET Title = ?, Description = ?, Type = ?,
                          ApplicationMethod = ?, OpportunityProvider = ?,
                          ExternalURL = ?, StartDate = ?, EndDate = ?,
-                         ApplicationDeadLine = ?, Location = ?,
-                         IndustrySector = ?, PriceStatus = ?, Retail = ?
+                         ApplicationOpenDate = ?, ApplicationDeadLine = ?,
+                         ScreeningDate = ?, InterviewDate = ?, AcceptanceDate = ?,
+                         Location = ?, IndustrySector = ?, PriceStatus = ?, Retail = ?
                      WHERE OpportunityID = ? AND CreatedByAdminID IS NOT NULL'
                 )->execute([...$params, $editId]);
 
@@ -413,9 +445,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "INSERT INTO opportunity
                      (Title, Description, Type, ApplicationMethod,
                       OpportunityProvider, ExternalURL, StartDate, EndDate,
-                      ApplicationDeadLine, Location, IndustrySector, PriceStatus, Retail,
+                      ApplicationOpenDate, ApplicationDeadLine,
+                      ScreeningDate, InterviewDate, AcceptanceDate,
+                      Location, IndustrySector, PriceStatus, Retail,
                       Status, CreatedByAdminID)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?)"
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?)"
                 )->execute([...$params, $adminId]);
 
                 $oppId = (int)$pdo->lastInsertId();
@@ -426,7 +460,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             opp_sync_links($pdo, $oppId, 'opportunityskill', 'SkillID', $skillIds);
             opp_sync_links($pdo, $oppId, 'opportunityqualification', 'QualificationID', $qualificationIds);
             opp_sync_links($pdo, $oppId, 'opportunityexperience', 'ExperienceID', $experienceIds);
-            opp_sync_timeline($pdo, $oppId, $timelineRows);
 
             $pdo->commit();
 
@@ -655,7 +688,7 @@ admin_header(
     align-items: start;
   }
 
-  #oppForm .form-row:has(#application_deadline) {
+  #oppForm .form-row.form-row-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -932,7 +965,7 @@ admin_header(
       grid-row: 1;
     }
 
-    #oppForm .form-row:has(#application_deadline) {
+    #oppForm .form-row.form-row-3 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
@@ -948,7 +981,7 @@ admin_header(
     }
 
     #oppForm .form-row,
-    #oppForm .form-row:has(#application_deadline) {
+    #oppForm .form-row.form-row-3 {
       grid-template-columns: minmax(0, 1fr);
       gap: 0;
     }
@@ -1057,7 +1090,7 @@ admin_header(
 <section class="dashboard-hero">
   <div class="container dashboard-hero-inner">
     <div>
-      <div class="welcome-label"><span aria-hidden="true">✦</span><span>Ufuq Admin Space</span></div>
+      <div class="welcome-label"><span aria-hidden="true">✦</span><span>Ufuq Administration Space</span></div>
       <h1><?= $editing ? 'Edit Opportunity' : 'Add Opportunity' ?></h1>
       <p>Add an opportunity on behalf of a company that isn't on the platform yet.</p>
     </div>
@@ -1151,73 +1184,21 @@ admin_header(
     </div>
 
     <div class="form-row">
-    <div class="form-group">
-      <label class="form-label icon-label" for="type">
-        <?= icon('training') ?> Opportunity Type <span class="req">*</span>
-      </label>
-      <select id="type" name="type" required
-              class="form-control <?= inv($errors, 'type') ?>">
-        <option value="">Select type</option>
-        <?php foreach (OPPORTUNITY_TYPES as $t): ?>
-          <option value="<?= e($t) ?>"
-            <?= $v['type'] === $t ? 'selected' : '' ?>>
-            <?= e($t) ?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-      <?= err($errors, 'type') ?>
-    </div>
       <div class="form-group">
-        <label class="form-label icon-label" for="price_status">
-          <?= icon('goal') ?> Price Status
+        <label class="form-label icon-label" for="type">
+          <?= icon('training') ?> Opportunity Type <span class="req">*</span>
         </label>
-        <select id="price_status" name="price_status"
-                class="form-control <?= inv($errors, 'price_status') ?>">
-          <?php foreach (['Paid', 'Free', 'Unknown'] as $ps): ?>
-            <option value="<?= e($ps) ?>"
-              <?= $v['price_status'] === $ps ? 'selected' : '' ?>>
-              <?= e($ps) ?>
+        <select id="type" name="type" required
+                class="form-control <?= inv($errors, 'type') ?>">
+          <option value="">Select type</option>
+          <?php foreach (OPPORTUNITY_TYPES as $t): ?>
+            <option value="<?= e($t) ?>"
+              <?= $v['type'] === $t ? 'selected' : '' ?>>
+              <?= e($t) ?>
             </option>
           <?php endforeach; ?>
         </select>
-        <div class="form-hint">Paid needs a price. Free sets the price to 0. Choose Unknown if the price is not known.</div>
-        <?= err($errors, 'price_status') ?>
-      </div>
-    </div>
-
-      <div class="form-group" id="priceGroup">
-        <label class="form-label icon-label" for="price">
-          <?= icon('goal') ?> Price (SAR) <span class="req" id="priceRequiredMark" style="<?= $v['price_status'] === 'Paid' ? '' : 'display:none;' ?>">*</span>
-        </label>
-        <input type="number" id="price" name="price" min="0" step="0.01"
-               inputmode="decimal" placeholder="0"
-               <?= $v['price_status'] === 'Paid' ? '' : 'disabled' ?>
-               class="form-control <?= inv($errors, 'price') ?>"
-               value="<?= e($v['price']) ?>">
-        <?= err($errors, 'price') ?>
-      </div>
-
-    <div class="form-group">
-      <label class="form-label icon-label">
-        <?= icon('goal') ?> Required Skills <span class="req">*</span>
-      </label>
-
-      <?= lookup_picker('skills', 'Select skills', $skillOptions, $skillIds, isset($errors['skills']), true, '') ?>
-      <?= err($errors, 'skills') ?>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label icon-label" for="duration">
-          <?= icon('clock') ?> Duration
-        </label>
-
-        <input type="text" id="duration" class="form-control"
-               placeholder="—" readonly>
-
-        <div class="form-hint">
-          Calculated automatically from the start and end dates.
-        </div>
+        <?= err($errors, 'type') ?>
       </div>
 
       <div class="form-group">
@@ -1240,7 +1221,67 @@ admin_header(
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="form-label icon-label">
+        <?= icon('goal') ?> Required Skills <span class="req">*</span>
+      </label>
+
+      <?= lookup_picker('skills', 'Select skills', $skillOptions, $skillIds, isset($errors['skills']), true, '') ?>
+      <?= err($errors, 'skills') ?>
+    </div>
+
+    <!-- Qualifications -->
+    <div class="form-group">
+      <label class="form-label icon-label">
+        <?= icon('goal') ?> Qualifications
+      </label>
+
+      <?= lookup_picker('qualifications', 'Select qualifications', $qualificationOptions, $qualificationIds, isset($errors['qualifications']), false, '') ?>
+      <?= err($errors, 'qualifications') ?>
+    </div>
+
+    <!-- Experience -->
+    <div class="form-group">
+      <label class="form-label icon-label">
+        <?= icon('form') ?> Experience
+      </label>
+
+      <?= lookup_picker('experience', 'Select experience', $experienceOptions, $experienceIds, isset($errors['experience']), false, '') ?>
+      <?= err($errors, 'experience') ?>
+    </div>
+
     <div class="form-row">
+      <div class="form-group">
+        <label class="form-label icon-label" for="price_status">
+          <?= icon('goal') ?> Price Status
+        </label>
+        <select id="price_status" name="price_status"
+                class="form-control <?= inv($errors, 'price_status') ?>">
+          <?php foreach (['Paid', 'Free', 'Unknown'] as $ps): ?>
+            <option value="<?= e($ps) ?>"
+              <?= $v['price_status'] === $ps ? 'selected' : '' ?>>
+              <?= e($ps) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <div class="form-hint">If the opportunity is paid but the price is not known, enter 0 as the price.</div>
+        <?= err($errors, 'price_status') ?>
+      </div>
+
+      <div class="form-group" id="priceGroup">
+        <label class="form-label icon-label" for="price">
+          <?= icon('goal') ?> Price (SAR) <span class="req" id="priceRequiredMark" style="<?= $v['price_status'] === 'Paid' ? '' : 'display:none;' ?>">*</span>
+        </label>
+        <input type="number" id="price" name="price" min="0" step="0.01"
+               inputmode="decimal" placeholder="0"
+               <?= $v['price_status'] === 'Paid' ? '' : 'disabled' ?>
+               class="form-control <?= inv($errors, 'price') ?>"
+               value="<?= e($v['price']) ?>">
+        <?= err($errors, 'price') ?>
+      </div>
+    </div>
+
+    <div class="form-row form-row-3">
       <div class="form-group">
         <label class="form-label icon-label" for="start_date">
           <?= icon('calendar') ?> Start Date <span class="req">*</span>
@@ -1266,71 +1307,73 @@ admin_header(
       </div>
 
       <div class="form-group">
-        <label class="form-label icon-label" for="application_deadline">
-          <?= icon('calendar') ?> Application Deadline <span class="req">*</span>
+        <label class="form-label icon-label" for="duration">
+          <?= icon('clock') ?> Duration
         </label>
 
-        <input type="date" id="application_deadline"
-               name="application_deadline" required
-               class="form-control <?= inv($errors, 'application_deadline') ?>"
-               value="<?= e($v['application_deadline']) ?>">
+        <input type="text" id="duration" class="form-control"
+               placeholder="—" readonly>
 
-        <?= err($errors, 'application_deadline') ?>
+        <div class="form-hint">
+          Calculated automatically.
+        </div>
       </div>
     </div>
 
-    <!-- Timeline (optional) -->
-    <div class="form-group" id="timelineGroup">
+    <!-- Timeline (optional), in stage order -->
+    <div class="form-group" id="timelineGroup" style="margin-bottom:0;">
       <label class="form-label icon-label">
         <?= icon('clock') ?> Timeline
       </label>
 
-      <div class="timeline-rows" id="timelineRows">
-        <?php foreach ($timelineRows ?: [['name' => '', 'date' => '']] as $tlRow): ?>
-          <div class="timeline-row">
-            <input type="text" name="timeline_name[]" class="form-control"
-                   maxlength="100" list="timelineNames"
-                   placeholder="Stage name, e.g. Application Opens"
-                   value="<?= e($tlRow['name']) ?>">
-            <input type="date" name="timeline_date[]" class="form-control"
-                   value="<?= e($tlRow['date']) ?>">
-            <button type="button" class="btn btn-ghost timeline-remove"
-                    aria-label="Remove stage">&times;</button>
-          </div>
-        <?php endforeach; ?>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="application_open_date">Application Opens <span class="req">*</span></label>
+          <input type="date" id="application_open_date" name="application_open_date"
+                 class="form-control <?= inv($errors, 'application_open_date') ?>"
+                 value="<?= e($v['application_open_date']) ?>">
+          <?= err($errors, 'application_open_date') ?>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label icon-label" for="application_deadline">
+            <?= icon('calendar') ?> Application Deadline <span class="req">*</span>
+          </label>
+
+          <input type="date" id="application_deadline"
+                 name="application_deadline"
+                 class="form-control <?= inv($errors, 'application_deadline') ?>"
+                 value="<?= e($v['application_deadline']) ?>">
+
+          <?= err($errors, 'application_deadline') ?>
+        </div>
       </div>
 
-      <datalist id="timelineNames"><option value="Application Opens"></option><option value="Application Closes"></option><option value="Initial Screening"></option><option value="Acceptance"></option></datalist>
+      <div class="form-row form-row-3">
+        <div class="form-group">
+          <label class="form-label" for="screening_date">Initial Screening</label>
+          <input type="date" id="screening_date" name="screening_date"
+                 class="form-control <?= inv($errors, 'screening_date') ?>"
+                 value="<?= e($v['screening_date']) ?>">
+          <?= err($errors, 'screening_date') ?>
+        </div>
 
-      <button type="button" class="btn btn-outline" id="timelineAdd">+ Add stage</button>
+        <div class="form-group">
+          <label class="form-label" for="interview_date">Interview</label>
+          <input type="date" id="interview_date" name="interview_date"
+                 class="form-control <?= inv($errors, 'interview_date') ?>"
+                 value="<?= e($v['interview_date']) ?>">
+          <?= err($errors, 'interview_date') ?>
+        </div>
 
-      <div class="form-hint">
-        Optional. Stages of the opportunity, for example Application Opens,
-        Application Closes, Initial Screening and Acceptance.
+        <div class="form-group">
+          <label class="form-label" for="acceptance_date">Acceptance</label>
+          <input type="date" id="acceptance_date" name="acceptance_date"
+                 class="form-control <?= inv($errors, 'acceptance_date') ?>"
+                 value="<?= e($v['acceptance_date']) ?>">
+          <?= err($errors, 'acceptance_date') ?>
+        </div>
       </div>
-
-      <div class="form-error" id="timelineError"
-           style="<?= isset($errors['timeline']) ? 'display:block;' : 'display:none;' ?>"><?= e($errors['timeline'] ?? '') ?></div>
-    </div>
-
-    <!-- Qualifications -->
-    <div class="form-group">
-      <label class="form-label icon-label">
-        <?= icon('goal') ?> Qualifications
-      </label>
-
-      <?= lookup_picker('qualifications', 'Select qualifications', $qualificationOptions, $qualificationIds, isset($errors['qualifications']), false, '') ?>
-      <?= err($errors, 'qualifications') ?>
-    </div>
-
-    <!-- Experience -->
-    <div class="form-group">
-      <label class="form-label icon-label">
-        <?= icon('form') ?> Experience
-      </label>
-
-      <?= lookup_picker('experience', 'Select experience', $experienceOptions, $experienceIds, isset($errors['experience']), false, '') ?>
-      <?= err($errors, 'experience') ?>
     </div>
 
     <div class="flex-between" style="margin-top:24px;">
@@ -1428,18 +1471,14 @@ admin_header(
       return;
     }
 
-    du.value = days < 14
-      ? `${days} day${days === 1 ? "" : "s"}`
-      : days < 63
-        ? `${Math.round(days / 7)} weeks`
-        : `${Math.round(days / 30)} months`;
+    du.value = `${days} day${days === 1 ? "" : "s"}`;
   }
 
   sd.addEventListener("input", updateDuration);
   ed.addEventListener("input", updateDuration);
   updateDuration();
 
-  /* Price: Paid = price required; Free = 0; Unknown = empty. Free and Unknown lock the field (grey). */
+  /* Price: Paid = price required (0 = price not known yet); Free = 0; Unknown = empty. Free and Unknown lock the field (grey). */
   const priceStatus = document.getElementById("price_status");
   const priceGroup = document.getElementById("priceGroup");
   const priceField = document.getElementById("price");
@@ -1468,41 +1507,40 @@ admin_header(
   priceStatus.addEventListener("change", () => syncPrice(true));
   syncPrice(false);
 
-  /* Timeline stages: add / remove rows and check them before submitting. */
-  const timelineRowsEl = document.getElementById('timelineRows');
-  document.getElementById('timelineAdd').addEventListener('click', function () {
-    const row = document.createElement('div');
-    row.className = 'timeline-row';
-    row.innerHTML = '<input type="text" name="timeline_name[]" class="form-control" maxlength="100" list="timelineNames" placeholder="Stage name, e.g. Application Opens"><input type="date" name="timeline_date[]" class="form-control"><button type="button" class="btn btn-ghost timeline-remove" aria-label="Remove stage">&times;</button>';
-    timelineRowsEl.appendChild(row);
-    row.querySelector('input').focus();
-  });
-  timelineRowsEl.addEventListener('click', function (e) {
-    const btn = e.target.closest('.timeline-remove');
-    if (!btn) return;
-    const row = btn.closest('.timeline-row');
-    if (timelineRowsEl.children.length > 1) row.remove();
-    else row.querySelectorAll('input').forEach(function (i) { i.value = ''; i.classList.remove('invalid'); });
-  });
-  /* Returns true when the timeline is invalid. A stage needs a name and a date; at least one stage when required. */
-  function timelineInvalid(required) {
-    let partial = false, complete = 0;
-    timelineRowsEl.querySelectorAll('.timeline-row').forEach(function (row) {
-      const inputs = row.querySelectorAll('input');
-      const nameEl = inputs[0], dateEl = inputs[1];
-      nameEl.classList.remove('invalid'); dateEl.classList.remove('invalid');
-      const hasName = nameEl.value.trim() !== '', hasDate = dateEl.value !== '';
-      if (!hasName && !hasDate) return;
-      if (!hasName || !hasDate) { partial = true; (hasName ? dateEl : nameEl).classList.add('invalid'); return; }
-      complete++;
-    });
-    let msg = '';
-    if (partial) msg = 'Each timeline stage needs both a name and a date.';
-    else if (required && !complete) { msg = 'This field is required.'; timelineRowsEl.querySelector('input').classList.add('invalid'); }
-    const err = document.getElementById('timelineError');
-    err.textContent = msg;
-    err.style.display = msg ? 'block' : 'none';
-    return msg !== '';
+  /* Timeline dates, in stage order: [element id, label]. Same rules as the server:
+     open <= deadline <= screening <= interview <= acceptance <= start date. */
+  const TL_FIELDS = [
+    ['application_open_date', 'Application opening'],
+    ['application_deadline', 'Application deadline'],
+    ['screening_date', 'Initial screening'],
+    ['interview_date', 'Interview'],
+    ['acceptance_date', 'Acceptance']
+  ];
+
+  /* Returns {elementId: message}. `required` lists the ids that must not be empty. */
+  function timelineErrors(fields, required, start) {
+    const val = i => document.getElementById(fields[i][0]).value;
+    const errs = {};
+    fields.forEach(([id], i) => { if (!val(i) && required.includes(id)) errs[id] = 'This field is required.'; });
+    const has = i => val(i) !== '' && !errs[fields[i][0]];
+    const openId = fields[0][0], deadlineId = fields[1][0];
+
+    if (has(1) && start && val(1) > start) errs[deadlineId] = 'Application deadline should be on or before the start date.';
+    if (has(0)) {
+      if (has(1) && val(0) > val(1)) errs[openId] = 'Applications must open on or before the application deadline.';
+      else if (start && val(0) > start) errs[openId] = 'Applications must open on or before the start date.';
+    }
+
+    let prev = -1;
+    for (let i = 2; i < fields.length; i++) {
+      if (!has(i)) continue;
+      const [id, label] = fields[i];
+      if (has(1) && val(i) < val(1)) errs[id] = label + ' must be on or after the application deadline.';
+      else if (start && val(i) > start) errs[id] = label + ' must be on or before the start date.';
+      else if (prev >= 0 && val(i) < val(prev)) errs[id] = label + ' must be on or after the ' + fields[prev][1].toLowerCase() + '.';
+      if (!errs[id]) prev = i;
+    }
+    return errs;
   }
 
   /* Client-side checks before submitting. */
@@ -1544,7 +1582,7 @@ admin_header(
     [
       "external_url", "company_name", "industry_sector", "title",
       "description", "type", "location",
-      "start_date", "end_date", "application_deadline"
+      "start_date", "end_date"
     ].forEach(id => {
       const el = document.getElementById(id);
       const value = el.value.trim();
@@ -1590,11 +1628,11 @@ admin_header(
       }
     }
 
-    /* Paid requires a price amount greater than 0. */
+    /* Paid requires a price (0 is allowed: paid, price not known yet). */
     const priceInput = document.getElementById("price");
     const priceValue = priceInput.value.trim();
     const priceBad = priceStatus.value === "Paid" &&
-      (!/^\d{1,8}(\.\d{1,2})?$/.test(priceValue) || parseFloat(priceValue) <= 0);
+      !/^\d{1,8}(\.\d{1,2})?$/.test(priceValue);
 
     let priceError = priceGroup.querySelector(".form-error");
 
@@ -1610,7 +1648,7 @@ admin_header(
       }
       priceError.style.display = "block";
       priceError.textContent =
-        "A valid price amount greater than 0 is required when the status is Paid.";
+        "Enter the price when the status is Paid, or 0 if the price is not known yet.";
     } else {
       priceInput.classList.remove("invalid");
       if (priceError) {
@@ -1618,10 +1656,20 @@ admin_header(
       }
     }
 
-    /* Timeline is optional, but a stage needs both a name and a date. */
-    if (timelineInvalid(false) && !firstInvalid) {
-      firstInvalid = document.querySelector("#timelineRows .invalid");
+    /* Timeline: Application Opens and Application Deadline are required; the other stages are optional. The dates must be in order. */
+    const tlRequired = ["application_open_date", "application_deadline"];
+    const tlErrs = timelineErrors(TL_FIELDS, tlRequired, sd.value);
+    if (tlRequired.some(id => document.getElementById(id).value === "")) {
+      emptyRequired = true;
     }
+    TL_FIELDS.forEach(([id]) => {
+      const el = document.getElementById(id);
+      if (tlErrs[id]) {
+        setError(el, tlErrs[id]);
+      } else {
+        clearError(el);
+      }
+    });
 
     /* Banner, same wording as the server-side one. */
     if (emptyRequired) {

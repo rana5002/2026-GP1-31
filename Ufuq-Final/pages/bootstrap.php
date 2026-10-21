@@ -60,6 +60,7 @@ function admin_header(string $title, string $active): void { ?>
       Ufuq
     </a>
     <nav class="nav-links">
+      <a href="dashboard-admin.php?tab=dashboard" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
       <a href="dashboard-admin.php?tab=verification" class="<?= $active === 'verification' ? 'active' : '' ?>">Company Verification</a>
       <a href="dashboard-admin.php?tab=opportunities" class="<?= $active === 'opportunities' ? 'active' : '' ?>">Manage Opportunities</a>
     </nav>

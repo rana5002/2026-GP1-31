@@ -51,9 +51,23 @@ function detail_date($date): string
     }
 }
 
-function detail_is_open($status, $deadline): bool
+/* True when the opening date is set and still in the future. */
+function detail_not_open_yet($openDate): bool
+{
+    return !empty($openDate)
+        && $openDate !== '0000-00-00'
+        && strtotime((string) $openDate) !== false
+        && strtotime((string) $openDate) > strtotime(date('Y-m-d'));
+}
+
+function detail_is_open($status, $deadline, $openDate = null): bool
 {
     if (strcasecmp(trim((string) $status), 'Open') !== 0) {
+        return false;
+    }
+
+    /* Applications have not opened yet. */
+    if (detail_not_open_yet($openDate)) {
         return false;
     }
 
@@ -172,8 +186,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
         elseif ($action === 'apply') {
             $status = $opp['Status'] ?? '';
             $deadline = $opp['ApplicationDeadLine'] ?? null;
+            $openDate = $opp['ApplicationOpenDate'] ?? null;
 
-            if (!detail_is_open($status, $deadline)) {
+            if (!detail_is_open($status, $deadline, $openDate)) {
                 $_SESSION['detail_message'] =
                     'This opportunity is not currently open for applications.';
             } else {
@@ -380,22 +395,39 @@ if ($opp) {
     }
 }
 
-/* ---------- Opportunity timeline (table `timeline`) ---------- */
+/* ---------- Opportunity timeline (columns of `opportunity`) ----------
+   Only the stages that have a date are shown. When at least one stage exists,
+   the start and end of the opportunity are added to complete the line. */
 $timelineSteps = [];
 
 if ($opp) {
-    try {
-        $stmt = $pdo->prepare(
-            'SELECT TimelineName, TimelineDate
-             FROM timeline
-             WHERE OpportunityID = ?
-             ORDER BY TimelineDate, TimelineID'
-        );
+    $timelineColumns = [
+        'ApplicationOpenDate' => 'Application Opens',
+        'ApplicationDeadLine' => 'Application Closes',
+        'ScreeningDate'       => 'Initial Screening',
+        'InterviewDate'       => 'Interview',
+        'AcceptanceDate'      => 'Acceptance',
+    ];
 
-        $stmt->execute([$opportunityId]);
-        $timelineSteps = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        $timelineSteps = [];
+    foreach ($timelineColumns as $column => $stageName) {
+        $stageDate = (string) ($opp[$column] ?? '');
+
+        if ($stageDate !== '' && $stageDate !== '0000-00-00') {
+            $timelineSteps[] = ['TimelineName' => $stageName, 'TimelineDate' => $stageDate];
+        }
+    }
+
+    if ($timelineSteps) {
+        if (!empty($opp['StartDate'])) {
+            $timelineSteps[] = ['TimelineName' => 'Starts', 'TimelineDate' => (string) $opp['StartDate']];
+        }
+
+        if (!empty($opp['EndDate'])) {
+            $timelineSteps[] = ['TimelineName' => 'Ends', 'TimelineDate' => (string) $opp['EndDate']];
+        }
+
+        /* Stable sort keeps the stage order when two stages share a date. */
+        usort($timelineSteps, static fn($a, $b) => strcmp($a['TimelineDate'], $b['TimelineDate']));
     }
 }
 
@@ -432,13 +464,29 @@ $status = $opp['Status'] ?? 'Not specified';
 $method = $opp['ApplicationMethod'] ?? '';
 $externalURL = $opp['ExternalURL'] ?? '';
 $deadline = $opp['ApplicationDeadLine'] ?? null;
+$openDate = $opp['ApplicationOpenDate'] ?? null;
 $startDate = $opp['StartDate'] ?? null;
 $endDate = $opp['EndDate'] ?? null;
+/* Duration is a generated column (days between StartDate and EndDate). */
+$durationDays = isset($opp['Duration']) && $opp['Duration'] !== null ? (int) $opp['Duration'] : null;
+
+/* Optional weekly schedule (ScheduleDays is a SET such as "Sun,Mon,Tue"). */
+$scheduleDays = array_values(array_filter(explode(',', (string) ($opp['ScheduleDays'] ?? ''))));
+$scheduleStart = (string) ($opp['ScheduleStartTime'] ?? '');
+$scheduleEnd = (string) ($opp['ScheduleEndTime'] ?? '');
+$scheduleTime = ($scheduleStart !== '' && $scheduleEnd !== '')
+    ? date('g:i A', strtotime($scheduleStart)) . ' – ' . date('g:i A', strtotime($scheduleEnd))
+    : '';
+
+/* Selection stages are the Initial Screening / Interview steps of the timeline. */
+$hasSelectionDates = !empty($opp['ScreeningDate']) || !empty($opp['InterviewDate']);
+$isPlatformApply = trim((string) ($opp['ApplicationMethod'] ?? '')) === 'Apply Through Platform';
 $priceStatus = $opp['PriceStatus'] ?? 'Unknown';
 $retail = $opp['Retail'] ?? null;
 $industrySector = $opp['IndustrySector'] ?? 'Not specified';
 
-$isOpen = detail_is_open($status, $deadline);
+$isOpen = detail_is_open($status, $deadline, $openDate);
+$notOpenYet = strcasecmp(trim((string) $status), 'Open') === 0 && detail_not_open_yet($openDate);
 
 $message = (string) ($_SESSION['detail_message'] ?? '');
 unset($_SESSION['detail_message']);
@@ -1260,6 +1308,51 @@ user_header($me, 'Opportunity Details', 'browse');
             }
         }
 
+        /* ---------- Schedule ---------- */
+        .schedule-days {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .schedule-day {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 48px;
+            padding: 7px 10px;
+            border: 1px solid #e6e1ee;
+            border-radius: 10px;
+            background: #faf9fd;
+            color: #b2abbd;
+            font-size: 12.5px;
+            font-weight: 750;
+        }
+
+        .schedule-day.is-on {
+            border-color: var(--detail-purple);
+            background: var(--detail-purple);
+            color: #fff;
+        }
+
+        .schedule-time {
+            margin: 12px 0 0;
+            color: var(--detail-text) !important;
+            font-weight: 700;
+        }
+
+        .tl-note {
+            margin-top: 18px;
+            padding: 12px 14px;
+            border: 1px dashed #ded5ec;
+            border-radius: 10px;
+            background: #faf9fd;
+        }
+
+        .tl-note p {
+            margin: 0;
+        }
+
         /* ---------- Timeline ---------- */
         .tl-scroll {
             padding: 6px 2px 4px;
@@ -1552,6 +1645,13 @@ user_header($me, 'Opportunity Details', 'browse');
                     </div>
 
                     <div class="field-view">
+                        <div class="field-label">Duration</div>
+                        <?= $durationDays !== null && $durationDays >= 0
+                            ? detail_h(number_format($durationDays) . ' ' . ($durationDays === 1 ? 'day' : 'days'))
+                            : 'Not specified' ?>
+                    </div>
+
+                    <div class="field-view">
                         <div class="field-label">Application Deadline</div>
                         <?= detail_h(detail_date($deadline)) ?>
                     </div>
@@ -1566,12 +1666,13 @@ user_header($me, 'Opportunity Details', 'browse');
 
                         <?php if ($priceStatus === 'Free'): ?>
                             Free
-                        <?php elseif ($priceStatus === 'Paid' && $retail !== null && $retail !== ''): ?>
+                        <?php elseif ($priceStatus === 'Paid' && $retail !== null && $retail !== '' && (float) $retail > 0): ?>
                             <?= detail_h(number_format((float) $retail, 2)) ?> SAR
                         <?php elseif ($priceStatus === 'Paid'): ?>
-                            Paid
+                            <?php /* Paid with price 0 = paid, but the price is not known yet. */ ?>
+                            Paid (price not specified)
                         <?php else: ?>
-                            Not specified
+                            Price not specified
                         <?php endif; ?>
                     </div>
 
@@ -1630,6 +1731,31 @@ user_header($me, 'Opportunity Details', 'browse');
                                 <?php endforeach; ?>
                             </ol>
                         </div>
+
+                        <?php /* Selection stages are the Initial Screening / Interview steps above.
+                                 Platform opportunities without them say so under the timeline. */ ?>
+                        <?php if ($isPlatformApply && !$hasSelectionDates): ?>
+                            <div class="tl-note">
+                                <p>No additional selection stages are required.</p>
+                            </div>
+                        <?php endif; ?>
+                    </section>
+                <?php endif; ?>
+
+                <!-- Schedule (only when the provider set one; otherwise the start date, end date and duration above apply) -->
+                <?php if ($scheduleDays && $scheduleTime !== ''): ?>
+                    <div class="divider"></div>
+
+                    <section>
+                        <h3>Schedule</h3>
+
+                        <div class="schedule-days">
+                            <?php foreach (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $dayKey): ?>
+                                <span class="schedule-day <?= in_array($dayKey, $scheduleDays, true) ? 'is-on' : '' ?>"><?= detail_h($dayKey) ?></span>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <p class="schedule-time"><?= detail_h($scheduleTime) ?></p>
                     </section>
                 <?php endif; ?>
 
@@ -1732,7 +1858,17 @@ user_header($me, 'Opportunity Details', 'browse');
 
                     <div class="apply-area">
 
-                        <?php if (!$isOpen): ?>
+                        <?php if ($notOpenYet): ?>
+
+                            <button type="button" class="btn btn-outline" disabled>
+                                Opens on <?= detail_h(detail_date($openDate)) ?>
+                            </button>
+
+                            <p class="apply-note">
+                                Applications for this opportunity have not opened yet.
+                            </p>
+
+                        <?php elseif (!$isOpen): ?>
 
                             <button type="button" class="btn btn-outline" disabled>
                                 Applications Closed
@@ -1754,7 +1890,7 @@ user_header($me, 'Opportunity Details', 'browse');
                             </p>
 
                         <?php elseif (
-                            strcasecmp(trim((string) $method), 'Internal') !== 0
+                            trim((string) $method) !== 'Apply Through Platform'
                             && !empty($externalURL)
                         ): ?>
 
