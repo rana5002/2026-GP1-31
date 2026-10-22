@@ -17,3 +17,5 @@ const INDUSTRIES = [
 ];
 
 const CITIES = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk', 'Online'];
+//Type
+const OPPORTUNITY_TYPES = ['Training Program', 'Course'];  

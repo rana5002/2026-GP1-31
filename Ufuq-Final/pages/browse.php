@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/user-layout.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/lists.php';
 
 /* ---------- Database connection ---------- */
 if (!isset($pdo) && isset($db)) {
@@ -106,25 +107,6 @@ function browse_initial($name): string
     }
 
     return strtoupper(substr($name, 0, 1));
-}
-
-/* Clean a list of IDs coming from the query string. */
-function browse_int_list($value): array
-{
-    if (!is_array($value)) {
-        return [];
-    }
-
-    $ids = [];
-
-    foreach ($value as $item) {
-        $id = filter_var($item, FILTER_VALIDATE_INT);
-        if ($id !== false && $id > 0) {
-            $ids[$id] = $id;
-        }
-    }
-
-    return array_values($ids);
 }
 
 /* Clean a list of text values from the query string (a single value is also accepted). */
@@ -238,12 +220,6 @@ if (
         }
     }
 
-    foreach (['skill', 'experience', 'qualification'] as $key) {
-        $ids = browse_int_list($_GET[$key] ?? []);
-        if ($ids) {
-            $returnFilters[$key] = $ids;
-        }
-    }
 
     $returnFilters['msg'] = $favoriteResult;
 
@@ -251,7 +227,7 @@ if (
     exit;
 }
 
-/* ---------- Search (opportunity title) ---------- */
+/* ---------- Search ---------- */
 $search = isset($_GET['q']) && is_string($_GET['q'])
     ? trim($_GET['q']) : '';
 
@@ -261,13 +237,7 @@ if (mb_strlen($search, 'UTF-8') > 150) {
 
 /* ---------- Filters ---------- */
 /* Type, location, sector and duration accept several values (checkbox lists). */
-$sectors = $pdo->query(
-    "SELECT DISTINCT IndustrySector
-     FROM opportunity
-     WHERE IndustrySector IS NOT NULL
-       AND IndustrySector <> ''
-     ORDER BY IndustrySector"
-)->fetchAll(PDO::FETCH_COLUMN);
+$sectors = INDUSTRIES;
 
 $typeFilter = array_values(array_intersect(browse_str_list($_GET['type'] ?? []), OPPORTUNITY_TYPES));
 $locationFilter = array_values(array_intersect(browse_str_list($_GET['location'] ?? []), CITIES));
@@ -284,9 +254,6 @@ $companies = $pdo->query(
 
 $companyFilter = array_values(array_intersect(browse_str_list($_GET['company'] ?? []), $companies));
 
-$skillIds = browse_int_list($_GET['skill'] ?? []);
-$experienceIds = browse_int_list($_GET['experience'] ?? []);
-$qualificationIds = browse_int_list($_GET['qualification'] ?? []);
 
 $allowedDurations = [
     'Up to 14 days',
@@ -300,10 +267,23 @@ $durationFilter = array_values(array_intersect($durationFilter, $allowedDuration
 $where = [];
 $params = [];
 
-/* Search: opportunity title. Companies are chosen in the filter on the side. */
+/* Search by opportunity title or company/provider name. */
 if ($search !== '') {
-    $where[] = 'o.Title LIKE ?';
-    $params[] = '%' . $search . '%';
+    $where[] = "(
+        o.Title LIKE ?
+        OR o.OpportunityProvider LIKE ?
+        OR EXISTS (
+            SELECT 1
+            FROM company c
+            WHERE c.CompanyID = o.CreatedByCompanyID
+              AND c.CompanyName LIKE ?
+        )
+    )";
+
+    $searchTerm = '%' . $search . '%';
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
 }
 
 /* Within one filter: any of the selected values. Between filters: all must match. */
@@ -311,32 +291,13 @@ $listFilters = [
     'o.Type'           => $typeFilter,
     'o.Location'       => $locationFilter,
     'o.IndustrySector' => $sectorFilter,
-    "COALESCE(NULLIF(TRIM(o.OpportunityProvider), ''), (SELECT c.CompanyName FROM company c WHERE c.CompanyID = o.CreatedByCompanyID))" => $companyFilter,
+   
 ];
 
 foreach ($listFilters as $column => $values) {
     if ($values) {
         $where[] = $column . ' IN (' . implode(',', array_fill(0, count($values), '?')) . ')';
         array_push($params, ...$values);
-    }
-}
-
-/* Skills / experience / qualifications: match ANY of the selected items. */
-$relationFilters = [
-    ['ids' => $skillIds,         'table' => 'opportunityskill',         'column' => 'SkillID'],
-    ['ids' => $experienceIds,    'table' => 'opportunityexperience',    'column' => 'ExperienceID'],
-    ['ids' => $qualificationIds, 'table' => 'opportunityqualification', 'column' => 'QualificationID'],
-];
-
-foreach ($relationFilters as $rf) {
-    if ($rf['ids']) {
-        $marks = implode(',', array_fill(0, count($rf['ids']), '?'));
-        $where[] = 'EXISTS (SELECT 1 FROM ' . $rf['table'] . ' rel
-                            WHERE rel.OpportunityID = o.OpportunityID
-                              AND rel.' . $rf['column'] . ' IN (' . $marks . '))';
-        foreach ($rf['ids'] as $id) {
-            $params[] = $id;
-        }
     }
 }
 
@@ -373,19 +334,6 @@ if ($durationFilter) {
     );
 }
 
-/* ---------- Filter lists (types and cities come from the same lists as the opportunity forms) ---------- */
-$skillOptions = $pdo->query(
-    'SELECT SkillID AS id, SkillName AS name FROM skill ORDER BY SkillName'
-)->fetchAll(PDO::FETCH_ASSOC);
-
-$experienceOptions = $pdo->query(
-    'SELECT ExperienceID AS id, ExperienceName AS name FROM experience ORDER BY ExperienceName'
-)->fetchAll(PDO::FETCH_ASSOC);
-
-$qualificationOptions = $pdo->query(
-    'SELECT QualificationID AS id, QualificationName AS name FROM qualification ORDER BY QualificationName'
-)->fetchAll(PDO::FETCH_ASSOC);
-
 /* ---------- Current user's favorites ---------- */
 $favStmt = $pdo->prepare(
     'SELECT OpportunityID
@@ -405,9 +353,6 @@ $hasFilters = (
     || $sectorFilter
     || $durationFilter
     || $companyFilter
-    || $skillIds
-    || $experienceIds
-    || $qualificationIds
 );
 
 /* ---------- Safe filter query string ---------- */
@@ -425,15 +370,6 @@ foreach (['type' => $typeFilter, 'location' => $locationFilter, 'sector' => $sec
     }
 }
 
-if ($skillIds) {
-    $filterQuery['skill'] = $skillIds;
-}
-if ($experienceIds) {
-    $filterQuery['experience'] = $experienceIds;
-}
-if ($qualificationIds) {
-    $filterQuery['qualification'] = $qualificationIds;
-}
 
 $filterAction = 'browse.php';
 
@@ -443,8 +379,7 @@ if ($filterQuery) {
 
 /* Number of active filters, shown on the Filters button. */
 $activeFilterCount = count($typeFilter) + count($locationFilter) + count($sectorFilter)
-    + count($durationFilter) + count($companyFilter)
-    + count($skillIds) + count($experienceIds) + count($qualificationIds);
+    + count($durationFilter) + count($companyFilter);
 
 /* Checkbox list with search, same as the company "Filter Applicants" sidebar.
    Collapsed by default; opened when something in it is selected. The triangle opens / closes it. */
@@ -491,15 +426,6 @@ function browse_lookup_box(string $name, string $label, string $searchPlaceholde
 function browse_pairs(array $values): array
 {
     return array_combine($values, $values) ?: [];
-}
-
-function browse_id_pairs(array $rows): array
-{
-    $out = [];
-    foreach ($rows as $row) {
-        $out[(int)$row['id']] = (string)$row['name'];
-    }
-    return $out;
 }
 
 /* ---------- Header ---------- */
@@ -1684,15 +1610,12 @@ user_header($me, 'Browse', 'browse');
             <h3 class="filter-panel-title">Filter Opportunities</h3>
 
             <?php browse_lookup_box('type', 'Opportunity Type', 'Search types...', browse_pairs(OPPORTUNITY_TYPES), $typeFilter); ?>
-            <?php browse_lookup_box('location', 'Location / City', 'Search cities...', browse_pairs(CITIES), $locationFilter); ?>
+            <?php browse_lookup_box('location', 'City', 'Search cities...', browse_pairs(CITIES), $locationFilter); ?>
             <?php browse_lookup_box('sector', 'Industry Sector', 'Search sectors...', browse_pairs($sectors), $sectorFilter); ?>
             <?php browse_lookup_box('duration', 'Duration', 'Search durations...', browse_pairs($allowedDurations), $durationFilter); ?>
 
-            <?php browse_lookup_box('company', 'Company Name / Provider', 'Search companies...', browse_pairs($companies), $companyFilter); ?>
 
-            <?php browse_lookup_box('skill', 'Skills', 'Search skills...', browse_id_pairs($skillOptions), $skillIds); ?>
-            <?php browse_lookup_box('qualification', 'Qualifications', 'Search qualifications...', browse_id_pairs($qualificationOptions), $qualificationIds); ?>
-            <?php browse_lookup_box('experience', 'Experience', 'Search experience...', browse_id_pairs($experienceOptions), $experienceIds); ?>
+        
 
             <div class="filter-panel-actions">
                 <button type="submit" class="btn btn-primary">Apply Filters</button>
@@ -1723,7 +1646,7 @@ user_header($me, 'Browse', 'browse');
                 </button>
             </div>
 
-            <!-- Search: opportunity title (Enter or the Search button) -->
+            <!-- Search: opportunity or company name (Enter or the Search button) -->
             <form method="GET" action="browse.php" class="dashboard-card search-card" role="search">
                 <?php foreach ($filterQuery as $key => $value): ?>
                     <?php if ($key === 'q') continue; ?>
@@ -1737,9 +1660,9 @@ user_header($me, 'Browse', 'browse');
                     class="form-control"
                     name="q"
                     value="<?= browse_h($search) ?>"
-                    placeholder="Search by opportunity title"
+                    placeholder="Search by opportunity or company name"
                     maxlength="150"
-                    aria-label="Search by opportunity title"
+                    aria-label="Search by opportunity or company name"
                 >
 
                 <button type="submit" class="btn btn-primary">
@@ -1790,7 +1713,7 @@ user_header($me, 'Browse', 'browse');
                     <?= $hasFilters
                         ? 'Try changing your filters or clearing them.'
                         : ($search !== ''
-                            ? 'Try a different opportunity title.'
+                            ? 'Try a different opportunity or company name.'
                             : 'New training programs and courses will appear here when available.') ?>
                 </p>
 

@@ -676,9 +676,11 @@ admin_header('Company Review', 'verification');
             </div>
 
             <div class="document-info">
-                <div class="document-name">
-                    <?= e($c['VerificationDocument']) ?: 'No document uploaded' ?>
-                </div>
+              <div class="document-name">
+    <?= !empty($c['VerificationDocument'])
+        ? 'Company Verification Document'
+        : 'No document uploaded' ?>
+</div>
 
                 <div class="document-caption">
                     Verification document on file

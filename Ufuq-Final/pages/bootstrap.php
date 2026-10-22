@@ -144,8 +144,6 @@ function send_deadline_reminders(PDO $pdo): void {
     }
 }
 
-const OPPORTUNITY_TYPES = ['Training', 'Course'];
-const CITIES = ['Riyadh','Jeddah','Mecca','Medina','Dammam','Khobar','Dhahran','Taif','Abha','Tabuk','Online','Other'];
 
 /* A validation error that belongs to one form field: the page shows it under that field in red. */
 class FieldError extends RuntimeException {

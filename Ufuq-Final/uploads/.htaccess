@@ -1,4 +1,5 @@
+
 Options -Indexes
-<FilesMatch "\.(php[0-9]?|phtml|phar|cgi|pl|py|sh)$">
-    Require all denied
-</FilesMatch>
+
+# Block direct access to uploaded verification documents.
+Require all denied
