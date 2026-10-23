@@ -1,12 +1,15 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/auth.php';
+// Load shared lists used by opportunity forms.
+require_once __DIR__ . '/../includes/lists.php';
 
 require_login('Company');
 $companyId = (int)($_SESSION['user_id'] ?? 0);
 
-$types = defined('OPPORTUNITY_TYPES') ? OPPORTUNITY_TYPES : ['Training', 'Course'];
-$cities = defined('CITIES') ? CITIES : ['Riyadh','Jeddah','Mecca','Medina','Dammam','Khobar','Dhahran','Taif','Abha','Tabuk','Online','Other'];
+
+$types = OPPORTUNITY_TYPES;
+$cities = CITIES;
 
 /* ApplicationMethod values as stored in the database. The buttons keep their labels. */
 const METHOD_LINK   = 'External Link';

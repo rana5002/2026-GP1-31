@@ -6,11 +6,12 @@ error_reporting(E_ALL);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+// Load shared lists used across the platform.
+require_once __DIR__ . '/../includes/lists.php';
 
 $uid = require_user();
 
 /* Allowed values (must match the CHECK constraints in the database) */
-const PROFILE_EDU_STATUSES = ['Student', 'Fresh Graduate', 'Graduate', 'Employee'];
 const PROFILE_DEGREES      = ['High School', 'Diploma', "Bachelor's Degree", "Master's Degree", 'Doctoral Degree'];
 
 function profile_escape($value): string
@@ -186,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Educational status (user.EducationalStatus) */
         if ($action === 'education') {
             $status = trim($_POST['EducationalStatus'] ?? '');
-            if (!in_array($status, PROFILE_EDU_STATUSES, true)) {
+            if (!in_array($status, EDU_STATUSES, true)) {
                 throw new FieldError('educationForm', 'EducationalStatus', 'Please select a valid educational status.');
             }
             $stmt = $pdo->prepare('UPDATE `user` SET EducationalStatus = ? WHERE UserID = ?');
@@ -870,7 +871,7 @@ user_header($me, 'My Profile', '');
                     <div class="form-group">
                         <label class="form-label" for="EducationalStatus">Educational Status</label>
                         <select class="form-control" id="EducationalStatus" name="EducationalStatus" required>
-                            <?php foreach (PROFILE_EDU_STATUSES as $status): ?>
+                            <?php foreach (EDU_STATUSES as $status): ?>
                                 <option value="<?= profile_escape($status) ?>" <?= $me['EducationalStatus'] === $status ? 'selected' : '' ?>><?= profile_escape($status) ?></option>
                             <?php endforeach; ?>
                         </select>

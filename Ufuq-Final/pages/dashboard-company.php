@@ -2,6 +2,8 @@
 
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/auth.php';
+// Load shared dropdown options.
+require_once __DIR__ . '/../includes/lists.php';
 
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
@@ -432,8 +434,10 @@ $openCount = count(array_filter($opportunities, static fn($o) => strtolower((str
 $totalApplicants = count($applicants);
 $totalViews = array_sum(array_map(static fn($o) => (int)($o['ViewsCount'] ?? 0), $opportunities));
 $recentApplicants = array_slice($applicants, 0, 5);
-$industryOptions = ['Technology', 'Education & Training', 'Marketing', 'Administration', 'Media', 'Healthcare', 'Finance', 'Trading', 'Other'];
-$locationOptions = defined('CITIES') ? CITIES : ['Riyadh', 'Jeddah', 'Mecca', 'Medina', 'Dammam', 'Khobar', 'Dhahran', 'Taif', 'Abha', 'Tabuk', 'Online', 'Other'];
+// Use shared lists to keep company profile options consistent.
+$industryOptions = INDUSTRIES;
+$locationOptions = CITIES;
+
 $logo = trim((string)($company['Logo'] ?? ''));
 $logoSrc = $logo === '' ? '' : (str_starts_with($logo, 'http') ? $logo : '../' . ltrim($logo, '/'));
 $companyInitial = strtoupper(substr((string)$company['CompanyName'], 0, 1));
