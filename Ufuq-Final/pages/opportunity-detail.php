@@ -1688,7 +1688,7 @@ user_header($me, 'Opportunity Details', 'browse');
 <div class="detail-page">
     <div class="detail-container">
 
-        <a href="browse.php" class="detail-back">
+        <a href="<?= htmlspecialchars((string)($_SESSION['browse_back'] ?? 'browse.php'), ENT_QUOTES, 'UTF-8') ?>" class="detail-back">
             <span aria-hidden="true">&larr;</span>
             Back to Browse
         </a>
