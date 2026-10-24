@@ -13,7 +13,7 @@ const FIELDS = [
 
 const INDUSTRIES = [
     'Technology', 'Education & Training', 'Marketing', 'Trading', 'Media', 'Administration',
-    'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 'Other',
+    'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 
 ];
 
 
@@ -22,7 +22,7 @@ const CITIES = [
     'Riyadh', 'Jeddah', 'Makkah', 'Madinah', 'Dammam', 'Khobar', 'Dhahran', 'Jubail',
     'Taif', 'Abha', 'Khamis Mushait', 'Tabuk', 'Buraidah', 'Hail', 'Najran', 'Jazan',
     'Yanbu', 'Al Ahsa', 'Qatif', 'Al Kharj', 'Arar', 'Sakaka', 'Al Baha', 'Unaizah',
-    'Other',
+    
 ];
 
 // Opportunity location: Online + all the cities above
