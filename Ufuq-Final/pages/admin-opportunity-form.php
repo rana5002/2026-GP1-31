@@ -1214,7 +1214,7 @@ admin_header(
 
         <select id="location" name="location" required
                 class="form-control <?= inv($errors, 'location') ?>">
-          <option value="">Select city</option>
+          <option value="">Select Location</option>
           <?php foreach (OPPORTUNITY_LOCATIONS as $c): ?>
             <option value="<?= e($c) ?>"
               <?= $v['location'] === $c ? 'selected' : '' ?>>
