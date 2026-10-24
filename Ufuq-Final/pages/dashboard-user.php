@@ -212,6 +212,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!in_array($field, FIELDS, true)) {
                 throw new FieldError('studyForm', 'StudyField', 'Please select a valid field of study.');
             }
+
+             /* "Other": the user types their own field of study */
+            if ($field === 'Other') {
+                $other = trim($_POST['FieldOther'] ?? '');
+                if ($other === '') throw new FieldError('studyForm', 'StudyFieldOther', 'Please enter your field of study.');
+                if (mb_strlen($other) > 100) {
+                    throw new FieldError('studyForm', 'StudyFieldOther', 'Field of study must be 100 characters or fewer.');
+                }
+                $field = $other;
+            }
+
+
             if (!in_array($degree, PROFILE_DEGREES, true)) {
                 throw new FieldError('studyForm', 'StudyDegree', 'Please select a valid degree level.');
             }
@@ -1018,6 +1030,10 @@ user_header($me, 'My Profile', '');
                                      <option value="<?= profile_escape($f) ?>"><?= profile_escape($f) ?></option>
                                          <?php endforeach; ?>
                             </select>
+
+        <input class="form-control profile-hidden" id="StudyFieldOther" name="FieldOther" maxlength="100" placeholder="Enter your field of study" style="margin-top:10px;">   
+
+
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="UniversityName">University / Institution</label>
@@ -1581,6 +1597,20 @@ function cancelImage(inputId, panelId) {
     if (panel) panel.classList.add('profile-hidden');
 }
 
+/* Add Study: choosing "Other" shows a box to type the field of study. */
+document.addEventListener('DOMContentLoaded', function () {
+    const sel = document.getElementById('StudyField');
+    const other = document.getElementById('StudyFieldOther');
+    if (!sel || !other) return;
+    function syncStudyOther() {
+        const show = sel.value === 'Other';
+        other.classList.toggle('profile-hidden', !show);
+        other.required = show;
+        if (!show) { other.value = ''; setFieldError(other, ''); }
+    }
+    sel.addEventListener('change', syncStudyOther);
+    syncStudyOther();
+});
 
 /* Edit an experience / qualification: fill the edit form with the saved values and open it. */
 const EDIT_DATA = {
