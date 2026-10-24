@@ -2,7 +2,7 @@
 // Shared lists: every page uses these, so the choices are the same everywhere.
 // To change a list, change it here only.
 
-const EDU_STATUSES = ['Student', 'Fresh Graduate', 'Employed', 'Job Seeker'];
+const EDU_STATUSES = ['Student', 'Fresh Graduate', 'Graduate', 'Employed', 'Job Seeker'];
 
 // Ufuq is for computing fields only.
 const FIELDS = [

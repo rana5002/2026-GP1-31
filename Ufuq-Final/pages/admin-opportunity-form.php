@@ -30,6 +30,7 @@ if ($editId) {
 $v = [
     'company_name' => '',
     'industry_sector' => '',
+    'industry_other' => '',
     'external_url' => '',
     'title' => '',
     'description' => '',
@@ -52,16 +53,11 @@ $experienceIds = [];
 $errors = [];
 $requiredEmpty = false;
 
-/* Existing sectors, offered as suggestions for the Industry Sector field. */
-try {
-    $sectorOptions = $pdo->query(
-        'SELECT IndustrySector FROM company
-         UNION
-         SELECT IndustrySector FROM opportunity WHERE IndustrySector IS NOT NULL
-         ORDER BY 1'
-    )->fetchAll(PDO::FETCH_COLUMN);
-} catch (Throwable $ignored) {
-    $sectorOptions = [];
+/* Industry sectors and locations come from the shared lists (includes/lists.php).
+   When editing an old opportunity whose value is not in the list, that value is kept as an extra choice. */
+function opp_list_with(array $list, string $current): array
+{
+    return ($current !== '' && !in_array($current, $list, true)) ? array_merge($list, [$current]) : $list;
 }
 
 /**
@@ -228,6 +224,7 @@ if ($editing) {
     $v = [
         'company_name' => $editing['OpportunityProvider'] ?? '',
         'industry_sector' => $editing['IndustrySector'] ?? '',
+        'industry_other' => '',
         'external_url' => $editing['ExternalURL'] ?? '',
         'title' => $editing['Title'] ?? '',
         'description' => $editing['Description'] ?? '',
@@ -248,6 +245,12 @@ if ($editing) {
             ? (string)($editing['Retail'] ?? '')
             : (($editing['PriceStatus'] ?? '') === 'Free' ? '0' : '')
     ];
+
+    /* A sector that is not in the list was typed under "Other": show it that way. */
+    if ($v['industry_sector'] !== '' && !in_array($v['industry_sector'], INDUSTRIES, true)) {
+        $v['industry_other'] = $v['industry_sector'];
+        $v['industry_sector'] = 'Other';
+    }
 
     $skillIds = opp_selected_ids($pdo, 'opportunityskill', 'SkillID', $editId);
     $qualificationIds = opp_selected_ids($pdo, 'opportunityqualification', 'QualificationID', $editId);
@@ -359,9 +362,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (
         $v['location'] !== '' &&
-        !in_array($v['location'], OPPORTUNITY_LOCATIONS, true)
+        !in_array($v['location'], opp_list_with(OPPORTUNITY_LOCATIONS, (string)($editing['Location'] ?? '')), true)
     ) {
-        $errors['location'] = 'Invalid location.';
+        $errors['location'] = 'Please select a location from the list.';
+    }
+
+    /* Industry sector: from the list; "Other" means the admin types the sector. */
+    $industryValue = $v['industry_sector'];
+
+    if ($v['industry_sector'] !== '' && !in_array($v['industry_sector'], INDUSTRIES, true)) {
+        $errors['industry_sector'] = 'Please select an industry sector from the list.';
+    } elseif ($v['industry_sector'] === 'Other') {
+        $industryValue = $v['industry_other'];
+
+        if ($industryValue === '') {
+            $errors['industry_other'] = 'This field is required.';
+            $requiredEmpty = true;
+        } elseif (mb_strlen($industryValue, 'UTF-8') > 50) {
+            $errors['industry_other'] = 'Must not exceed 50 characters.';
+        }
     }
 
     if (
@@ -422,7 +441,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $v['interview_date'] ?: null,
                 $v['acceptance_date'] ?: null,
                 $v['location'],
-                $v['industry_sector'],
+                $industryValue,
                 $v['price_status'],
                 $price
             ];
@@ -535,6 +554,11 @@ admin_header(
     --entry-muted: #777184;
     --entry-surface: #ffffff;
     --entry-background: #f8f6fb;
+  }
+
+  /* Page background: beige, same as the other pages */
+  body {
+    background: #faf6ef;
   }
 
   .page-content.container {
@@ -1073,6 +1097,10 @@ admin_header(
   #oppForm .lookup-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:var(--admin-purple-dark);font-size:.84rem;font-weight:700}
   #oppForm .lookup-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:var(--admin-purple);font-size:1rem;line-height:1;cursor:pointer}
   #oppForm .lookup-chip button:hover{color:var(--entry-error);background:rgba(217,75,86,.09)}
+  /* One-choice drop-down with search (Industry Sector, Location) */
+  #oppForm .search-single .lookup-toggle-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #oppForm .search-single .lookup-option{align-items:center}
+  #oppForm .search-single .lookup-option.is-selected{background:#f2ecfa;color:var(--admin-purple-dark);font-weight:650}
   /* Hero + heading + banner: same look as the company page. */
   .form-banner{padding:12px 16px;border-radius:8px;margin-bottom:16px;background:#fbe6e7;color:#b4232f}
   .dashboard-hero{position:relative;overflow:hidden;padding:38px 0 42px;margin-bottom:28px;background:linear-gradient(125deg,#281a46 0%,#39265f 55%,#49316f 100%);color:#fff}
@@ -1147,16 +1175,23 @@ admin_header(
       <label class="form-label" for="industry_sector">
         Industry Sector <span class="req">*</span>
       </label>
-      <input type="text" id="industry_sector" name="industry_sector"
-             required maxlength="50" list="sectorOptions"
-             class="form-control <?= inv($errors, 'industry_sector') ?>"
-             value="<?= e($v['industry_sector']) ?>">
-      <datalist id="sectorOptions">
-        <?php foreach ($sectorOptions as $sector): ?>
-          <option value="<?= e($sector) ?>"></option>
+      <!-- From the INDUSTRIES list, as a drop-down list with search -->
+      <select id="industry_sector" name="industry_sector" required data-search
+              class="form-control <?= inv($errors, 'industry_sector') ?>">
+        <option value="">Select industry sector</option>
+        <?php foreach (INDUSTRIES as $sector): ?>
+          <option value="<?= e($sector) ?>" <?= $v['industry_sector'] === $sector ? 'selected' : '' ?>><?= e($sector) ?></option>
         <?php endforeach; ?>
-      </datalist>
+      </select>
       <?= err($errors, 'industry_sector') ?>
+
+      <!-- Shown only when "Other" is selected (same idea as the sign-up page) -->
+      <input type="text" id="industry_other" name="industry_other" maxlength="50"
+             class="form-control <?= inv($errors, 'industry_other') ?>"
+             placeholder="Enter the industry sector"
+             style="margin-top:10px;<?= $v['industry_sector'] === 'Other' ? '' : 'display:none;' ?>"
+             value="<?= e($v['industry_other']) ?>">
+      <?= err($errors, 'industry_other') ?>
     </div>
     </div>
 
@@ -1212,10 +1247,11 @@ admin_header(
           <?= icon('location') ?> Location <span class="req">*</span>
         </label>
 
-        <select id="location" name="location" required
+        <!-- Drop-down list with search -->
+        <select id="location" name="location" required data-search
                 class="form-control <?= inv($errors, 'location') ?>">
-          <option value="">Select Location</option>
-          <?php foreach (OPPORTUNITY_LOCATIONS as $c): ?>
+          <option value="">Select location</option>
+          <?php foreach (opp_list_with(OPPORTUNITY_LOCATIONS, (string)($editing['Location'] ?? '')) as $c): ?>
             <option value="<?= e($c) ?>"
               <?= $v['location'] === $c ? 'selected' : '' ?>>
               <?= e($c) ?>
@@ -1462,6 +1498,144 @@ admin_header(
     render();
   });
 
+  /* One-choice drop-down with search: <select data-search> (Industry Sector, Location).
+     The real <select> stays in the form (hidden), so saving and the checks below work the same. */
+  document.querySelectorAll('select[data-search]').forEach(function (select) {
+    const box = document.createElement('div');
+    box.className = 'lookup-picker search-single';
+    box.innerHTML =
+      '<button type="button" class="form-control lookup-toggle" aria-haspopup="listbox" aria-expanded="false">' +
+        '<span class="lookup-toggle-text"></span><span class="lookup-caret" aria-hidden="true">&#9662;</span>' +
+      '</button>' +
+      '<div class="lookup-panel" hidden>' +
+        '<input type="text" class="form-control lookup-search" placeholder="Search..." autocomplete="off">' +
+        '<div class="lookup-list" role="listbox"></div>' +
+        '<div class="lookup-empty" hidden>No matches found</div>' +
+      '</div>';
+    select.insertAdjacentElement('beforebegin', box);
+    select.style.display = 'none';
+
+    const toggle = box.querySelector('.lookup-toggle');
+    const text = box.querySelector('.lookup-toggle-text');
+    const panel = box.querySelector('.lookup-panel');
+    const search = box.querySelector('.lookup-search');
+    const list = box.querySelector('.lookup-list');
+    const empty = box.querySelector('.lookup-empty');
+    const placeholder = (select.options[0] && select.options[0].value === '') ? select.options[0].textContent : 'Select...';
+
+    /* The label now points to the drop-down button. */
+    toggle.id = select.id + 'Toggle';
+    const label = document.querySelector('label[for="' + select.id + '"]');
+    if (label) label.htmlFor = toggle.id;
+
+    Array.from(select.options).forEach(function (opt) {
+      if (opt.value === '') return;
+      const row = document.createElement('div');
+      row.className = 'lookup-option';
+      row.setAttribute('role', 'option');
+      row.dataset.value = opt.value;
+      row.dataset.text = opt.textContent.trim().toLowerCase();
+      row.textContent = opt.textContent.trim();
+      row.addEventListener('click', function () {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+        toggle.focus();
+      });
+      list.appendChild(row);
+    });
+
+    function refresh() {
+      const chosen = select.value !== '' ? select.options[select.selectedIndex].textContent.trim() : '';
+      text.textContent = chosen || placeholder;
+      text.classList.toggle('is-placeholder', chosen === '');
+      list.querySelectorAll('.lookup-option').forEach(function (row) {
+        row.classList.toggle('is-selected', row.dataset.value === select.value);
+      });
+      if (chosen) {
+        select.classList.remove('invalid');
+        const err = select.nextElementSibling;
+        if (err && err.classList.contains('form-error')) err.remove();
+      }
+    }
+
+    function filter() {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      list.querySelectorAll('.lookup-option').forEach(function (row) {
+        const match = row.dataset.text.indexOf(q) !== -1;
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      empty.hidden = shown !== 0;
+    }
+
+    function close() {
+      panel.hidden = true;
+      box.classList.remove('is-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    toggle.addEventListener('click', function () {
+      const willOpen = panel.hidden;
+      document.querySelectorAll('.lookup-picker .lookup-panel').forEach(function (p) {
+        if (p !== panel) { p.hidden = true; p.closest('.lookup-picker').classList.remove('is-open'); }
+      });
+      if (!willOpen) { close(); return; }
+      panel.hidden = false;
+      box.classList.add('is-open');
+      toggle.setAttribute('aria-expanded', 'true');
+      search.value = '';
+      filter();
+      search.focus();
+    });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const first = list.querySelector('.lookup-option:not([hidden])');
+        if (first) first.click();
+      }
+      if (e.key === 'Escape') { close(); toggle.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!box.contains(e.target)) close(); });
+
+    /* Red border on the button when the hidden <select> is marked invalid by the checks. */
+    new MutationObserver(function () {
+      toggle.classList.toggle('invalid', select.classList.contains('invalid'));
+    }).observe(select, { attributes: true, attributeFilter: ['class'] });
+    toggle.classList.toggle('invalid', select.classList.contains('invalid'));
+    select._searchToggle = toggle;
+
+    select.addEventListener('change', refresh);
+    refresh();
+  });
+
+  /* Industry Sector "Other": show the text field to type the sector. */
+  const industrySelect = document.getElementById("industry_sector");
+  const industryOther = document.getElementById("industry_other");
+
+  function toggleIndustryOther() {
+    const isOther = industrySelect.value === "Other";
+    industryOther.style.display = isOther ? "" : "none";
+    if (!isOther) {
+      industryOther.classList.remove("invalid");
+      const err = industryOther.nextElementSibling;
+      if (err && err.classList.contains("form-error")) err.remove();
+    } else if (industryOther.value === "") {
+      industryOther.focus();
+    }
+  }
+
+  industrySelect.addEventListener("change", toggleIndustryOther);
+  industryOther.addEventListener("input", () => {
+    if (industryOther.value.trim() !== "") {
+      industryOther.classList.remove("invalid");
+      const err = industryOther.nextElementSibling;
+      if (err && err.classList.contains("form-error")) err.remove();
+    }
+  });
+
   /* Duration display. */
   const sd = document.getElementById("start_date");
   const ed = document.getElementById("end_date");
@@ -1615,6 +1789,20 @@ admin_header(
       }
     });
 
+    if (industrySelect.value === "Other" && industryOther.value.trim() === "") {
+      emptyRequired = true;
+      industryOther.classList.add("invalid");
+      let otherErr = industryOther.nextElementSibling;
+      if (!otherErr || !otherErr.classList.contains("form-error")) {
+        otherErr = document.createElement("div");
+        otherErr.className = "form-error";
+        industryOther.insertAdjacentElement("afterend", otherErr);
+      }
+      otherErr.style.display = "block";
+      otherErr.textContent = "This field is required.";
+      if (!firstInvalid) firstInvalid = industryOther;
+    }
+
     const endEl = document.getElementById("end_date");
 
     if (
@@ -1694,7 +1882,7 @@ admin_header(
 
     if (firstInvalid) {
       event.preventDefault();
-      firstInvalid.focus();
+      (firstInvalid._searchToggle || firstInvalid).focus();
     }
   });
 </script>
