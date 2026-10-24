@@ -475,18 +475,25 @@ body { background: var(--color-cream); }   /* beige page background*/
   }
   .entry-row:not(.entry-5) { grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)) 36px; }
   .entry-row.entry-5 { grid-template-columns: minmax(0, 1.5fr) repeat(4, minmax(0, 1fr)) 36px; }
+
+  /* User / Company selector: same plum as the Register button */
+  .role-toggle { background: var(--color-soft-bg); }
+  .role-toggle button.active { background: var(--color-plum); color: #fff; box-shadow: 0 4px 12px rgba(68, 56, 77, .22); }
+
   /* optional part (collapsed) */
   .opt-toggle {
     display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
-    padding: 14px 16px; border: 1.5px dashed #9ca3af; border-radius: 10px; background: #fafafa; cursor: pointer;
-    font: inherit; color: inherit; margin-top: 8px;
+    padding: 14px 16px; border: 0; border-radius: 12px; background: transparent; cursor: pointer;
+    font: inherit; color: inherit;
   }
-  .opt-toggle:hover, .opt-toggle[aria-expanded="true"] { border-color: var(--color-primary); }
+  /* the optional part is one card with a straight border: header (click to open / close) + the fields */
+  .opt-card { margin-top: 8px; border: 1.5px solid var(--color-border); border-radius: 12px; background: #fff; }
+  .opt-card:hover, .opt-card:has(.opt-toggle[aria-expanded="true"]) { border-color: var(--color-primary); }
   .opt-toggle .opt-title { display: block; font-weight: 600; }
   .opt-toggle .opt-sub { display: block; font-size: .85rem; color: #6b7280; margin-top: 2px; }
   .opt-toggle .opt-arrow { font-size: 1.2rem; transition: transform .2s; }
   .opt-toggle[aria-expanded="true"] .opt-arrow { transform: rotate(180deg); }
-  .opt-box { margin-top: 18px; }
+  .opt-box { padding: 18px 16px 6px; border-top: 1.5px solid var(--color-border); }
   /* skills: dropdown + chosen skills as removable chips */
   .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .chip {
@@ -507,7 +514,7 @@ body { background: var(--color-cream); }   /* beige page background*/
  
   .add-entry {
     display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px;
-    border: 1.5px dashed #9ca3af; border-radius: 10px; background: transparent;
+    border: 1.5px solid var(--color-border); border-radius: 10px; background: transparent;
     color: #6b7280; font-weight: 600; cursor: pointer;
   }
   .add-entry:hover { border-color: var(--color-primary); color: var(--color-primary); }
@@ -664,6 +671,7 @@ require __DIR__ . '/../includes/header.php';
             <?= errBox($eU, 'uPassword2', 'This field is required.', 'password2') ?>
           </div>
 
+        <div class="opt-card">
         <button type="button" class="opt-toggle" id="optToggle" aria-expanded="<?= $optOpen ? 'true' : 'false' ?>" aria-controls="optBox">
           <span>
             <span class="opt-title">Add more to your profile <small>(optional)</small></span>
@@ -720,6 +728,7 @@ require __DIR__ . '/../includes/header.php';
         </div>
 
         </div><!-- /optBox -->
+        </div><!-- /opt-card -->
 
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px;">Register</button>
       </form>
