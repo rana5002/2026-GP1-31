@@ -41,7 +41,7 @@ $LABELS_USER = ['first_name' => 'First name', 'last_name' => 'Last name', 'email
                 'gender' => 'Gender', 'password' => 'Password', 'password2' => 'Confirm password',
                 'picture' => 'Profile picture', 'experience' => 'Experience', 'qualifications' => 'Qualifications'];
 $LABELS_COMP = ['company_name' => 'Company name', 'email' => 'Email', 'phone' => 'Phone', 'cr_number' => 'CR number',
-                'industry' => 'Industry sector', 'location' => 'Location', 'description' => 'Description',
+                'industry' => 'Industry sector', 'location' => 'City', 'description' => 'Description',
                 'doc' => 'Verification document', 'logo' => 'Logo', 'password' => 'Password',
                 'password2' => 'Confirm password', 'website' => 'Website'];
 
@@ -727,7 +727,7 @@ require __DIR__ . '/../includes/header.php';
             <?= errBox($eC, 'cIndustry', 'This field is required.', 'industry') ?>
           </div>
           <div class="form-group">
-            <label class="form-label icon-label" for="cLocation"><?= form_icon('location') ?> Location / City <?= req() ?></label>
+            <label class="form-label icon-label" for="cLocation"><?= form_icon('location') ?> City <?= req() ?></label>
             <select id="cLocation" name="location" class="form-control<?= inv($eC, 'location') ?>" data-required>
               <option value="">Select&hellip;</option>
               <?php foreach ($CITIES as $c): ?>
