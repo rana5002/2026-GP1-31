@@ -714,7 +714,9 @@ user_header($me, 'My Profile', '');
 .profile-dashboard .profile-record { padding: 17px 0; border-bottom: 1px solid #f0edf4; }
 .profile-dashboard .profile-record:first-child { padding-top: 0; }
 .profile-dashboard .profile-record:last-child { padding-bottom: 0; border-bottom: 0; }
-.profile-dashboard .profile-record-title { margin: 0 0 5px; color: var(--profile-text); font-size: .96rem; font-weight: 750; }
+.profile-dashboard .profile-record-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.profile-dashboard .profile-record-title { margin: 0; color: var(--profile-text); font-size: .96rem; font-weight: 750; min-width: 0; }
+.profile-dashboard .profile-record-header .icon-btn { flex-shrink: 0; margin-top: -4px; }
 .profile-dashboard .profile-record-subtitle { color: var(--profile-muted); font-size: .85rem; line-height: 1.7; }
 .profile-dashboard .profile-record-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; }
 .profile-dashboard .profile-record-actions form { margin: 0; display: flex; }
@@ -1061,7 +1063,10 @@ user_header($me, 'My Profile', '');
                 <p class="profile-empty">No experience has been added yet.</p>
             <?php else: foreach ($experiences as $experience): ?>
                 <div class="profile-record">
-                    <h3 class="profile-record-title"><?= profile_escape($experience['JobTitle']) ?></h3>
+                    <div class="profile-record-header">
+                        <h3 class="profile-record-title"><?= profile_escape($experience['JobTitle']) ?></h3>
+                        <button type="button" class="icon-btn" onclick="editRecord('experience', <?= (int)$experience['UserExperienceID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
+                    </div>
                     <div class="profile-record-subtitle">
                         <?= profile_escape($experience['ExperienceName']) ?> · <?= profile_escape($experience['Organization']) ?><br>
                         <?= profile_escape(profile_date($experience['StartDate'] ?? null)) ?> – <?= !empty($experience['EndDate']) ? profile_escape(profile_date($experience['EndDate'])) : 'Present' ?>
@@ -1069,8 +1074,6 @@ user_header($me, 'My Profile', '');
                         <?php if ($durationText !== ''): ?> · <?= profile_escape($durationText) ?><?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
-
-                    <button type="button" class="icon-btn" onclick="editRecord('experience', <?= (int)$experience['UserExperienceID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
                         <form method="post" onsubmit="return confirm('Remove this experience from your profile?')">
                             <input type="hidden" name="action" value="delete_experience">
                             <input type="hidden" name="UserExperienceID" value="<?= (int)$experience['UserExperienceID'] ?>">   
@@ -1147,17 +1150,16 @@ user_header($me, 'My Profile', '');
                 <p class="profile-empty">No qualifications have been added yet.</p>
             <?php else: foreach ($qualifications as $qualification): ?>
                 <div class="profile-record">
-                    <h3 class="profile-record-title"><?= profile_escape($qualification['QualificationName']) ?></h3>
+                    <div class="profile-record-header">
+                        <h3 class="profile-record-title"><?= profile_escape($qualification['QualificationName']) ?></h3>
+                        <button type="button" class="icon-btn" onclick="editRecord('qualification', <?= (int)$qualification['UserQualificationID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
+                    </div>
                     <div class="profile-record-subtitle">
                         <?= profile_escape($qualification['Institution']) ?>
                         <?php if (!empty($qualification['YearObtained'])): ?> · <?= (int)$qualification['YearObtained'] ?><?php endif; ?>
                         <?php if (!empty($qualification['Duration'])): ?> · <?= (int)$qualification['Duration'] ?> month(s)<?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
-
-
-                        <button type="button" class="icon-btn" onclick="editRecord('qualification', <?= (int)$qualification['UserQualificationID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
-
                         <form method="post" onsubmit="return confirm('Remove this qualification from your profile?')">
                             <input type="hidden" name="action" value="delete_qualification">
                             <input type="hidden" name="UserQualificationID" value="<?= (int)$qualification['UserQualificationID'] ?>">

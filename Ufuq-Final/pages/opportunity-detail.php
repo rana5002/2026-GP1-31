@@ -677,23 +677,40 @@ user_header($me, 'Opportunity Details', 'browse');
             box-sizing: border-box;
         }
 
-        /* ---------- Breadcrumb ---------- */
+        /* ---------- Breadcrumb (plain text link, matching Company Verification) ---------- */
         .detail-back {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 20px;
-            color: var(--detail-purple);
+            gap: 6px;
+            margin: 0 0 22px;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: #777184;
             font-size: 13px;
-            font-weight: 700;
+            font-weight: 650;
+            line-height: 1.5;
             text-decoration: none;
             transition: color 0.2s ease;
         }
 
-        .detail-back:hover {
-            color: var(--detail-purple-dark);
-            text-decoration: underline;
+        .detail-back span {
+            font-size: 15px;
+            line-height: 1;
         }
+
+        .detail-back:hover {
+            color: var(--detail-purple);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        .detail-back:focus-visible {
+            outline: 2px solid var(--detail-gold);
+            outline-offset: 3px;
+        }
+
 
         /* ---------- General Cards ---------- */
         .detail-page .card {
