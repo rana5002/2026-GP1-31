@@ -95,26 +95,25 @@ function store_file(string $key, string $sub): string
         );
     }
 
-    $folder = UPLOAD_FOLDERS[$sub];
+      $folder = UPLOAD_FOLDERS[$sub];
 
     if ($sub === 'docs') {
-       if ($sub === 'docs') {
-    // Verification documents: Ufuq-Final/uploads/docs (direct access is blocked by .htaccess)
-    $dir = __DIR__ . '/../uploads/docs';
+        // Verification documents: Ufuq-Final/uploads/docs (direct access is blocked by .htaccess)
+        $dir = __DIR__ . '/../uploads/docs';
 
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-        throw new RuntimeException('Could not create upload directory.');
-    }
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            throw new RuntimeException('Could not create upload directory.');
+        }
 
-    $docsHtaccess = $dir . '/.htaccess';
+        $docsHtaccess = $dir . '/.htaccess';
 
-    if (!is_file($docsHtaccess)) {
-        file_put_contents(
-            $docsHtaccess,
-            "Options -Indexes\n\n# Block direct access to uploaded verification documents.\nRequire all denied\n",
-            LOCK_EX
-        );
-    }
+        if (!is_file($docsHtaccess)) {
+            file_put_contents(
+                $docsHtaccess,
+                "Options -Indexes\n\n# Block direct access to uploaded verification documents.\nRequire all denied\n",
+                LOCK_EX
+            );
+        }
     } else {
         $uploadRoot = __DIR__ . '/../uploads';
         $dir = $uploadRoot . '/' . $folder;

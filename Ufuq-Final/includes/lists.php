@@ -16,7 +16,6 @@ const INDUSTRIES = [
     'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 'Other',
 ];
 
-const CITIES = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk'];
 
 
 const CITIES = [
