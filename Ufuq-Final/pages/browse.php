@@ -235,6 +235,25 @@ if (mb_strlen($search, 'UTF-8') > 150) {
     $search = mb_substr($search, 0, 150, 'UTF-8');
 }
 
+/* ---------- Matching company profiles ---------- */
+$companySearchResults = [];
+if ($search !== '') {
+    try {
+        $companySearchStmt = $pdo->prepare(
+            "SELECT CompanyID, CompanyName, IndustrySector, Location, Logo, Description
+             FROM company
+             WHERE Status = 'Verified'
+               AND CompanyName LIKE ?
+             ORDER BY CompanyName
+             LIMIT 12"
+        );
+        $companySearchStmt->execute(['%' . $search . '%']);
+        $companySearchResults = $companySearchStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('Company profile search failed: ' . $e->getMessage());
+    }
+}
+
 /* ---------- Filters ---------- */
 /* Type, location, sector and duration accept several values (checkbox lists). */
 $sectors = INDUSTRIES;
@@ -970,16 +989,7 @@ user_header($me, 'Browse', 'browse');
     color: #80521b;
 }
 
-.user-browse .opportunity-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: auto;
-    padding-top: 14px;
-    border-top: 1px solid #f0edf4;
-}
+
 
 .user-browse .empty-state {
     padding: 40px 20px;
@@ -1543,6 +1553,72 @@ user_header($me, 'Browse', 'browse');
         scroll-behavior: auto !important;
     }
 }
+
+/* Company profile search results */
+.user-browse .company-search-results {
+    margin: 0 0 24px;
+}
+.user-browse .company-search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+    margin-top: 13px;
+}
+.user-browse .company-search-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid #e2d7ec;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #fff 0%, #f3edf8 100%);
+    color: var(--browse-text);
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(40,26,70,.05);
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.user-browse .company-search-card:hover {
+    transform: translateY(-3px);
+    border-color: #bba8d1;
+    box-shadow: 0 10px 22px rgba(40,26,70,.11);
+}
+.user-browse .company-search-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 13px;
+    background: #e5d9f0;
+    color: var(--browse-purple);
+    font-weight: 800;
+    font-size: 1.1rem;
+}
+.user-browse .company-search-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.user-browse .company-search-name {
+    display: block;
+    color: var(--browse-purple);
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+.user-browse .company-search-meta {
+    display: block;
+    margin-top: 3px;
+    color: var(--browse-muted);
+    font-size: .8rem;
+}
+.user-browse .company-search-arrow {
+    margin-left: auto;
+    color: #8e789f;
+    font-size: 1.15rem;
+}
 </style>
 
 <main class="user-browse">
@@ -1676,6 +1752,41 @@ user_header($me, 'Browse', 'browse');
                     </a>
                 <?php endif; ?>
             </form>
+
+            <?php if ($search !== ''): ?>
+                <section class="company-search-results" aria-labelledby="companySearchHeading">
+                    <h2 class="section-heading" id="companySearchHeading">Companies matching your search</h2>
+                    <p class="section-description">Select a company to view its profile and details.</p>
+                    <?php if ($companySearchResults): ?>
+                        <div class="company-search-grid">
+                            <?php foreach ($companySearchResults as $companyResult): ?>
+                                <?php
+                                    $companyName = trim((string)($companyResult['CompanyName'] ?? 'Company'));
+                                    $companyLogo = trim((string)($companyResult['Logo'] ?? ''));
+                                    $companyLogoSrc = $companyLogo === '' ? '' : (preg_match('~^https?://~i', $companyLogo) ? $companyLogo : '../' . ltrim($companyLogo, '/'));
+                                    $companyInitial = browse_initial($companyName);
+                                ?>
+                                <a class="company-search-card" href="company-profile.php?id=<?= (int)$companyResult['CompanyID'] ?>">
+                                    <span class="company-search-logo">
+                                        <?php if ($companyLogoSrc !== ''): ?>
+                                            <img src="<?= browse_h($companyLogoSrc) ?>" alt="">
+                                        <?php else: ?>
+                                            <?= browse_h($companyInitial) ?>
+                                        <?php endif; ?>
+                                    </span>
+                                    <span style="min-width:0">
+                                        <span class="company-search-name"><?= browse_h($companyName) ?></span>
+                                        <span class="company-search-meta"><?= browse_h($companyResult['IndustrySector'] ?: 'Company profile') ?></span>
+                                    </span>
+                                    <span class="company-search-arrow" aria-hidden="true">›</span>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <p class="section-description" style="margin-top:10px">No verified company profiles matched this name.</p>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
 
         <!-- Results -->
         <div class="browse-toolbar">
@@ -1888,22 +1999,7 @@ user_header($me, 'Browse', 'browse');
 
                         </div>
 
-                        <div class="opportunity-footer">
-
-                            <span class="badge <?= $statusClass ?>">
-                                <?= browse_h($opStatus) ?>
-                            </span>
-
-                            <a
-                                class="btn btn-primary btn-sm"
-                                href="opportunity-detail.php?id=<?= $id ?>"
-                            >
-                                View Details
-                                <span aria-hidden="true">→</span>
-                            </a>
-
-                        </div>
-
+                        
                     </article>
 
                 <?php endforeach; ?>
@@ -1919,7 +2015,8 @@ user_header($me, 'Browse', 'browse');
 
 </main>
 
-<?php user_footer(); ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
 
 <script>
 /* Toast: slides down, stays for a few seconds, then slides up and is removed. */

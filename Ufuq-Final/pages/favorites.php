@@ -1100,4 +1100,4 @@ user_header($me, 'Favorites', 'favorites');
 
 </script>
 
-<?php admin_footer(); ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

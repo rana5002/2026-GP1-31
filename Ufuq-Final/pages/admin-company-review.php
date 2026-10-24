@@ -580,7 +580,18 @@ admin_header('Company Review', 'verification');
 @media (prefers-reduced-motion: reduce) {
     .company-review-page * {
         transition: none !important;
+
     }
+    .company-heading .company-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 10px;
+}
+
+.company-heading .company-icon {
+    overflow: hidden;
+}
 }
 </style>
 
@@ -592,8 +603,20 @@ admin_header('Company Review', 'verification');
 
     <div class="company-heading">
         <div class="company-icon">
-            <?= icon('company', 28, 'icon-primary') ?>
-        </div>
+    <?php if (!empty($c['Logo'])): ?>
+        <img
+            src="../uploads/logos/<?= htmlspecialchars(
+                basename($c['Logo']),
+                ENT_QUOTES,
+                'UTF-8'
+            ) ?>"
+            alt="Company Logo"
+            class="company-logo"
+        >
+    <?php else: ?>
+        <?= icon('company', 28, 'icon-primary') ?>
+    <?php endif; ?>
+</div>
 
         <div style="min-width:0;">
             <h2><?= e($c['CompanyName']) ?></h2>
@@ -819,4 +842,5 @@ admin_header('Company Review', 'verification');
 })();
 </script>
 
-<?php admin_footer(); ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

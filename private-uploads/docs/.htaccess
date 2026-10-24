@@ -1,5 +1,0 @@
-
-Options -Indexes
-
-# Block direct access to uploaded verification documents.
-Require all denied

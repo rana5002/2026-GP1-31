@@ -2589,4 +2589,4 @@ user_header($me, 'Opportunity Details', 'browse');
 })();
 </script>
 
-<?php admin_footer(); ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

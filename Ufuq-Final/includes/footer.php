@@ -3,72 +3,43 @@
 $base = $base ?? '';
 ?>
 
-<footer class="site-footer">
+<footer class="site-footer ufuq-footer">
     <div class="container">
 
-        <div class="footer-grid">
+        <div class="ufuq-footer-main">
+            <div class="ufuq-footer-about">
+                <a
+                    class="ufuq-footer-brand"
+                    href="<?= htmlspecialchars($base, ENT_QUOTES, 'UTF-8') ?>index.php"
+                >
+                    Ufuq<span>.</span>
+                </a>
 
-            <!-- Brand -->
-            <div>
-                <div class="footer-brand">Ufuq</div>
+                <div class="ufuq-footer-accent"></div>
 
-                <p style="color:#A79FB8; font-size:0.88rem;">
-                    Centralizing training programs and professional courses
-                    for Saudi students and professionals in computing fields.
+                <p class="ufuq-footer-description">
+                    Find your next opportunity.<br>
+                    Build your future with Ufuq.
                 </p>
             </div>
 
-            <!-- Platform -->
-            <div>
-                <h4>Platform</h4>
-                <ul>
-                    <li>
-                        <a href="<?= htmlspecialchars($base) ?>signup.php">
-                            For Companies
-                        </a>
-                    </li>
-                    <li>
-                        <a href="<?= htmlspecialchars($base) ?>index.php">
-                            Home
-                        </a>
-                    </li>
-                </ul>
-            </div>
+            <div class="ufuq-footer-contact">
+                <span class="ufuq-footer-label">LET'S CONNECT</span>
 
-            <!-- Account -->
-            <div>
-                <h4>Account</h4>
-                <ul>
-                    <li>
-                        <a href="<?= htmlspecialchars($base) ?>login.php">
-                            Log In
-                        </a>
-                    </li>
-                    <li>
-                        <a href="<?= htmlspecialchars($base) ?>signup.php">
-                            Sign Up
-                        </a>
-                    </li>
-                </ul>
+                <a
+                    href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=ufuq.platform.team@gmail.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    ufuq.platform.team@gmail.com
+                    <span class="ufuq-footer-arrow" aria-hidden="true">↗</span>
+                </a>
             </div>
-
-            <!-- Support -->
-            <div>
-                <h4>Support</h4>
-                <ul>
-                    <li><a href="#">Help Center</a></li>
-                    <li><a href="#">Contact Us</a></li>
-                    <li><a href="#">Terms &amp; Privacy</a></li>
-                </ul>
-            </div>
-
         </div>
 
-        <!-- Footer Bottom -->
-        <div class="footer-bottom">
-            <span>
-                &copy; 2026 Ufuq &mdash; IT496 Graduation Project
-            </span>
+        <div class="ufuq-footer-bottom">
+            <span>© 2026 Ufuq. All rights reserved.</span>
+            <span class="ufuq-footer-tagline">Made for your next step.</span>
         </div>
 
     </div>

@@ -182,47 +182,114 @@ function csrf_check(): void {
     }
 }
 
+
+
 function admin_header(string $title, string $active): void { ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= e($title) ?> &mdash; Ufuq Admin</title>
-<link rel="stylesheet" href="../css/base.css">
-<link rel="stylesheet" href="../css/layout.css">
-<link rel="stylesheet" href="../css/icons.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= e($title) ?> &mdash; Ufuq Admin</title>
+
+    <link rel="stylesheet" href="../css/base.css">
+    <link rel="stylesheet" href="../css/layout.css">
+    <link rel="stylesheet" href="../css/icons.css">
 </head>
 <body>
+
 <header class="site-header">
-  <div class="container">
-    <a href="../index.php" class="brand" style="text-decoration:none;">
-      <img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent;">
-      Ufuq
-    </a>
-    <nav class="nav-links">
-      <a href="dashboard-admin.php?tab=dashboard" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
-      <a href="dashboard-admin.php?tab=verification" class="<?= $active === 'verification' ? 'active' : '' ?>">Company Verification</a>
-      <a href="dashboard-admin.php?tab=opportunities" class="<?= $active === 'opportunities' ? 'active' : '' ?>">Manage Opportunities</a>
-    </nav>
-    <div class="nav-actions"><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
-  </div>
+    <div class="container">
+
+        <a href="../index.php" class="brand" style="text-decoration:none;">
+            <img
+                src="../images-website/logo.png"
+                alt="Ufuq"
+                class="brand-mark"
+                style="width:34px;height:34px;object-fit:contain;background:transparent;"
+            >
+            Ufuq
+        </a>
+
+        <nav class="nav-links" id="navLinks" aria-label="Admin navigation">
+            <a
+                href="dashboard-admin.php?tab=dashboard"
+                class="<?= $active === 'dashboard' ? 'active' : '' ?>"
+            >
+                Dashboard
+            </a>
+
+            <a
+                href="dashboard-admin.php?tab=verification"
+                class="<?= $active === 'verification' ? 'active' : '' ?>"
+            >
+                Company Verification
+            </a>
+
+            <a
+                href="dashboard-admin.php?tab=opportunities"
+                class="<?= $active === 'opportunities' ? 'active' : '' ?>"
+            >
+                Manage Opportunities
+            </a>
+        </nav>
+
+        <div class="nav-actions">
+            <a href="logout.php" class="btn btn-ghost btn-sm">
+                Log Out
+            </a>
+
+            <button
+                class="nav-toggle"
+                id="navToggle"
+                type="button"
+                aria-label="Toggle menu"
+                aria-controls="navLinks"
+                aria-expanded="false"
+            >
+                <?= icon('menu', 22) ?>
+            </button>
+        </div>
+
+    </div>
 </header>
+
+<script>
+(function () {
+    const toggle = document.getElementById('navToggle');
+    const nav = document.getElementById('navLinks');
+
+    if (!toggle || !nav || toggle.dataset.initialized === 'true') {
+        return;
+    }
+
+    toggle.dataset.initialized = 'true';
+
+    toggle.addEventListener('click', function () {
+        const isOpen = nav.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    nav.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', function () {
+            nav.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+            nav.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+    });
+})();
+</script>
+
 <main>
 <?php }
 
-function admin_footer(): void { ?>
-</main>
-<footer class="site-footer">
-  <div class="container">
-    <div class="footer-bottom">
-      <span>&copy; 2026 Ufuq &mdash; IT496 Graduation Project</span>
-    </div>
-  </div>
-</footer>
-</body>
-</html>
-<?php }
+
 
 function icon(string $name, int $size = 18, string $extra = ''): string {
     $p = "../images-website/icons/$name.png";

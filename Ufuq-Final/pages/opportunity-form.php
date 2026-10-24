@@ -537,7 +537,6 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
   </form>
   </div></div>
 </main>
-<footer class="site-footer"><div class="container"><div class="footer-bottom"><span>&copy; 2026 Ufuq &mdash; IT496 Graduation Project</span></div></div></footer>
 <script>
 const lockedMethod = <?= $editing ? 'true' : 'false' ?>;
 const methodInput = document.getElementById('applicationMethod');
@@ -705,6 +704,8 @@ document.getElementById('oppForm').addEventListener('submit',e=>{
   if(startDate.value&&endDate.value&&endDate.value<startDate.value){endDate.classList.add('invalid');document.getElementById('endDateError').textContent='End date must be on or after the start date.';document.getElementById('endDateError').style.display='block';valid=false;}
   if(!valid){e.preventDefault();const banner=document.querySelector('.form-banner');if(banner){banner.style.display='block';banner.textContent='All mandatory fields must be completed.';}const first=document.querySelector('.invalid');if(first)first.focus();}
 });
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
 </script>
 </body>
 </html>

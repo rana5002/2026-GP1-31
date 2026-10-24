@@ -1435,4 +1435,4 @@ function toggleProfileForm(id) {
 }
 </script>
 
-<?php admin_footer(); ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

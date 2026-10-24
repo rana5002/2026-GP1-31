@@ -520,8 +520,11 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
 </head>
 <body>
 
-<div id="site-header"></div>
-
+<?php
+$headerBase = '../';
+$headerActive = '';
+require __DIR__ . '/../includes/header.php';
+?>
 <main>
   <div class="auth-wrapper">
     <div class="auth-card" style="max-width: 980px;">
@@ -784,15 +787,12 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
   </div>
 </main>
 
-<div id="site-footer"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
 <script src="../js/store.js"></script>
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
 <script>
-  renderHeader({ active: "", base: "../" });
-  renderFooter({ base: "../" });
 
   /* Header: no underline on "Opportunities" here; the Sign Up button looks pressed */
   (function () {
@@ -1103,6 +1103,7 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
     if (f) f.addEventListener("submit", e => { if (!validateForm(f)) e.preventDefault(); });
   });
 </script>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 
 </body>
 </html>

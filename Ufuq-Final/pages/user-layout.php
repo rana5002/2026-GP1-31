@@ -37,7 +37,7 @@ function user_header(array $me, string $title, string $active): void {
     $links = [
         'user-home'   => ['Home', 'home.php'],
         'browse'      => ['Browse', 'browse.php'],
-        'recommended' => ['Recommended Opportunities', 'recommended-opportunities.php'],
+        'skill-gap' => ['Skill Gap', 'skill-gap.php'],
         'history'     => ['Application History', 'application-history.php'],
     ];
 
@@ -197,17 +197,12 @@ document.getElementById("navToggle")?.addEventListener("click", function () {
 <?php
 }
 
-function user_footer(): void {
     ?>
 </main>
 
-<footer class="site-footer">
-    <div class="container">
-        <p>&copy; <?= date('Y') ?> Ufuq. All rights reserved.</p>
-    </div>
-</footer>
+
 
 </body>
 </html>
     <?php
-}
+

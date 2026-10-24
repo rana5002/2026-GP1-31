@@ -108,13 +108,13 @@ if (!function_exists('getCompanyName')) {
 if (!function_exists('getCompanyColor')) {
     function getCompanyColor(string $name): string
     {
-        $palette = [
-            '#3157A4',
-            '#397A76',
-            '#7655A5',
-            '#B47737',
-            '#3F7195',
-        ];
+  $palette = [
+    '#6F536F', // Plum
+    '#8E789F', // Brand purple
+    '#9B806F', // Warm mocha
+    '#A58A76', // Soft taupe
+    '#78647F', // Muted plum
+];
 
         return $palette[abs(crc32($name)) % count($palette)];
     }
@@ -202,6 +202,7 @@ try {
         LEFT JOIN company c
             ON c.CompanyID = o.CreatedByCompanyID
         WHERE o.Status = 'Open'
+          AND o.Type = 'Training'
           AND (
               o.CreatedByCompanyID IS NULL
               OR c.Status = 'Verified'
@@ -454,15 +455,15 @@ if (file_exists($headerPath)) {
                 </h1>
 
                 <p style="font-size:1.05rem;">
-                    Discover training opportunities and professional courses,
-                    evaluate their details and experiences, and take the next
-                    step &mdash; all from one organized platform.
+                    Discover training programs, gain practical experience,
+                    and build your skills through opportunities gathered
+                    in one organized platform.
                 </p>
 
                 <div class="flex gap-3"
                      style="margin-top:28px;flex-wrap:wrap;">
                     <a href="#opportunities" class="btn btn-primary">
-                        Explore Opportunities
+                        Explore Opportunities   
                     </a>
                 </div>
             </div>
@@ -499,9 +500,9 @@ if (file_exists($headerPath)) {
             <div class="preview-section-header">
                 <div>
                     <div class="preview-eyebrow">Explore</div>
-                    <h2 style="margin:0;">Opportunities</h2>
+                    <h2 style="margin:0;">Training Opportunities</h2>
                     <p style="margin:4px 0 0;">
-                        Training opportunities and courses will appear here
+                        Training programs and practical opportunities will appear here
                         when published.
                     </p>
                 </div>
@@ -519,9 +520,9 @@ if (file_exists($headerPath)) {
                 class="preview-empty <?= empty($preview) ? '' : 'hidden' ?>"
                 id="oppPreviewEmpty"
             >
-                <h3>No opportunities available yet</h3>
+                <h3>No training opportunities available yet</h3>
                 <p style="margin:0;">
-                    There are currently no published opportunities.
+                    There are currently no published training opportunities.
                     Check back later.
                 </p>
             </div>

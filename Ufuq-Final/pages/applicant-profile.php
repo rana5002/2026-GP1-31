@@ -387,6 +387,6 @@ $success = '';
 </div>
 </main>
 
-<footer class="site-footer"><div class="container"><div class="footer-bottom"><span>&copy; 2026 Ufuq &mdash; IT496 Graduation Project</span></div></div></footer>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 </body>
 </html>

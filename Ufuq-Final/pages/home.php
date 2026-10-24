@@ -1446,5 +1446,5 @@ user_header($me, 'Home', 'user-home');
 
     </div>
 </div>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 
-<?php admin_footer(); ?>

@@ -171,8 +171,11 @@ function mask_email(string $email): string
 
 <body>
 
-<div id="site-header"></div>
-
+<?php
+$headerBase = '../';
+$headerActive = '';
+require __DIR__ . '/../includes/header.php';
+?>
 <main>
     <div class="auth-wrapper">
         <div class="auth-card" style="max-width: 980px;">
@@ -262,15 +265,12 @@ function mask_email(string $email): string
     </div>
 </main>
 
-<div id="site-footer"></div>
 
 <script src="../js/store.js"></script>
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
 
 <script>
-renderHeader({ active: "", base: "../" });
-renderFooter({ base: "../" });
 
 // digits only in the code box
 var codeBox = document.getElementById("code");
@@ -282,6 +282,7 @@ if (codeBox) {
 </script>
 
 <?= header_js('signup') ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 
 </body>
 </html>

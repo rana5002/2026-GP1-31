@@ -71,8 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <body>
 
-<div id="site-header"></div>
-
+?>
+<?php
+$headerBase = '../';
+$headerActive = '';
+require __DIR__ . '/../includes/header.php';
+?>
 <main>
     <div class="auth-wrapper">
         <div class="auth-card" style="max-width: 980px;">
@@ -129,18 +133,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 </main>
 
-<div id="site-footer"></div>
 
 <script src="../js/store.js"></script>
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
 
 <script>
-renderHeader({ active: "", base: "../" });
-renderFooter({ base: "../" });
 </script>
 
 <?= header_js('login') ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
+
 
 </body>
 </html>

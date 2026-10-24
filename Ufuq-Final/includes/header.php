@@ -1,3 +1,4 @@
+
 <?php
 /* =========================================================
    Ufuq - Shared Public Header
@@ -30,12 +31,12 @@ $headerName = (string) (
 );
 
 $headerBase = $headerBase ?? '';
+$headerActive = $headerActive ?? '';
 
 $headerLinks = [
     'guest' => [
         ['label' => 'Home', 'url' => $headerBase . 'index.php', 'key' => 'home'],
         ['label' => 'About Us', 'url' => $headerBase . 'pages/about.php', 'key' => 'about'],
-        ['label' => 'Frequently Asked Questions', 'url' => $headerBase . 'pages/faq.php', 'key' => 'faq'],
     ],
     'user' => [
         ['label' => 'Home', 'url' => $headerBase . 'pages/home.php', 'key' => 'home'],
@@ -54,29 +55,28 @@ if (!isset($headerLinks[$headerRole])) {
     $headerRole = 'guest';
 }
 
-$headerActive = $headerActive ?? '';
 $headerLogo = $headerBase . 'images-website/logo.png';
 ?>
 
 <header class="site-header">
-    <div class="container site-header-inner">
+    <div class="container">
 
         <!-- Logo -->
-        <a class="site-brand" href="<?= header_escape($headerBase . 'index.php') ?>">
+        <a class="brand" href="<?= header_escape($headerBase . 'index.php') ?>">
             <img
                 src="<?= header_escape($headerLogo) ?>"
                 alt="Ufuq"
                 class="site-brand-logo"
             >
-            <span class="site-brand-name">Ufuq</span>
+            <span>Ufuq</span>
         </a>
 
         <!-- Main navigation -->
-        <nav class="site-nav" id="siteNav" aria-label="Main navigation">
+        <nav class="nav-links" id="siteNav" aria-label="Main navigation">
             <?php foreach ($headerLinks[$headerRole] as $link): ?>
                 <a
                     href="<?= header_escape($link['url']) ?>"
-                    class="site-nav-link<?= $headerActive === $link['key'] ? ' active' : '' ?>"
+                    class="<?= $headerActive === $link['key'] ? 'active' : '' ?>"
                     <?= $headerActive === $link['key'] ? 'aria-current="page"' : '' ?>
                 >
                     <?= header_escape($link['label']) ?>
@@ -85,22 +85,21 @@ $headerLogo = $headerBase . 'images-website/logo.png';
         </nav>
 
         <!-- Header actions -->
-        <div class="site-header-actions">
+        <div class="nav-actions">
+
             <?php if ($headerUserId !== null && $headerRole !== 'guest'): ?>
 
                 <?php if ($headerRole === 'user'): ?>
                     <a
-                        class="header-action-link"
                         href="<?= header_escape($headerBase . 'pages/favorites.php') ?>"
-                        aria-label="Favorites"
+                        class="header-action-link"
                     >
                         Favorites
                     </a>
 
                     <a
-                        class="header-action-link"
                         href="<?= header_escape($headerBase . 'pages/notifications.php') ?>"
-                        aria-label="Notifications"
+                        class="header-action-link"
                     >
                         Notifications
                     </a>
@@ -136,7 +135,7 @@ $headerLogo = $headerBase . 'images-website/logo.png';
             <?php endif; ?>
 
             <button
-                class="site-menu-toggle"
+                class="nav-toggle"
                 id="siteMenuToggle"
                 type="button"
                 aria-label="Toggle navigation"
@@ -147,83 +146,63 @@ $headerLogo = $headerBase . 'images-website/logo.png';
                 <span></span>
                 <span></span>
             </button>
-        </div>
 
+        </div>
     </div>
 </header>
 
 <style>
-.site-header {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    width: 100%;
-    background: rgba(255, 255, 255, .97);
-    border-bottom: 1px solid rgba(31, 53, 102, .09);
-    backdrop-filter: blur(12px);
-}
-
-.site-header-inner {
-    min-height: 78px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-}
-
-.site-brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
+/* Logo image */
+.brand {
     text-decoration: none;
-    color: var(--color-primary, #1f3566);
-    font-weight: 800;
-    font-size: 1.35rem;
+    color: var(--color-primary-dark);
+    flex-shrink: 0;
 }
 
 .site-brand-logo {
-    width: 42px;
-    height: 42px;
+    display: block;
+    width: 38px;
+    height: 38px;
     object-fit: contain;
 }
 
-.site-nav {
+.brand span {
+    display: inline-block;
+}
+
+/* Header layout */
+.site-header .container {
+    min-height: var(--header-height);
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 25px;
+    justify-content: space-between;
+    gap: 20px;
 }
 
-.site-nav-link,
-.header-action-link {
-    color: var(--color-text, #26334d);
-    text-decoration: none;
-    font-size: .92rem;
-    font-weight: 600;
-    transition: color .2s ease;
-}
-
-.site-nav-link:hover,
-.site-nav-link.active,
-.header-action-link:hover {
-    color: var(--color-primary, #1f3566);
-}
-
-.site-nav-link.active {
-    font-weight: 800;
-}
-
-.site-header-actions {
+/* Header actions */
+.nav-actions {
     display: flex;
     align-items: center;
-    gap: 14px;
+    justify-content: flex-end;
+    gap: var(--space-3);
     flex-shrink: 0;
 }
 
+.header-action-link {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.header-action-link:hover {
+    color: var(--color-primary-dark);
+    text-decoration: none;
+}
+
 .header-user-name {
-    color: var(--color-primary, #1f3566);
-    font-size: .9rem;
+    color: var(--color-primary-dark);
+    font-size: 0.9rem;
     font-weight: 700;
     max-width: 150px;
     overflow: hidden;
@@ -231,64 +210,60 @@ $headerLogo = $headerBase . 'images-website/logo.png';
     white-space: nowrap;
 }
 
-.site-menu-toggle {
+/* Mobile navigation */
+.nav-toggle {
     display: none;
     width: 40px;
     height: 40px;
-    padding: 9px;
-    border: 1px solid #e0e5ef;
-    border-radius: 8px;
-    background: white;
+    padding: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
     cursor: pointer;
 }
 
-.site-menu-toggle span {
+.nav-toggle span {
     display: block;
-    height: 2px;
     width: 100%;
+    height: 2px;
     margin: 4px 0;
-    background: var(--color-primary, #1f3566);
+    background: var(--color-primary);
 }
 
-@media (max-width: 900px) {
-    .site-header-inner {
-        min-height: 70px;
+@media (max-width: 860px) {
+    .site-header .container {
+        position: relative;
         flex-wrap: wrap;
-        gap: 12px;
         padding-top: 10px;
         padding-bottom: 10px;
     }
 
-    .site-menu-toggle {
-        display: inline-block;
+    .nav-toggle {
+        display: block;
     }
 
-    .site-nav {
+    .site-header .nav-links {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 100;
         display: none;
-        order: 3;
-        width: 100%;
-        align-items: stretch;
         flex-direction: column;
-        gap: 0;
-        padding: 8px 0;
+        align-items: flex-start;
+        gap: var(--space-3);
+        padding: var(--space-4) var(--space-5);
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
     }
 
-    .site-nav.is-open {
+    .site-header .nav-links.open {
         display: flex;
     }
 
-    .site-nav-link {
-        padding: 12px 8px;
-        border-radius: 7px;
-    }
-
-    .site-nav-link:hover {
-        background: #f4f6fb;
-    }
-
-    .site-header-actions {
-        margin-left: auto;
-        gap: 10px;
+    .site-header .nav-links a {
+        width: 100%;
+        padding: 8px 0;
     }
 
     .header-action-link {
@@ -298,26 +273,38 @@ $headerLogo = $headerBase . 'images-website/logo.png';
     .header-user-name {
         max-width: 95px;
     }
+
+    .nav-actions {
+        margin-left: auto;
+    }
 }
 
 @media (max-width: 480px) {
-    .site-brand-name {
-        font-size: 1.15rem;
-    }
-
     .site-brand-logo {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
     }
 
     .header-user-name {
         display: none;
     }
 
-    .site-header-actions {
+    .nav-actions {
         gap: 8px;
     }
 }
+.site-header .nav-actions .btn {
+    font-size: 0.95rem;
+    padding: 9px 14px;
+    border-radius: 10px;
+    line-height: normal;
+    font-weight: 700;
+}
+
+.site-header .nav-actions .btn-sm {
+    padding: 9px 14px;
+}
+
 </style>
 
 <script>
@@ -332,13 +319,13 @@ $headerLogo = $headerBase . 'images-website/logo.png';
     toggle.dataset.initialized = 'true';
 
     toggle.addEventListener('click', function () {
-        const isOpen = nav.classList.toggle('is-open');
+        const isOpen = nav.classList.toggle('open');
         toggle.setAttribute('aria-expanded', String(isOpen));
     });
 
     nav.querySelectorAll('a').forEach(function (link) {
         link.addEventListener('click', function () {
-            nav.classList.remove('is-open');
+            nav.classList.remove('open');
             toggle.setAttribute('aria-expanded', 'false');
         });
     });

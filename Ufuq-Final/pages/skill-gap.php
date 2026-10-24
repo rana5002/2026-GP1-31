@@ -353,5 +353,5 @@ user_header($me, 'Skill Gap', '');
 
     </div>
 </div>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 
-<?php user_footer(); ?>

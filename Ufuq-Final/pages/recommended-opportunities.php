@@ -354,4 +354,5 @@ user_header($me, 'Recommended Opportunities', 'recommended');
     </div>
 </div>
 
-<?php user_footer(); ?>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

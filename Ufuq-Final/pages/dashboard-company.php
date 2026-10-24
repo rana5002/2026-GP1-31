@@ -791,13 +791,111 @@ $heroTitles = [
 </style>
 </head>
 <body>
+
 <header id="site-header" class="site-header">
-  <div class="container">
-    <a href="../index.php" class="brand" style="text-decoration:none"><img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent"> Ufuq</a>
-    <nav class="nav-links"><a href="dashboard-company.php?tab=overview" class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
-    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
-  </div>
+    <div class="container">
+
+        <a href="../index.php" class="brand" style="text-decoration:none;">
+            <img
+                src="../images-website/logo.png"
+                alt="Ufuq"
+                class="brand-mark"
+                style="width:34px;height:34px;object-fit:contain;background:transparent;"
+            >
+            Ufuq
+        </a>
+
+        <nav class="nav-links" id="navLinks" aria-label="Company navigation">
+            <a
+                href="dashboard-company.php?tab=overview"
+                class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>"
+            >
+                Dashboard
+            </a>
+
+            <a
+                href="dashboard-company.php?tab=opportunities"
+                class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>"
+            >
+                Opportunities
+            </a>
+
+            <a
+                href="dashboard-company.php?tab=applicants"
+                class="<?= $activeTab === 'applicants' ? 'active' : '' ?>"
+            >
+                Applicants
+            </a>
+        </nav>
+
+        <div class="nav-actions" style="display:flex;align-items:center;gap:10px;">
+
+            <a
+                href="dashboard-company.php?tab=profile"
+                class="company-header-profile"
+                title="Open company profile"
+                aria-label="Open company profile"
+            >
+                <span class="company-header-avatar">
+                    <?php if ($logoSrc !== ''): ?>
+                        <img src="<?= e($logoSrc) ?>" alt="Company avatar">
+                    <?php else: ?>
+                        <?= e($companyInitial) ?>
+                    <?php endif; ?>
+                </span>
+            </a>
+
+            <a href="logout.php" class="btn btn-ghost btn-sm">
+                Log Out
+            </a>
+
+            <button
+                class="nav-toggle"
+                id="navToggle"
+                type="button"
+                aria-label="Toggle menu"
+                aria-controls="navLinks"
+                aria-expanded="false"
+            >
+                <?= icon('menu', 22) ?>
+            </button>
+
+        </div>
+    </div>
 </header>
+
+<script>
+(function () {
+    const toggle = document.getElementById('navToggle');
+    const nav = document.getElementById('navLinks');
+
+    if (!toggle || !nav || toggle.dataset.initialized === 'true') {
+        return;
+    }
+
+    toggle.dataset.initialized = 'true';
+
+    toggle.addEventListener('click', function () {
+        const isOpen = nav.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    nav.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', function () {
+            nav.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+            nav.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+    });
+})();
+</script>
+
 
 <main>
 <div class="company-dashboard">
@@ -1121,7 +1219,8 @@ $heroTitles = [
 </div>
 </main>
 
-<footer class="site-footer"><div class="container"><div class="footer-bottom"><span>&copy; 2026 Ufuq &mdash; IT496 Graduation Project</span></div></div></footer>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
 <script>
 /* Toast: slides down, stays for a few seconds, then slides up and is removed. */
 (function () {
