@@ -71,6 +71,24 @@ function browse_duration_text($startDate, $endDate): string
     return $days === null ? 'Not specified' : $days . ($days === 1 ? ' day' : ' days');
 }
 
+/* Status of an opportunity: Open, Upcoming (applications not open yet) or Closed. */
+function browse_state(array $o): string
+{
+    $today    = date('Y-m-d');
+    $status   = trim((string)($o['Status'] ?? ''));
+    $deadline = (string)($o['ApplicationDeadLine'] ?? '');
+    $openDate = (string)($o['ApplicationOpenDate'] ?? '');
+
+    if (strcasecmp($status, 'Open') !== 0 || ($deadline !== '' && $deadline < $today)) {
+        return 'Closed';
+    }
+    if ($openDate !== '' && $openDate > $today) {
+        return 'Upcoming';
+    }
+    return 'Open';
+}
+
+
 /* Duration filter range for an opportunity, in days. */
 function browse_duration($startDate, $endDate): string
 {
@@ -282,6 +300,30 @@ $allowedDurations = [
 
 $durationFilter = array_values(array_intersect($durationFilter, $allowedDurations));
 
+/* Status filter (Open / Upcoming / Closed). */
+$allowedStatuses = ['Open', 'Upcoming', 'Closed'];
+$statusFilter = array_values(array_intersect(browse_str_list($_GET['status'] ?? []), $allowedStatuses));
+
+/* Two separate sort choices: by name, and by application dates. */
+$sortOptions = [
+    'newest' => 'Recently added',
+    'az'     => 'A to Z',
+];
+$sort = (string)($_GET['sort'] ?? 'newest');
+if (!isset($sortOptions[$sort])) {
+    $sort = 'newest';
+}
+
+$whenOptions = [
+    ''        => 'Any',
+    'closing' => 'Closing next',
+    'opening' => 'Opening next',
+];
+$when = (string)($_GET['when'] ?? '');
+if (!isset($whenOptions[$when])) {
+    $when = '';
+}
+
 /* ---------- Build opportunity query ---------- */
 $where = [];
 $params = [];
@@ -353,6 +395,46 @@ if ($durationFilter) {
     );
 }
 
+
+/* ---------- Filter by status ---------- */
+if ($statusFilter) {
+    $opportunities = array_values(array_filter(
+        $opportunities,
+        static fn($o) => in_array(browse_state($o), $statusFilter, true)
+    ));
+}
+
+/* ---------- Sort ---------- */
+/* "When" is the main order (closing next / opening next); A to Z breaks ties, or sorts alone. */
+if ($sort === 'az' || $when !== '') {
+    $rank = ['Upcoming' => 0, 'Open' => 1, 'Closed' => 2];
+    usort($opportunities, static function ($a, $b) use ($sort, $when, $rank) {
+        if ($when === 'closing') {
+            /* Open and upcoming first, the application that closes next on top; closed ones last. */
+            $ca = browse_state($a) === 'Closed' ? 1 : 0;
+            $cb = browse_state($b) === 'Closed' ? 1 : 0;
+            if ($ca !== $cb) return $ca <=> $cb;
+            $da = (string)($a['ApplicationDeadLine'] ?? '') ?: '9999-12-31';
+            $db = (string)($b['ApplicationDeadLine'] ?? '') ?: '9999-12-31';
+            if ($da !== $db) return $da <=> $db;
+        } elseif ($when === 'opening') {
+            /* Upcoming first (the one that opens next on top), then open ones, then closed ones. */
+            $ra = $rank[browse_state($a)];
+            $rb = $rank[browse_state($b)];
+            if ($ra !== $rb) return $ra <=> $rb;
+            $key = $ra === 0 ? 'ApplicationOpenDate' : 'ApplicationDeadLine';
+            $da = (string)($a[$key] ?? '') ?: '9999-12-31';
+            $db = (string)($b[$key] ?? '') ?: '9999-12-31';
+            if ($da !== $db) return $da <=> $db;
+        }
+        if ($sort === 'az') {
+            return strcmp(mb_strtolower((string)$a['Title'], 'UTF-8'), mb_strtolower((string)$b['Title'], 'UTF-8'));
+        }
+        return 0;
+    });
+}
+
+
 /* ---------- Current user's favorites ---------- */
 $favStmt = $pdo->prepare(
     'SELECT OpportunityID
@@ -371,6 +453,7 @@ $hasFilters = (
     || $locationFilter
     || $sectorFilter
     || $durationFilter
+    || $statusFilter
     || $companyFilter
 );
 
@@ -383,10 +466,17 @@ foreach (['q' => $search] as $key => $value) {
     }
 }
 
-foreach (['type' => $typeFilter, 'location' => $locationFilter, 'sector' => $sectorFilter, 'duration' => $durationFilter, 'company' => $companyFilter] as $key => $values) {
+foreach (['type' => $typeFilter, 'location' => $locationFilter, 'sector' => $sectorFilter, 'duration' => $durationFilter , 'status' => $statusFilter, 'company' => $companyFilter] as $key => $values) {
     if ($values) {
         $filterQuery[$key] = $values;
     }
+}
+
+if ($sort !== 'newest') {
+    $filterQuery['sort'] = $sort;
+}
+if ($when !== '') {
+    $filterQuery['when'] = $when;
 }
 
 
@@ -396,9 +486,12 @@ if ($filterQuery) {
     $filterAction .= '?' . http_build_query($filterQuery);
 }
 
+/* Remember this search / filters, so "Back to Browse" on the details page returns to the same results. */
+$_SESSION['browse_back'] = $filterAction;
+
 /* Number of active filters, shown on the Filters button. */
 $activeFilterCount = count($typeFilter) + count($locationFilter) + count($sectorFilter)
-    + count($durationFilter) + count($companyFilter);
+    + count($durationFilter) + count($statusFilter) + count($companyFilter);
 
 /* Checkbox list with search, same as the company "Filter Applicants" sidebar.
    Collapsed by default; opened when something in it is selected. The triangle opens / closes it. */
@@ -1250,6 +1343,31 @@ user_header($me, 'Browse', 'browse');
     flex-shrink: 0;
 }
 
+
+/* Sort button + menu (next to the Filters button) */
+.user-browse .sort-wrap { position: relative; flex-shrink: 0; }
+.user-browse .sort-toggle { display: inline-flex; align-items: center; gap: 8px; }
+.user-browse .sort-toggle[aria-expanded="true"],
+.user-browse .sort-toggle.is-active { background: var(--browse-lavender); }
+.user-browse .sort-menu {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 250px; padding: 10px;
+    border: 1px solid #e5ddef; border-radius: 14px; background: #fff; box-shadow: 0 12px 30px rgba(40, 26, 70, .16);
+}
+.user-browse .sort-menu[hidden] { display: none; }
+.user-browse .sort-menu-title { margin: 6px 8px 4px; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: #8a8396; }
+.user-browse .sort-menu-line { margin: 6px 0; border-top: 1px solid #eee7f6; }
+.user-browse .sort-option { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 9px; cursor: pointer; font-size: .92rem; color: #29243a; }
+.user-browse .sort-option:hover { background: var(--browse-lavender); }
+.user-browse .sort-option input { width: 16px; height: 16px; margin: 0; accent-color: #39265f; }
+
+
+
+/* Filters button: same color as when you hover on it, while the filter card is open */
+.user-browse .filter-toggle[aria-expanded="true"] {
+    background: var(--browse-lavender);
+}
+
+
 .user-browse .filter-toggle-count {
     display: inline-flex;
     align-items: center;
@@ -1358,12 +1476,7 @@ user_header($me, 'Browse', 'browse');
     flex: 1;
 }
 
-.user-browse .filter-panel-note {
-    margin: 0;
-    color: var(--browse-muted);
-    font-size: .8rem;
-    line-height: 1.55;
-}
+
 
 /* Category header with a triangle that opens / closes its list */
 .user-browse .lookup-header {
@@ -1677,16 +1790,27 @@ user_header($me, 'Browse', 'browse');
 
         <div class="browse-layout" id="browseLayout">
 
-        <!-- Filter sidebar (left) -->
+               <!-- Filter sidebar (left) -->
         <form method="GET" action="browse.php" class="filter-panel" id="filterPanel">
             <?php if ($search !== ''): ?>
                 <input type="hidden" name="q" value="<?= browse_h($search) ?>">
             <?php endif; ?>
+            <?php if ($sort !== 'newest'): ?>
+                <input type="hidden" name="sort" value="<?= browse_h($sort) ?>">
+            <?php endif; ?>
+            <?php if ($when !== ''): ?>
+                <input type="hidden" name="when" value="<?= browse_h($when) ?>">
+            <?php endif; ?>
+
+
 
             <h3 class="filter-panel-title">Filter Opportunities</h3>
 
+           
+
+            <?php browse_lookup_box('status', 'Status', 'Search status...', browse_pairs($allowedStatuses), $statusFilter); ?>
             <?php browse_lookup_box('type', 'Opportunity Type', 'Search types...', browse_pairs(OPPORTUNITY_TYPES), $typeFilter); ?>
-            <?php browse_lookup_box('location', 'City', 'Search cities...', browse_pairs(OPPORTUNITY_LOCATIONS), $locationFilter); ?>
+            <?php browse_lookup_box('location', 'Opportunity Location', 'Search cities...', browse_pairs(OPPORTUNITY_LOCATIONS), $locationFilter); ?>
             <?php browse_lookup_box('sector', 'Industry Sector', 'Search sectors...', browse_pairs($sectors), $sectorFilter); ?>
             <?php browse_lookup_box('duration', 'Duration', 'Search durations...', browse_pairs($allowedDurations), $durationFilter); ?>
 
@@ -1698,34 +1822,68 @@ user_header($me, 'Browse', 'browse');
                 <a href="<?= browse_h('browse.php' . ($search !== '' ? '?' . http_build_query(['q' => $search]) : '')) ?>" class="btn btn-ghost">Reset</a>
             </div>
 
-            <p class="filter-panel-note">
-                Results match all the filters you choose. Inside one filter, an opportunity
-                matches if it has any of the items you selected.
-            </p>
+         
         </form>
 
         <div class="browse-results">
 
-            <!-- Filters button: on the right, above the Search button -->
-            <div class="browse-filter-bar">
+         
+
+            <!-- Search: opportunity or company name (Enter or the Search button) -->
+            <form method="GET" action="browse.php" class="dashboard-card search-card" role="search">
+                
+                <!-- Filters button: opens / closes the filter card on the left -->
                 <button
                     type="button"
-                    class="btn btn-outline btn-sm filter-toggle"
+                    class="btn btn-outline filter-toggle"
                     id="filterToggle"
                     aria-controls="filterPanel"
                     aria-expanded="true"
                 >
-                    <span class="filter-toggle-text">Hide Filters</span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+                    <span class="filter-toggle-text">Filters</span>
                     <?php if ($activeFilterCount > 0): ?>
                         <span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span>
                     <?php endif; ?>
                 </button>
-            </div>
 
-            <!-- Search: opportunity or company name (Enter or the Search button) -->
-            <form method="GET" action="browse.php" class="dashboard-card search-card" role="search">
+             <!-- Sort button: menu with the sort choices (applies when you pick one) -->
+                <div class="sort-wrap">
+                    <button
+                        type="button"
+                        class="btn btn-outline sort-toggle<?= ($sort !== 'newest' || $when !== '') ? ' is-active' : '' ?>"
+                        id="sortToggle"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        aria-controls="sortMenu"
+                    >
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+                        <span>Sort</span>
+                    </button>
+
+                    <div class="sort-menu" id="sortMenu" hidden>
+                        <div class="sort-menu-title">Sort by</div>
+                        <?php foreach ($sortOptions as $value => $text): ?>
+                            <label class="sort-option">
+                                <input type="radio" name="sort" value="<?= browse_h($value) ?>" <?= $sort === $value ? 'checked' : '' ?>>
+                                <span><?= browse_h($text) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+
+                        <div class="sort-menu-line"></div>
+
+                        <div class="sort-menu-title">Application dates</div>
+                        <?php foreach ($whenOptions as $value => $text): ?>
+                            <label class="sort-option">
+                                <input type="radio" name="when" value="<?= browse_h($value) ?>" <?= $when === $value ? 'checked' : '' ?>>
+                                <span><?= browse_h($text) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
                 <?php foreach ($filterQuery as $key => $value): ?>
-                    <?php if ($key === 'q') continue; ?>
+                    <?php if ($key === 'q' || $key === 'sort' || $key === 'when') continue; ?>
                     <?php foreach ((array)$value as $item): ?>
                         <input type="hidden" name="<?= browse_h($key) ?><?= is_array($value) ? '[]' : '' ?>" value="<?= browse_h($item) ?>">
                     <?php endforeach; ?>
@@ -1792,7 +1950,7 @@ user_header($me, 'Browse', 'browse');
         <div class="browse-toolbar">
 
             <div>
-                <h2 class="section-heading">Available Listings</h2>
+                <h2 class="section-heading">Available Opportunities</h2>
 
                 <p class="section-description">
                     Browse the opportunities currently recorded in Ufuq.
@@ -2047,17 +2205,43 @@ user_header($me, 'Browse', 'browse');
     });
 })();
 
+
+/* Sort menu: opens under the Sort button; picking a choice applies it right away. */
+(function () {
+    const btn = document.getElementById('sortToggle');
+    const menu = document.getElementById('sortMenu');
+    if (!btn || !menu) return;
+
+    function setOpen(open) {
+        menu.hidden = !open;
+        btn.setAttribute('aria-expanded', String(open));
+    }
+
+    btn.addEventListener('click', function () { setOpen(menu.hidden); });
+    document.addEventListener('click', function (e) {
+        if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !menu.hidden) { setOpen(false); btn.focus(); }
+    });
+    menu.addEventListener('change', function () { btn.closest('form').submit(); });
+})();
+
+
+
+
+
 /* Show / hide the filter sidebar (remembered in this browser). */
 (function () {
     const layout = document.getElementById('browseLayout');
     const btn = document.getElementById('filterToggle');
     if (!layout || !btn) return;
-    const text = btn.querySelector('.filter-toggle-text');
+    
 
     function setHidden(hidden) {
         layout.classList.toggle('filters-hidden', hidden);
         btn.setAttribute('aria-expanded', String(!hidden));
-        text.textContent = hidden ? 'Show Filters' : 'Hide Filters';
+        
         try { localStorage.setItem('ufuqBrowseFiltersHidden', hidden ? '1' : '0'); } catch (e) {}
     }
 
