@@ -494,6 +494,9 @@ $stmt->execute([$companyId]);
 $reviews = $stmt->fetchAll();
 
 $openCount = count(array_filter($opportunities, static fn($o) => strtolower((string)$o['Status']) === 'open'));
+$oppTotal = count($opportunities);
+$closedCount = $oppTotal - $openCount;
+$totalFavorites = array_sum(array_map(static fn($o) => (int)($o['FavouriteCount'] ?? 0), $opportunities));
 $totalApplicants = count($applicants);
 $totalViews = array_sum(array_map(static fn($o) => (int)($o['ViewsCount'] ?? 0), $opportunities));
 $recentApplicants = array_slice($applicants, 0, 5);
@@ -536,6 +539,12 @@ $recentOpportunityReviews = $pdo->prepare("
 ");
 $recentOpportunityReviews->execute([$companyId]);
 $allOpportunityReviews = $recentOpportunityReviews->fetchAll(PDO::FETCH_ASSOC);
+
+/* All reviews of each opportunity, newest first (review tables in the Opportunities tab). */
+$allReviewsByOpportunity = [];
+foreach ($allOpportunityReviews as $review) {
+    $allReviewsByOpportunity[(int)$review['OpportunityID']][] = $review;
+}
 
 /* Group reviews by opportunity and keep only the latest two comments. */
 $reviewsByOpportunity = [];
@@ -625,6 +634,53 @@ $heroTitles = [
 .company-dashboard .stat-icon{display:inline-flex;align-items:center;justify-content:center;width:43px;height:43px;flex-shrink:0;border-radius:13px;background:var(--c-lavender);color:var(--c-purple)}
 .company-dashboard .stat-number{display:block;margin-bottom:5px;color:var(--c-purple);font-size:2rem;font-weight:800;line-height:1.3}
 .company-dashboard .stat-note{color:var(--c-muted);font-size:.83rem;line-height:1.6}
+/* Overview: highlighted card + small cards (same design as the admin dashboard) */
+.company-dashboard .highlight-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,2fr);gap:16px;margin-bottom:28px}
+.company-dashboard .highlight-card{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;gap:16px;padding:24px;border-radius:16px;background:linear-gradient(125deg,#281a46 0%,#39265f 55%,#49316f 100%);color:#fff;text-decoration:none;box-shadow:0 10px 26px rgba(40,26,70,.18);transition:transform .22s ease,box-shadow .22s ease;animation:companyFadeUp .45s ease both}
+.company-dashboard .highlight-card::after{content:"";position:absolute;right:-60px;top:-60px;width:170px;height:170px;border:26px solid rgba(255,255,255,.07);border-radius:50%;pointer-events:none}
+.company-dashboard .highlight-card:hover{transform:translateY(-3px);box-shadow:0 14px 32px rgba(40,26,70,.24)}
+.company-dashboard .highlight-title{display:block;color:rgba(255,255,255,.85);font-size:.95rem;font-weight:700}
+.company-dashboard .highlight-number{display:block;margin:10px 0 4px;color:#fff;font-size:3rem;font-weight:800;line-height:1.1}
+.company-dashboard .highlight-note{display:block;color:rgba(255,255,255,.75);font-size:.86rem;line-height:1.6}
+.company-dashboard .highlight-btn{align-self:flex-start;padding:9px 15px;border-radius:9px;background:var(--c-gold);color:#fff;font-size:.86rem;font-weight:700;transition:background .18s ease}
+.company-dashboard .highlight-card:hover .highlight-btn{background:#c48b2c}
+.company-dashboard .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.company-dashboard .mini-card{display:flex;align-items:center;gap:12px;padding:14px 16px;color:var(--c-text);text-decoration:none;animation:companyFadeUp .45s ease both}
+.company-dashboard a.mini-card:hover{transform:translateY(-3px)}
+.company-dashboard .mini-card .stat-icon{width:38px;height:38px;font-weight:800}
+.company-dashboard .mini-number{display:block;color:var(--c-purple);font-size:1.5rem;font-weight:800;line-height:1.2}
+.company-dashboard .mini-title{display:block;margin-top:2px;font-size:.84rem;font-weight:700;line-height:1.35}
+.company-dashboard .mini-card.is-soon .mini-title{margin-top:0}
+.company-dashboard .soon-text{display:block;margin-top:3px;color:var(--c-muted);font-size:.82rem}
+@media(max-width:900px){.company-dashboard .highlight-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:620px){.company-dashboard .mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.company-dashboard .opportunity-reviews-section{margin-top:34px}
+.company-dashboard .review-opportunity-card .opp-sub .review-star{color:#e6a900}
+/* Review cards: colours swapped - white heading, light lavender reviews area */
+.company-dashboard .review-opportunity-card .applicant-opportunity-heading{background:#fff}
+.company-dashboard .review-opportunity-card .company-table-wrap{background:#f7f4fb}
+.company-dashboard .review-opportunity-card .reviews-table tbody tr{background:#f7f4fb}
+.company-dashboard .review-opportunity-card .reviews-table tbody tr:hover{background:#f1ecf8}
+.company-dashboard .review-opportunity-card .reviews-table thead{background:#ece6f6}
+.company-dashboard .review-opportunity-card .review-card-footer{border-top-color:#e6deef}
+.company-dashboard .reviews-table{width:100%;table-layout:fixed}
+.company-dashboard .reviews-table th:nth-child(1){width:22%}
+.company-dashboard .reviews-table th:nth-child(2){width:16%}
+.company-dashboard .reviews-table th:nth-child(4){width:16%}
+.company-dashboard .reviews-table .rating-stars{color:#e9ac10;letter-spacing:1px;white-space:nowrap}
+.company-dashboard .reviews-table .review-text-cell{color:#514b5d;line-height:1.7;overflow-wrap:anywhere}
+.company-dashboard .reviews-table .review-date-cell{color:var(--c-muted);white-space:nowrap}
+.company-dashboard .review-table-empty{margin:0;padding:18px 20px;color:var(--c-muted);font-size:.88rem}
+.company-dashboard .review-card-footer{padding:12px 20px;border-top:1px solid #f0edf4;text-align:right}
+@media(max-width:700px){
+  .company-dashboard .reviews-table,.company-dashboard .reviews-table tbody,.company-dashboard .reviews-table tr,.company-dashboard .reviews-table td{display:block;width:100%}
+  .company-dashboard .reviews-table thead{display:none}
+  .company-dashboard .reviews-table tr{padding:12px 16px;border-bottom:1px solid #f0edf4}
+  .company-dashboard .reviews-table td{padding:4px 0!important;border:0!important}
+  .company-dashboard .reviews-table td::before{content:attr(data-label);display:block;color:var(--c-muted);font-size:.74rem;font-weight:700;text-transform:uppercase}
+}
+.company-dashboard .tab-back{display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;color:var(--c-purple);font-size:.86rem;font-weight:700;text-decoration:none}
+.company-dashboard .tab-back:hover{color:var(--c-purple-dark);text-decoration:underline}
 .company-dashboard .dashboard-link{display:inline-flex;align-items:center;gap:6px;color:var(--c-purple);font-size:.86rem;font-weight:700;text-decoration:none}
 .company-dashboard .dashboard-link:hover{color:var(--c-purple-dark);text-decoration:underline}
 
@@ -665,11 +721,14 @@ $heroTitles = [
 .company-dashboard .opp-actions .company-inline-form{margin:0}
 .company-dashboard .opp-status-btn{min-width:150px;white-space:nowrap;justify-content:center;border:2px solid transparent}
 /* Reopen: gold accent — matches --c-gold المعرّف أصلاً بالملف */
-.company-dashboard .opp-status-btn-reopen{background:#fbf3e4;border-color:var(--c-gold);color:#8a6315}
-.company-dashboard .opp-status-btn-reopen:hover{background:var(--c-gold);color:#fff}
+.company-dashboard .opp-status-btn-reopen{background:#fff;border:1px solid #d9cde8!important;color:var(--c-purple)}
+.company-dashboard .opp-status-btn-reopen:hover{background:var(--c-lavender);border-color:#bfaedb!important;color:var(--c-purple-dark)}
 /* Close: أحمر هادي — يختلف عن Reopen وعن زر Delete (اللي يستخدم icon-danger) */
-.company-dashboard .opp-status-btn-close{background:#fdeeee;border-color:#c0575f;color:#9c3a40}
-.company-dashboard .opp-status-btn-close:hover{background:#c0575f;color:#fff}
+.company-dashboard .opp-status-btn-close{background:#fff;border:1px solid #f1d4d8!important;color:#9c263d}
+.company-dashboard .opp-status-btn-close:hover{background:#fff1f2;border-color:#e5b3b9!important;color:#86202f}
+/* Opportunity status: Open green, Closed red, Upcoming grey */
+.company-dashboard .badge-status-closed{background:#fff1f2;color:#9c263d;border:1px solid #f1d4d8}
+.company-dashboard .badge-status-upcoming{background:#efeef2;color:#5f5b68;border:1px solid #e0dee5}
 /* My Opportunities: the whole table fits the page (no left/right scrolling), centered content, small action buttons */
 
 /* My Opportunities table: cleaner spacing and aligned columns */
@@ -696,23 +755,29 @@ $heroTitles = [
     line-height: 1.6;
 }
 
-/* Table headings */
+/* Table headings: a word is never split across two lines */
 .company-dashboard .company-table-wrap .opp-table th {
     white-space: normal;
-    font-size: 0.82rem;
+    overflow-wrap: normal;
+    word-break: normal;
+    font-size: 0.78rem;
     line-height: 1.5;
 }
 
-/* Opportunity title */
+.company-dashboard .company-table-wrap .opp-table th:nth-child(5),
+.company-dashboard .company-table-wrap .opp-table th:nth-child(6) {
+    white-space: nowrap;
+}
+
+/* Opportunity title (centered like the other columns) */
 .company-dashboard .opp-table th:nth-child(1),
 .company-dashboard .opp-table td:nth-child(1) {
-    width: 22%;
-    text-align: left;
+    width: 19%;
 }
 
 /* Type */
 .company-dashboard .opp-table th:nth-child(2) {
-    width: 12%;
+    width: 9%;
 }
 
 /* Status */
@@ -727,12 +792,12 @@ $heroTitles = [
 
 /* Favorites */
 .company-dashboard .opp-table th:nth-child(5) {
-    width: 8%;
+    width: 10%;
 }
 
 /* Applications */
 .company-dashboard .opp-table th:nth-child(6) {
-    width: 9%;
+    width: 12%;
 }
 
 /* Application Method */
@@ -742,7 +807,7 @@ $heroTitles = [
 
 /* Actions */
 .company-dashboard .opp-table th:nth-child(8) {
-    width: 20%;
+    width: 21%;
 }
 
 /* Stack action buttons neatly */
@@ -754,8 +819,14 @@ $heroTitles = [
     gap: 5px;
 }
 
-/* Keep Close Opportunity centered on the first row */
-.company-dashboard .opp-table .opp-actions > a.opp-status-btn,
+/* Close Opportunity and Reopen: same size (150px, smaller when the column is narrow), centered on their own line */
+.company-dashboard .opp-table .opp-actions > .opp-status-btn {
+    flex: 0 0 auto;
+    width: min(150px, 100%);
+    margin: 0 max(0px, calc((100% - 150px) / 2));
+}
+
+
 .company-dashboard .opp-table .opp-actions > form:first-child {
     flex: 0 0 100%;
     display: flex;
@@ -769,11 +840,14 @@ $heroTitles = [
 }
 .company-dashboard .opp-table .opp-status-btn {
     min-width: 0;
-    width: auto;
+    width: 150px;
     max-width: 100%;
-    min-height: 34px;
-    padding: 7px 10px;
+    min-height: 32px;
+    padding: 6px 10px;
+    border-radius: 9px;
     font-size: 0.78rem;
+    font-weight: 700;
+    box-shadow: none;
     white-space: normal;
     line-height: 1.4;
 }
@@ -1245,8 +1319,13 @@ $heroTitles = [
 <header id="site-header" class="site-header">
   <div class="container">
     <a href="../index.php" class="brand" style="text-decoration:none"><img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent"> Ufuq</a>
-    <nav class="nav-links"><a href="dashboard-company.php?tab=overview" class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
-    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
+    <?php
+      /* Header link to highlight: Profile highlights nothing (it opens from the logo / picture).
+         Reviews belong to Opportunities, unless they were opened from the Dashboard. */
+      $navActive = $activeTab;
+      if ($activeTab === 'reviews') $navActive = (($_GET['from'] ?? '') === 'overview') ? 'overview' : 'opportunities';
+    ?><nav class="nav-links" id="navLinks"><a href="dashboard-company.php?tab=overview" class="<?= $navActive === 'overview' ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $navActive === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
+    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a><button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-controls="navLinks" aria-expanded="false" type="button"><?= icon('menu', 22) ?></button></div>
   </div>
 </header>
 
@@ -1293,7 +1372,7 @@ $heroTitles = [
         <div class="welcome-label"><span aria-hidden="true">✦</span><span>Ufuq Company Space</span></div>
         <?php if ($activeTab === 'overview'): ?>
           <h1>Welcome back, <?= e($company['CompanyName']) ?>!</h1>
-          <p>Publish opportunities, review applicants, and track how students engage with your programs.</p>
+          <p>Share your training programs and courses, manage applicants, and see how students respond.</p>
         <?php else: ?>
           <h1><?= e($heroTitles[$activeTab][0]) ?></h1>
           <p><?= e($heroTitles[$activeTab][1]) ?></p>
@@ -1312,6 +1391,15 @@ $heroTitles = [
   </section>
 
   <div class="container dashboard-content">
+    <?php
+      /* Back arrow on pages opened from the dashboard or from the reviews summary. */
+      $backPages = ['overview' => 'Dashboard', 'opportunities' => 'Opportunities'];
+      $backFrom = (string)($_GET['from'] ?? '');
+      if (!isset($backPages[$backFrom]) && $activeTab === 'reviews') $backFrom = 'overview';
+    ?>
+    <?php if (isset($backPages[$backFrom]) && $backFrom !== $activeTab): ?>
+      <a href="dashboard-company.php?tab=<?= e($backFrom) ?>" class="tab-back"><span aria-hidden="true">&larr;</span> Back to <?= e($backPages[$backFrom]) ?></a>
+    <?php endif; ?>
 
     <?php if ($success !== ''): ?><div class="company-toast" id="companyToast" role="status" aria-live="polite"><span class="company-toast-icon" aria-hidden="true">✓</span><span><?= e($success) ?></span><button type="button" class="company-toast-close" aria-label="Close">&times;</button></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="company-alert error" role="alert"><span aria-hidden="true">!</span><span><?= e($error) ?></span></div><?php endif; ?>
@@ -1319,24 +1407,79 @@ $heroTitles = [
     <!-- Overview -->
     <section class="tab-panel <?= $activeTab === 'overview' ? 'active' : '' ?>" id="tab-overview">
 
-      <div class="stat-grid" aria-label="Dashboard overview">
-        <a href="dashboard-company.php?tab=opportunities" class="dashboard-card stat-card">
-          <div class="stat-top"><span class="stat-title">Open Opportunities</span><span class="stat-icon" aria-hidden="true"><?= icon('training', 22) ?></span></div>
-          <div><span class="stat-number"><?= $openCount ?></span><span class="stat-note">Currently accepting applications.</span></div>
-        </a>
-        <a href="dashboard-company.php?tab=applicants" class="dashboard-card stat-card">
-          <div class="stat-top"><span class="stat-title">Total Applicants</span><span class="stat-icon" aria-hidden="true"><?= icon('userMale', 22) ?></span></div>
-          <div><span class="stat-number"><?= $totalApplicants ?></span><span class="stat-note">Across all your opportunities.</span></div>
-        </a>
-        <a href="dashboard-company.php?tab=opportunities" class="dashboard-card stat-card">
-          <div class="stat-top"><span class="stat-title">Total Views</span><span class="stat-icon" aria-hidden="true"><?= icon('goal', 22) ?></span></div>
-          <div><span class="stat-number"><?= (int)$totalViews ?></span><span class="stat-note">Visits to your opportunity pages.</span></div>
-        </a>
-        <a href="dashboard-company.php?tab=reviews" class="dashboard-card stat-card">
-          <div class="stat-top"><span class="stat-title">Average Rating</span><span class="stat-icon" aria-hidden="true"><?= icon('favorite', 22) ?></span></div>
-          <div><span class="stat-number"><?= $averageRating !== null ? number_format((float)$averageRating, 1) : '&mdash;' ?></span><span class="stat-note"><?= $reviewCount ?> <?= $reviewCount === 1 ? 'review' : 'reviews' ?> so far.</span></div>
-        </a>
+      <!-- Overview -->
+      <div class="card-heading-row">
+        <div>
+          <h2 class="section-heading" style="margin-bottom:7px">Overview</h2>
+          <p class="section-description" style="margin:0">A quick look at your opportunities and how students interact with them.</p>
+        </div>
       </div>
+
+      <!-- All Opportunities highlighted, the rest as small cards (same design as the admin dashboard) -->
+      <section class="highlight-grid" aria-label="Dashboard overview">
+
+        <a href="dashboard-company.php?tab=opportunities&amp;from=overview" class="highlight-card">
+          <div>
+            <span class="highlight-title">All Opportunities</span>
+            <span class="highlight-number"><?= $oppTotal ?></span>
+            <span class="highlight-note"><?= $oppTotal === 1 ? 'Training program or course you have published.' : 'Training programs and courses you have published.' ?></span>
+          </div>
+          <span class="highlight-btn">Manage opportunities &rarr;</span>
+        </a>
+
+        <div class="mini-grid">
+
+          <a href="dashboard-company.php?tab=opportunities&amp;from=overview" class="dashboard-card mini-card">
+            <span class="stat-icon" aria-hidden="true"><?= icon('training', 20) ?></span>
+            <div>
+              <span class="mini-number"><?= $openCount ?></span>
+              <span class="mini-title">Open Opportunities</span>
+            </div>
+          </a>
+
+          <a href="dashboard-company.php?tab=opportunities&amp;from=overview" class="dashboard-card mini-card">
+            <span class="stat-icon" aria-hidden="true">✕</span>
+            <div>
+              <span class="mini-number"><?= $closedCount ?></span>
+              <span class="mini-title">Closed Opportunities</span>
+            </div>
+          </a>
+
+          <a href="dashboard-company.php?tab=opportunities&amp;from=overview" class="dashboard-card mini-card">
+            <span class="stat-icon" aria-hidden="true"><?= icon('goal', 20) ?></span>
+            <div>
+              <span class="mini-number"><?= number_format((int)$totalViews) ?></span>
+              <span class="mini-title">Total Views</span>
+            </div>
+          </a>
+
+          <a href="dashboard-company.php?tab=opportunities&amp;from=overview" class="dashboard-card mini-card">
+            <span class="stat-icon" aria-hidden="true">♥</span>
+            <div>
+              <span class="mini-number"><?= number_format($totalFavorites) ?></span>
+              <span class="mini-title">Favorites</span>
+            </div>
+          </a>
+
+          <a href="dashboard-company.php?tab=reviews&amp;from=overview" class="dashboard-card mini-card">
+            <span class="stat-icon" aria-hidden="true">★</span>
+            <div>
+              <span class="mini-number"><?= $averageRating !== null ? number_format((float)$averageRating, 1) : '&mdash;' ?></span>
+              <span class="mini-title">Average Rating</span>
+            </div>
+          </a>
+
+          <!-- Not part of this release -->
+          <div class="dashboard-card mini-card is-soon">
+            <span class="stat-icon" aria-hidden="true"><?= icon('userMale', 20) ?></span>
+            <div>
+              <span class="mini-title">Total Applicants</span>
+              <span class="soon-text">Coming Soon</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
 
       <div class="dashboard-section">
         <div class="card-heading-row">
@@ -1344,123 +1487,13 @@ $heroTitles = [
             <h2 class="section-heading" style="margin-bottom:7px">Recent Applicants</h2>
             <p class="section-description" style="margin:0">The latest students who applied to your opportunities.</p>
           </div>
-          <a href="dashboard-company.php?tab=applicants" class="dashboard-link">View all &rarr;</a>
+          <a href="dashboard-company.php?tab=applicants&amp;from=overview" class="dashboard-link">View all &rarr;</a>
         </div>
-        <?php if (!$recentApplicants): ?>
-          <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('userMale', 30, 'icon-muted') ?></div><h3>No applicants yet</h3><p>Applicants will appear here when students apply to your opportunities.</p></div>
-        <?php else: ?>
-          <div class="company-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Opportunity</th><th>Applied</th></tr></thead><tbody>
-            <?php foreach ($recentApplicants as $a): ?><tr><td><?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? '')) ?: 'Unknown') ?></td><td><?= e($a['Title']) ?></td><td><?= display_date($a['SubmissionDate']) ?></td></tr><?php endforeach; ?>
-          </tbody></table></div>
-        <?php endif; ?>
+        <!-- Not part of this release -->
+        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('userMale', 30, 'icon-muted') ?></div><h3>Coming Soon</h3><p>Recent applicants will be shown here in a future update.</p></div>
       </div>
     </section>
 
-<?php if (in_array($activeTab, ['home', 'opportunities'], true)): ?>
-    <!-- Opportunity Reviews: rating summaries and latest two comments -->
-<section class="dashboard-section opportunity-reviews-section">
-    <div class="card-heading-row">
-        <div>
-            <h2 class="section-heading" style="margin-bottom:7px">
-                Opportunity Reviews
-            </h2>
-            <p class="section-description" style="margin:0">
-                Average ratings and the latest comments for your opportunities.
-            </p>
-        </div>
-
-        <a href="dashboard-company.php?tab=reviews" class="dashboard-link">
-            View all reviews &rarr;
-        </a>
-    </div>
-
-    <?php if (!$opportunityReviewStats): ?>
-        <div class="empty-state">
-            <div class="empty-icon" aria-hidden="true">
-                <?= icon('favorite', 30, 'icon-muted') ?>
-            </div>
-            <h3>No opportunities yet</h3>
-            <p>Your opportunity ratings and reviews will appear here.</p>
-        </div>
-    <?php else: ?>
-        <div class="opportunity-review-grid">
-            <?php foreach ($opportunityReviewStats as $reviewStat): ?>
-                <?php
-                // Read the current opportunity's rating summary and comments.
-                $reviewOppId = (int) $reviewStat['OpportunityID'];
-                $latestReviews = $reviewsByOpportunity[$reviewOppId] ?? [];
-                $average = $reviewStat['AverageRating'];
-                ?>
-
-                <article class="dashboard-card opportunity-review-card">
-                    <h3><?= e($reviewStat['Title']) ?></h3>
-
-                    <div class="opportunity-review-average">
-                        <span class="review-star" aria-hidden="true">★</span>
-
-                        <?php if ($average !== null): ?>
-                            <strong><?= number_format((float) $average, 1) ?> / 5</strong>
-                        <?php else: ?>
-                            <strong>No ratings yet</strong>
-                        <?php endif; ?>
-
-                        <span class="company-help">
-                            (<?= (int) $reviewStat['ReviewCount'] ?>
-                            <?= (int) $reviewStat['ReviewCount'] === 1 ? 'review' : 'reviews' ?>)
-                        </span>
-                    </div>
-
-                    <?php if (!$latestReviews): ?>
-                        <p class="company-help">
-                            No comments have been submitted for this opportunity yet.
-                        </p>
-                    <?php else: ?>
-                        <?php foreach ($latestReviews as $latestReview): ?>
-                            <div class="opportunity-review-comment">
-                                <div class="opportunity-review-comment-top">
-                                    <strong>
-                                        <?= e(trim(
-                                            ($latestReview['FirstName'] ?? '') . ' ' .
-                                            ($latestReview['LastName'] ?? '')
-                                        ) ?: 'A user') ?>
-                                    </strong>
-
-                                    <span class="rating-stars">
-                                        <?= str_repeat(
-                                            '★',
-                                            max(0, min(5, (int) $latestReview['Rating']))
-                                        ) ?>
-                                        <?= str_repeat(
-                                            '☆',
-                                            5 - max(0, min(5, (int) $latestReview['Rating']))
-                                        ) ?>
-                                    </span>
-                                </div>
-
-                                <p>
-                                    <?= nl2br(e($latestReview['ReviewText'] ?? '')) ?>
-                                </p>
-
-                                <small>
-                                    <?= display_date($latestReview['CreatedAt']) ?>
-                                </small>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-
-                    <!-- Open the opportunity details directly at the reviews section. -->
-                    <a
-                        class="dashboard-link opportunity-review-link"
-                        href="opportunity-detail.php?id=<?= $reviewOppId ?>#companyReviewsCard"
-                    >
-                        View opportunity reviews &rarr;
-                    </a>
-                </article>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
-</section>
-<?php endif; ?>
 
     <!-- Opportunities -->
     <section class="tab-panel <?= $activeTab === 'opportunities' ? 'active' : '' ?>" id="tab-opportunities">
@@ -1475,7 +1508,7 @@ $heroTitles = [
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Click "Add Opportunity" to publish your first training program or course.</p></div>
       <?php else: ?>
         <div class="company-table-wrap opp-table-wrap"><table class="data-table opp-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Applications</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
-      <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td>—</td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; $closeMsg = 'Reviewing applicants before closing isn\'t available yet. Close this opportunity directly for now?'; $reopenMsg = 'Reopening will publish a new copy of this opportunity with fresh dates. You\'ll be taken to edit it next. Continue?'; ?>
+      <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ['Open' => 'badge-success', 'Closed' => 'badge-status-closed', 'Upcoming' => 'badge-status-upcoming'][$o['Status'] ?? ''] ?? 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td>—</td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; $closeMsg = 'Reviewing applicants before closing isn\'t available yet. Close this opportunity directly for now?'; $reopenMsg = 'Reopening will publish a new copy of this opportunity with fresh dates. You\'ll be taken to edit it next. Continue?'; ?>
 <?php if ($isOpenOpp): ?>
 
   <!-- Redirect to the existing Applications tab before closing -->
@@ -1546,6 +1579,70 @@ $heroTitles = [
 
 <a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>        </tbody></table></div>
       <?php endif; ?>
+
+      <!-- Opportunity Reviews (under My Opportunities): one card per opportunity, same look as the applicants list.
+           The triangle opens / closes the reviews table (remembered in this browser). -->
+      <section class="dashboard-section opportunity-reviews-section">
+        <div class="card-heading-row">
+          <div>
+            <h2 class="section-heading" style="margin-bottom:7px">Opportunity Reviews</h2>
+            <p class="section-description" style="margin:0">Average rating and student reviews for each of your opportunities.</p>
+          </div>
+          <a href="dashboard-company.php?tab=reviews&amp;from=opportunities" class="dashboard-link">View all reviews &rarr;</a>
+        </div>
+
+        <?php if (!$opportunityReviewStats): ?>
+          <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('favorite', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Your opportunity ratings and reviews will appear here.</p></div>
+        <?php else: ?>
+          <?php foreach ($opportunityReviewStats as $reviewStat): ?>
+            <?php
+              $reviewOppId = (int)$reviewStat['OpportunityID'];
+              $oppReviews = $allReviewsByOpportunity[$reviewOppId] ?? [];
+              $reviewTotal = (int)$reviewStat['ReviewCount'];
+              $average = $reviewStat['AverageRating'];
+            ?>
+            <article class="applicant-opportunity-card review-opportunity-card" data-opp-card="review-<?= $reviewOppId ?>">
+              <div class="applicant-opportunity-heading">
+                <button type="button" class="opp-toggle" aria-expanded="true" aria-controls="reviewTable<?= $reviewOppId ?>">
+                  <span class="opp-heading-text">
+                    <span class="opp-title"><?= e($reviewStat['Title']) ?></span>
+                    <span class="opp-sub">
+                      <span class="review-star" aria-hidden="true">★</span>
+                      <?= $average !== null ? number_format((float)$average, 1) . ' / 5 average rating' : 'No ratings yet' ?>
+                    </span>
+                  </span>
+                  <span class="applicant-count"><?= $reviewTotal ?> <?= $reviewTotal === 1 ? 'review' : 'reviews' ?></span>
+                  <span class="opp-caret" aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <div class="company-table-wrap" id="reviewTable<?= $reviewOppId ?>">
+                <?php if (!$oppReviews): ?>
+                  <p class="review-table-empty">No reviews have been submitted for this opportunity yet.</p>
+                <?php else: ?>
+                  <table class="data-table reviews-table">
+                    <thead><tr><th>Student</th><th>Rating</th><th>Review</th><th>Date</th></tr></thead>
+                    <tbody>
+                      <?php foreach ($oppReviews as $rv): ?>
+                        <?php $stars = max(0, min(5, (int)$rv['Rating'])); ?>
+                        <tr>
+                          <td data-label="Student"><strong><?= e(trim(($rv['FirstName'] ?? '') . ' ' . ($rv['LastName'] ?? '')) ?: 'A user') ?></strong></td>
+                          <td data-label="Rating"><span class="rating-stars" title="<?= $stars ?> / 5"><?= str_repeat('★', $stars) . str_repeat('☆', 5 - $stars) ?></span></td>
+                          <td data-label="Review" class="review-text-cell"><?= nl2br(e($rv['ReviewText'] ?? '')) ?></td>
+                          <td data-label="Date" class="review-date-cell"><?= display_date($rv['CreatedAt']) ?></td>
+                        </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                <?php endif; ?>
+                <div class="review-card-footer">
+                  <a class="dashboard-link" href="opportunity-detail.php?id=<?= $reviewOppId ?>#companyReviewsCard">View on opportunity page &rarr;</a>
+                </div>
+              </div>
+            </article>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </section>
     </section>
 
 

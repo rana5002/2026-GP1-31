@@ -81,9 +81,7 @@ $adminName = trim((string)($st->fetchColumn() ?: '')) ?: 'Admin';
 
 /* Dashboard panels: most viewed opportunities on the platform, and the newest companies waiting for review. */
 $topOpportunities = $pdo->query("
-    SELECT o.OpportunityID, o.Title, o.OpportunityProvider, o.ViewCount,
-           (SELECT COUNT(*) FROM favorite f WHERE f.OpportunityID = o.OpportunityID) AS FavouriteCount,
-           (SELECT COUNT(*) FROM application a WHERE a.OpportunityID = o.OpportunityID) AS ApplicationCount
+    SELECT o.OpportunityID, o.Title, o.OpportunityProvider, o.ViewCount
     FROM opportunity o
     ORDER BY o.ViewCount DESC, o.OpportunityID DESC
     LIMIT 10
@@ -91,8 +89,6 @@ $topOpportunities = $pdo->query("
 /* The panel shows the top 3; the triangle opens the rest (up to 10). */
 $rankVisible = 3;
 $maxViews = max(1, (int)($topOpportunities[0]['ViewCount'] ?? 0));
-$pendingPreview = array_slice($pending, 0, 3);
-$companyTotal = $pendingCount + $verifiedCount + $rejectedCount;
 
 admin_header('Admin Dashboard', $tab);
 ?>
@@ -721,10 +717,19 @@ admin_header('Admin Dashboard', $tab);
     background: #c48b2c;
 }
 
+/* 5 cards: 3 on the first row, the last 2 stretch to fill the second row */
 .admin-dashboard .mini-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
+}
+
+.admin-dashboard .mini-grid > .mini-card {
+    grid-column: span 2;
+}
+
+.admin-dashboard .mini-grid > .mini-card:nth-last-child(-n+2) {
+    grid-column: span 3;
 }
 
 .admin-dashboard .mini-card {
@@ -766,7 +771,7 @@ a.mini-card:hover {
 /* Panels */
 .admin-dashboard .panel-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 18px;
     margin-top: 6px;
@@ -1087,6 +1092,15 @@ a.mini-card:hover {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .admin-dashboard .mini-grid > .mini-card,
+    .admin-dashboard .mini-grid > .mini-card:nth-last-child(-n+2) {
+        grid-column: auto;
+    }
+
+    .admin-dashboard .mini-grid > .mini-card:last-child {
+        grid-column: 1 / -1;
+    }
+
     .admin-dashboard .dashboard-card {
         padding: 16px;
     }
@@ -1202,7 +1216,7 @@ a.mini-card:hover {
                     <span class="stat-icon" aria-hidden="true">✓</span>
                     <div>
                         <span class="mini-number"><?= $verifiedCount ?></span>
-                        <span class="mini-title">Verified</span>
+                        <span class="mini-title">Verified Companies</span>
                     </div>
                 </a>
 
@@ -1210,15 +1224,7 @@ a.mini-card:hover {
                     <span class="stat-icon" aria-hidden="true">✕</span>
                     <div>
                         <span class="mini-number"><?= $rejectedCount ?></span>
-                        <span class="mini-title">Rejected</span>
-                    </div>
-                </a>
-
-                <a href="dashboard-admin.php?tab=verification" class="dashboard-card mini-card">
-                    <span class="stat-icon" aria-hidden="true"><?= icon('company', 20) ?></span>
-                    <div>
-                        <span class="mini-number"><?= $companyTotal ?></span>
-                        <span class="mini-title">All Companies</span>
+                        <span class="mini-title">Rejected Companies</span>
                     </div>
                 </a>
 
@@ -1242,7 +1248,7 @@ a.mini-card:hover {
                     <span class="stat-icon" aria-hidden="true"><?= icon('training', 20) ?></span>
                     <div>
                         <span class="mini-number"><?= $oppCount ?></span>
-                        <span class="mini-title">My Opportunities</span>
+                        <span class="mini-title">Opportunities by Administrators</span>
                     </div>
                 </a>
 
@@ -1251,36 +1257,6 @@ a.mini-card:hover {
 
         <!-- Panels -->
         <div class="panel-grid">
-
-            <section class="dashboard-card panel-card">
-                <div class="panel-head">
-                    <h3>Waiting for Review</h3>
-                    <a href="dashboard-admin.php?tab=verification" class="dashboard-link">View all &rarr;</a>
-                </div>
-
-                <?php if (!$pendingPreview): ?>
-                    <div class="panel-empty">
-                        <span class="panel-empty-icon" aria-hidden="true">✓</span>
-                        <div>
-                            <strong>All caught up</strong>
-                            <p>No companies are waiting for review.</p>
-                        </div>
-                    </div>
-                <?php else: ?>
-                    <ul class="panel-list">
-                        <?php foreach ($pendingPreview as $c): ?>
-                            <li>
-                                <span class="company-icon small" aria-hidden="true"><?= icon('company', 18, 'icon-primary') ?></span>
-                                <div class="panel-list-main">
-                                    <strong><?= e($c['CompanyName']) ?></strong>
-                                    <span><?= e($c['IndustrySector']) ?> &middot; <?= e($c['Location']) ?></span>
-                                </div>
-                                <a href="admin-company-review.php?id=<?= (int)$c['CompanyID'] ?>" class="btn btn-outline btn-sm">Review</a>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
-            </section>
 
             <section class="dashboard-card panel-card">
                 <div class="panel-head">
@@ -1319,8 +1295,6 @@ a.mini-card:hover {
                                     <div class="rank-bar" aria-hidden="true"><span style="width:<?= round((int)$o['ViewCount'] / $maxViews * 100, 2) ?>%"></span></div>
                                     <div class="rank-meta">
                                         <?= e($o['OpportunityProvider']) ?>
-                                        &middot; <?= (int)$o['FavouriteCount'] ?> <?= (int)$o['FavouriteCount'] === 1 ? 'favorite' : 'favorites' ?>
-                                        &middot; <?= (int)$o['ApplicationCount'] ?> <?= (int)$o['ApplicationCount'] === 1 ? 'application' : 'applications' ?>
                                     </div>
                                 </div>
                             </li>
@@ -1634,5 +1608,4 @@ a.mini-card:hover {
 })();
 </script>
 
-<<?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

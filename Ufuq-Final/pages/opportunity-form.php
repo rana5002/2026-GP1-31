@@ -623,7 +623,7 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
 #oppForm.card{display:block;width:100%;box-sizing:border-box;padding:clamp(20px,3.5vw,30px)!important;background:#fff;border:1px solid #e9e3ed;border-radius:16px;box-shadow:0 5px 18px rgba(40,26,70,.045);overflow:visible}
 #oppForm .form-group{min-width:0;margin-bottom:21px}
 #oppForm .form-label{display:block;margin-bottom:8px;color:#35264f;font-size:.92rem;font-weight:700;line-height:1.5}
-#oppForm .icon-label{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:var(--admin-purple)}
+#oppForm .icon-label{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:#35264f}
 #oppForm .icon-label .icon{color:var(--admin-purple);background-color:var(--admin-purple)}
 #oppForm .required-mark{color:var(--entry-error);font-weight:800;margin-left:2px}
 #oppForm .form-control{display:block;width:100%;min-width:0;min-height:46px;box-sizing:border-box;padding:11px 13px;border:1px solid #dcd5e8;border-radius:10px;outline:none;background:#fff;color:#2c233b;font:inherit;font-size:.94rem;line-height:1.5;box-shadow:0 1px 2px rgba(40,26,70,.025);transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
@@ -657,6 +657,10 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
 #oppForm .lookup-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:var(--admin-purple-dark);font-size:.84rem;font-weight:700}
 #oppForm .lookup-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:var(--admin-purple);font-size:1rem;line-height:1;cursor:pointer}
 #oppForm .lookup-chip button:hover{color:var(--entry-error);background:rgba(217,75,86,.09)}
+/* One-choice drop-down with search (Location) */
+#oppForm .search-single .lookup-toggle-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#oppForm .search-single .lookup-option{align-items:center}
+#oppForm .search-single .lookup-option.is-selected{background:#f2ecfa;color:var(--admin-purple-dark,#281a46);font-weight:650}
 .form-banner{border:1px solid #f1c8cb;background:#fff3f3!important;color:#b82f3b!important;border-radius:10px!important;line-height:1.6}
 @media(max-width:1000px){#oppForm .form-row.form-row-3{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){#oppForm .form-row,#oppForm .form-row.form-row-3{grid-template-columns:minmax(0,1fr);gap:0}}
@@ -673,6 +677,9 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
 #oppForm .day-pick input{width:15px;height:15px;margin:0;accent-color:var(--admin-purple);cursor:pointer}
 #oppForm .day-pick:has(input:checked){background:var(--admin-purple-light);border-color:#cfc1e3;color:var(--admin-purple-dark)}
 #oppForm .day-picks.invalid .day-pick{border-color:var(--entry-error)}
+/* Drop-down buttons: text on the left, triangle on the right (same as the admin form) */
+#oppForm .lookup-toggle{display:flex!important;align-items:center;justify-content:space-between}
+#oppForm .lookup-picker.is-open .lookup-toggle{border-color:var(--admin-purple);box-shadow:0 0 0 4px rgba(57,38,95,.11)}
 @media(prefers-reduced-motion:reduce){#oppForm *{transition:none!important}}
 @media(max-width:700px){.page-content.container>div{max-width:100%!important}.form-row{grid-template-columns:1fr!important}.role-toggle{width:100%;max-width:none!important}}
 </style>
@@ -720,8 +727,8 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
       <div class="form-error" id="externalUrlError" style="<?= isset($errors['external_url']) ? 'display:block;' : '' ?>"><?= e($errors['external_url'] ?? 'Please enter a valid URL.') ?></div>
     </div>
     <div class="form-group"><label class="form-label" for="title">Title <span class="required-mark">*</span></label><input type="text" id="title" name="title" maxlength="100" class="form-control <?= isset($errors['title']) ? 'invalid' : '' ?>" value="<?= opp_value($values, 'Title') ?>"><div class="form-error" id="titleError"><?= e($errors['title'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'title'); ?></div>
-    <div class="form-group"><label class="form-label" for="description">Description<span class="required-mark">*</span></label><textarea id="description" name="description" maxlength="1000" class="form-control <?= isset($errors['description']) ? 'invalid' : '' ?>" rows="4"><?= opp_value($values, 'Description') ?></textarea><div class="form-error" id="descriptionError"><?= e($errors['description'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'description'); ?></div>
-    <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="type"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>Opportunity Type<span class="required-mark">*</span></label><select id="type" name="type" class="form-control <?= isset($errors['type']) ? 'invalid' : '' ?>"><option value="">Select type</option><?php foreach ($types as $type): ?><option value="<?= e($type) ?>" <?= $values['Type'] === $type ? 'selected' : '' ?>><?= e($type) ?></option><?php endforeach; ?></select><div class="form-error" id="typeError"><?= e($errors['type'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'type'); ?></div><div class="form-group"><label class="form-label icon-label" for="location"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/location.png');mask-image:url('../images-website/icons/location.png');"></span>Location<span class="required-mark">*</span></label><select id="location" name="location" class="form-control <?= isset($errors['location']) ? 'invalid' : '' ?>"><option value="">Select location</option><?php foreach ($cities as $city): ?><option value="<?= e($city) ?>" <?= $values['Location'] === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?></select><div class="form-error" id="locationError"><?= e($errors['location'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'location'); ?></div></div>
+    <div class="form-group"><label class="form-label" for="description">Description<span class="required-mark">*</span></label><textarea id="description" name="description" maxlength="1000" placeholder="At least 15 characters." class="form-control <?= isset($errors['description']) ? 'invalid' : '' ?>" rows="4"><?= opp_value($values, 'Description') ?></textarea><div class="form-error" id="descriptionError"><?= e($errors['description'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'description'); ?></div>
+    <div class="form-row"><div class="form-group"><label class="form-label icon-label" for="type"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/training.png');mask-image:url('../images-website/icons/training.png');"></span>Opportunity Type<span class="required-mark">*</span></label><select id="type" name="type" class="form-control <?= isset($errors['type']) ? 'invalid' : '' ?>"><option value="">Select type</option><?php foreach ($types as $type): ?><option value="<?= e($type) ?>" <?= $values['Type'] === $type ? 'selected' : '' ?>><?= e($type) ?></option><?php endforeach; ?></select><div class="form-error" id="typeError"><?= e($errors['type'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'type'); ?></div><div class="form-group"><label class="form-label icon-label" for="location"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/location.png');mask-image:url('../images-website/icons/location.png');"></span>Location<span class="required-mark">*</span></label><select id="location" name="location" data-search class="form-control <?= isset($errors['location']) ? 'invalid' : '' ?>"><option value="">Select location</option><?php foreach ($cities as $city): ?><option value="<?= e($city) ?>" <?= $values['Location'] === $city ? 'selected' : '' ?>><?= e($city) ?></option><?php endforeach; ?></select><div class="form-error" id="locationError"><?= e($errors['location'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'location'); ?></div></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Required Skills<span class="required-mark">*</span></label><?= lookup_picker('skills', 'Select skills', $skillOptions, $skillIds, isset($errors['skills']), true, '') ?><div class="form-error" id="skillsError"><?= e($errors['skills'] ?? 'This field is required.') ?></div><?php opp_error($errors, 'skills'); ?></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/goal.png');mask-image:url('../images-website/icons/goal.png');"></span>Qualifications</label><?= lookup_picker('qualifications', 'Select qualifications', $qualificationOptions, $qualificationIds, isset($errors['qualifications']), false, '') ?><?php opp_error($errors, 'qualifications'); ?></div>
     <div class="form-group"><label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/form.png');mask-image:url('../images-website/icons/form.png');"></span>Experience</label><?= lookup_picker('experience', 'Select experience', $experienceOptions, $experienceIds, isset($errors['experience']), false, '') ?><?php opp_error($errors, 'experience'); ?></div>
@@ -802,6 +809,142 @@ function humanizeDuration(start, end) {
 function updateDuration(){duration.value=humanizeDuration(startDate.value,endDate.value);}
 startDate.addEventListener('change',updateDuration); endDate.addEventListener('change',updateDuration);
 /* Searchable multi-select pickers (skills / qualifications / experience). */
+  /* One-choice drop-down with search: <select data-search> (Industry Sector, Location).
+     The real <select> stays in the form (hidden), so saving and the checks below work the same. */
+  document.querySelectorAll('select[data-search]').forEach(function (select) {
+    const box = document.createElement('div');
+    box.className = 'lookup-picker search-single';
+    box.innerHTML =
+      '<button type="button" class="form-control lookup-toggle" aria-haspopup="listbox" aria-expanded="false">' +
+        '<span class="lookup-toggle-text"></span><span class="lookup-caret" aria-hidden="true">&#9662;</span>' +
+      '</button>' +
+      '<div class="lookup-panel" hidden>' +
+        '<input type="text" class="form-control lookup-search" placeholder="Search..." autocomplete="off">' +
+        '<div class="lookup-list" role="listbox"></div>' +
+        '<div class="lookup-empty" hidden>No matches found</div>' +
+      '</div>';
+    select.insertAdjacentElement('beforebegin', box);
+    select.style.display = 'none';
+
+    const toggle = box.querySelector('.lookup-toggle');
+    const text = box.querySelector('.lookup-toggle-text');
+    const panel = box.querySelector('.lookup-panel');
+    const search = box.querySelector('.lookup-search');
+    const list = box.querySelector('.lookup-list');
+    const empty = box.querySelector('.lookup-empty');
+    const placeholder = (select.options[0] && select.options[0].value === '') ? select.options[0].textContent : 'Select...';
+
+    /* The label now points to the drop-down button. */
+    toggle.id = select.id + 'Toggle';
+    const label = document.querySelector('label[for="' + select.id + '"]');
+    if (label) label.htmlFor = toggle.id;
+
+    Array.from(select.options).forEach(function (opt) {
+      if (opt.value === '') return;
+      const row = document.createElement('div');
+      row.className = 'lookup-option';
+      row.setAttribute('role', 'option');
+      row.dataset.value = opt.value;
+      row.dataset.text = opt.textContent.trim().toLowerCase();
+      row.textContent = opt.textContent.trim();
+      row.addEventListener('click', function () {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+        toggle.focus();
+      });
+      list.appendChild(row);
+    });
+
+    function refresh() {
+      const chosen = select.value !== '' ? select.options[select.selectedIndex].textContent.trim() : '';
+      text.textContent = chosen || placeholder;
+      text.classList.toggle('is-placeholder', chosen === '');
+      list.querySelectorAll('.lookup-option').forEach(function (row) {
+        row.classList.toggle('is-selected', row.dataset.value === select.value);
+      });
+      if (chosen) {
+        select.classList.remove('invalid');
+        const err = document.getElementById(select.id + 'Error');
+        if (err) err.style.display = 'none';
+      }
+    }
+
+    function filter() {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      list.querySelectorAll('.lookup-option').forEach(function (row) {
+        const match = row.dataset.text.indexOf(q) !== -1;
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      empty.hidden = shown !== 0;
+    }
+
+    function close() {
+      panel.hidden = true;
+      box.classList.remove('is-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    toggle.addEventListener('click', function () {
+      const willOpen = panel.hidden;
+      document.querySelectorAll('.lookup-picker .lookup-panel').forEach(function (p) {
+        if (p !== panel) { p.hidden = true; p.closest('.lookup-picker').classList.remove('is-open'); }
+      });
+      if (!willOpen) { close(); return; }
+      panel.hidden = false;
+      box.classList.add('is-open');
+      toggle.setAttribute('aria-expanded', 'true');
+      search.value = '';
+      filter();
+      search.focus();
+    });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const first = list.querySelector('.lookup-option:not([hidden])');
+        if (first) first.click();
+      }
+      if (e.key === 'Escape') { close(); toggle.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!box.contains(e.target)) close(); });
+
+    /* Red border on the button when the hidden <select> is marked invalid by the checks. */
+    new MutationObserver(function () {
+      toggle.classList.toggle('invalid', select.classList.contains('invalid'));
+    }).observe(select, { attributes: true, attributeFilter: ['class'] });
+    toggle.classList.toggle('invalid', select.classList.contains('invalid'));
+    select._searchToggle = toggle;
+
+    select.addEventListener('change', refresh);
+    refresh();
+  });
+
+
+/* Schedule: the end time must be after the start time (checked as soon as a time is chosen). */
+(function () {
+  const sStart = document.getElementById('scheduleStart');
+  const sEnd = document.getElementById('scheduleEnd');
+  const endErr = document.getElementById('scheduleEndError');
+  if (!sStart || !sEnd) return;
+  function checkTimes() {
+    sEnd.min = sStart.value || '';
+    const bad = sStart.value !== '' && sEnd.value !== '' && sEnd.value <= sStart.value;
+    if (bad) {
+      sEnd.classList.add('invalid');
+      if (endErr) { endErr.textContent = 'End time must be after the start time.'; endErr.style.display = 'block'; }
+    } else if (endErr && endErr.textContent === 'End time must be after the start time.') {
+      sEnd.classList.remove('invalid');
+      endErr.style.display = 'none';
+    }
+  }
+  sStart.addEventListener('change', checkTimes);
+  sEnd.addEventListener('change', checkTimes);
+  checkTimes();
+})();
+
 document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
   const toggle = picker.querySelector('.lookup-toggle');
   const toggleText = picker.querySelector('.lookup-toggle-text');
@@ -925,8 +1068,9 @@ document.getElementById('oppForm').addEventListener('submit',e=>{
   if(startDate.value&&endDate.value&&endDate.value<startDate.value){endDate.classList.add('invalid');document.getElementById('endDateError').textContent='End date must be on or after the start date.';document.getElementById('endDateError').style.display='block';valid=false;}
   if(!valid){e.preventDefault();const banner=document.querySelector('.form-banner');if(banner){banner.style.display='block';banner.textContent='All mandatory fields must be completed.';}const first=document.querySelector('.invalid');if(first)first.focus();}
 });
-<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
 
 </script>
+<?php /* Footer goes after the script (inside <script> it broke the page JavaScript) */ require_once __DIR__ . '/../includes/footer.php'; ?>
 </body>
 </html>
