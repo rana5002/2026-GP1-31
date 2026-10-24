@@ -440,22 +440,19 @@ user_header($me, 'Favorites', 'favorites');
     line-height: 1.6;
 }
 
-/* ---------- Horizontal Favorites Row ---------- */
+/* ----------  Favorites styles ---------- */
 .user-favorites .favorites-grid {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 20px;
-    width: 100%;
-    padding: 3px 2px 18px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-snap-type: x proximity;
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    scrollbar-color: #c7b8df #eee9f5;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+    gap: 20px !important;
+    overflow-x: visible !important;
+    scroll-snap-type: none !important;
+    padding: 10px 0 !important;
+}
+
+.user-favorites .favorite-card {
+    width: 100% !important;
+    flex: 1 1 auto !important;
 }
 
 .user-favorites .favorites-grid::-webkit-scrollbar {

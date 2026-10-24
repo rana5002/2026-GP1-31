@@ -181,6 +181,76 @@ $skillOptions = opp_lookup_options($pdo, 'skill', 'SkillID', 'SkillName');
 $qualificationOptions = opp_lookup_options($pdo, 'qualification', 'QualificationID', 'QualificationName');
 $experienceOptions = opp_lookup_options($pdo, 'experience', 'ExperienceID', 'ExperienceName');
 
+/* Load a saved-in-session draft when reopening a closed opportunity. */
+$reopenDraft = null;
+
+if (($_GET['reopen'] ?? '') === '1') {
+    $draft = $_SESSION['reopen_opportunity_draft'] ?? null;
+
+    if (
+        !is_array($draft) ||
+        (int) ($draft['company_id'] ?? 0) !== $companyId ||
+        (int) ($draft['old_id'] ?? 0) < 1 ||
+        !is_array($draft['data'] ?? null)
+    ) {
+        unset($_SESSION['reopen_opportunity_draft']);
+        opp_form_redirect('reopen_expired');
+    }
+
+    // Recheck ownership and status before displaying the form.
+    $checkOld = $pdo->prepare(
+        "SELECT *
+         FROM opportunity
+         WHERE OpportunityID = ?
+           AND CreatedByCompanyID = ?
+           AND Status = 'Closed'"
+    );
+    $checkOld->execute([(int) $draft['old_id'], $companyId]);
+    $verifiedOld = $checkOld->fetch(PDO::FETCH_ASSOC);
+
+    if (!$verifiedOld) {
+        unset($_SESSION['reopen_opportunity_draft']);
+        opp_form_redirect('reopen_unavailable');
+    }
+
+    $reopenDraft = $draft;
+    // Keep the old end date for server-side validation.
+$reopenOldEndDate = (string) ($verifiedOld['EndDate'] ?? '');
+    $opportunity = $verifiedOld;
+    $opportunity['Title'] = (string) $draft['title'];
+
+    // Clear all old dates and schedule times on the initial reopen form.
+// Do not clear them after POST, so validation errors preserve user input.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    foreach ([
+        'StartDate',
+        'EndDate',
+        'ApplicationOpenDate',
+        'ApplicationDeadLine',
+        'ScreeningDate',
+        'InterviewDate',
+        'AcceptanceDate',
+        'ScheduleDays',
+        'ScheduleStartTime',
+        'ScheduleEndTime'
+    ] as $field) {
+        $opportunity[$field] = '';
+    }
+}
+
+    // Copy the existing skills, qualifications and experience selections.
+    $oldId = (int) $draft['old_id'];
+    $skillIds = opp_selected_ids(
+        $pdo, 'opportunityskill', 'SkillID', $oldId
+    );
+    $qualificationIds = opp_selected_ids(
+        $pdo, 'opportunityqualification', 'QualificationID', $oldId
+    );
+    $experienceIds = opp_selected_ids(
+        $pdo, 'opportunityexperience', 'ExperienceID', $oldId
+    );
+}
+
 $editId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 if ($editId > 0) {
     $stmt = $pdo->prepare('SELECT * FROM opportunity WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
@@ -217,6 +287,23 @@ $values = [
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         csrf_check();
+        
+        // Identify a new version being published from the session draft.
+        $postReopenId = (int) ($_POST['reopen_old_id'] ?? 0);
+        $sessionDraft = $_SESSION['reopen_opportunity_draft'] ?? null;
+
+        $isReopenPost =
+            is_array($sessionDraft) &&
+            $postReopenId > 0 &&
+            $postReopenId === (int) ($sessionDraft['old_id'] ?? 0) &&
+            (int) ($sessionDraft['company_id'] ?? 0) === $companyId;
+
+        if ($postReopenId > 0 && !$isReopenPost) {
+            throw new RuntimeException(
+                'This reopening session has expired. Please start again.'
+            );
+        }
+
         $postEditId = (int)($_POST['opportunity_id'] ?? 0);
         $isEditPost = $postEditId > 0;
         if ($isEditPost) {
@@ -262,9 +349,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($method, [METHOD_LINK, METHOD_SYSTEM], true)) $errors['application_method'] = 'Please select an application method.';
         if ($method === METHOD_LINK && (!filter_var($externalUrl, FILTER_VALIDATE_URL) || !in_array(strtolower((string)parse_url($externalUrl, PHP_URL_SCHEME)), ['http','https'], true))) $errors['external_url'] = 'Please enter a valid URL beginning with http:// or https://.';
         elseif ($method === METHOD_LINK && mb_strlen($externalUrl, 'UTF-8') > 255) $errors['external_url'] = 'URL must not exceed 255 characters.';
-        if ($startDate === '' || !$dateStart = DateTime::createFromFormat('!Y-m-d', $startDate)) $errors['start_date'] = 'Please enter a valid start date.';
-        if ($endDate === '' || !$dateEnd = DateTime::createFromFormat('!Y-m-d', $endDate)) $errors['end_date'] = 'Please enter a valid end date.';
-        if (empty($errors['start_date']) && empty($errors['end_date']) && $dateEnd < $dateStart) $errors['end_date'] = 'End date must be on or after the start date.';
+        
+        
+if ($startDate === '' || !opp_valid_date($startDate)) {
+    $errors['start_date'] = 'Please enter a valid start date.';
+}
+
+if ($endDate === '' || !opp_valid_date($endDate)) {
+    $errors['end_date'] = 'Please enter a valid end date.';
+}
+
+if (
+    empty($errors['start_date']) &&
+    empty($errors['end_date']) &&
+    $endDate <= $startDate
+) {
+    $errors['end_date'] = 'End date must be after the start date.';
+}
+
+/* Reopening: the new start date must be after the old opportunity's end date. */
+if ($isReopenPost) {
+    $oldId = (int) $sessionDraft['old_id'];
+
+    $oldStmt = $pdo->prepare(
+        "SELECT EndDate
+         FROM opportunity
+         WHERE OpportunityID = ?
+           AND CreatedByCompanyID = ?
+           AND Status = 'Closed'"
+    );
+    $oldStmt->execute([$oldId, $companyId]);
+    $oldEndDate = $oldStmt->fetchColumn();
+
+    if ($oldEndDate === false) {
+        throw new RuntimeException(
+            'The original opportunity is no longer available for reopening.'
+        );
+    }
+
+    if (
+        empty($errors['start_date']) &&
+        $startDate <= (string) $oldEndDate
+    ) {
+        $errors['start_date'] =
+            'The new start date must be after the previous opportunity end date (' .
+            $oldEndDate . ').';
+    }
+}
+
         /* Timeline: Application Opens and Application Deadline are always required; Acceptance is also required for
            "Add via the Platform". The other stages are optional. The dates must follow the order of the stages. */
         $timelineRequired = $method === METHOD_SYSTEM ? TIMELINE_REQUIRED_SYSTEM : TIMELINE_REQUIRED_ALWAYS;
@@ -325,17 +457,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare('INSERT INTO opportunity (' . $cols . ') VALUES (' . $marks . ')');
                 $stmt->execute($params);
                 $opportunityId = (int)$pdo->lastInsertId();
+                
+                // For a reopened opportunity, copy its linked selections.
+                if ($isReopenPost) {
+                    $oldId = (int) $sessionDraft['old_id'];
+
+                    foreach ([
+                        'opportunityskill' => 'SkillID',
+                        'opportunityqualification' => 'QualificationID',
+                        'opportunityexperience' => 'ExperienceID'
+                    ] as $linkTable => $linkColumn) {
+                        $copyLinks = $pdo->prepare(
+                            "INSERT IGNORE INTO `$linkTable`
+                             (OpportunityID, `$linkColumn`)
+                             SELECT ?, `$linkColumn`
+                             FROM `$linkTable`
+                             WHERE OpportunityID = ?"
+                        );
+                        $copyLinks->execute([$opportunityId, $oldId]);
+                    }
+                }
+
             }
 
+            
             opp_sync_links($pdo, $opportunityId, 'opportunityskill', 'SkillID', $skillIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityqualification', 'QualificationID', $qualificationIds);
             opp_sync_links($pdo, $opportunityId, 'opportunityexperience', 'ExperienceID', $experienceIds);
+
+            if ($isReopenPost) {
+                $oldId = (int) $sessionDraft['old_id'];
+                $oldTitle = (string) ($sessionDraft['data']['Title'] ?? 'the opportunity');
+
+                // Get users who favorited the old opportunity.
+                $favStmt = $pdo->prepare(
+                    'SELECT UserID FROM favorite WHERE OpportunityID = ?'
+                );
+                $favStmt->execute([$oldId]);
+                $favoriteUsers = $favStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                // Notify each user about the newly published version.
+                if ($favoriteUsers) {
+                    $notify = $pdo->prepare(
+                        "INSERT INTO notification (Message, Type, OpportunityID)
+                         VALUES (?, 'NewOpportunity', ?)"
+                    );
+                    $notify->execute([
+                        'A new version of "' . $oldTitle . '" has been published.',
+                        $opportunityId
+                    ]);
+                    $notificationId = (int) $pdo->lastInsertId();
+
+                    $linkNotify = $pdo->prepare(
+                        'INSERT INTO usernotification (UserID, NotificationID, IsRead)
+                         VALUES (?, ?, 0)'
+                    );
+
+                    foreach ($favoriteUsers as $favUserId) {
+                        $linkNotify->execute([
+                            (int) $favUserId,
+                            $notificationId
+                        ]);
+                    }
+                }
+
+                // Remove favorites for the old opportunity only after saving the new one.
+                $pdo->prepare(
+                    'DELETE FROM favorite WHERE OpportunityID = ?'
+                )->execute([$oldId]);
+
+                // Archive the old opportunity so it no longer appears in the company list.
+                $archive = $pdo->prepare(
+                    "UPDATE opportunity
+                     SET Status = 'Archived'
+                     WHERE OpportunityID = ?
+                       AND CreatedByCompanyID = ?
+                       AND Status = 'Closed'"
+                );
+                $archive->execute([$oldId, $companyId]);
+
+                if ($archive->rowCount() !== 1) {
+                    throw new RuntimeException(
+                        'The old opportunity could not be archived.'
+                    );
+                }
+            }
+
             $pdo->commit();
+
+            if ($isReopenPost) {
+                unset($_SESSION['reopen_opportunity_draft']);
+            }
+
             /* User Story 37: a new opportunity notifies the users whose skills match it. */
-            if (!$isEditPost) {
+            if (!$isEditPost&& !$isReopenPost) {
                 notify_matching_users($pdo, $opportunityId);
             }
-            opp_form_redirect($editing ? 'updated' : 'added');
+            opp_form_redirect($isReopenPost ? 'reopened' : ($editing ? 'updated' : 'added'));
         }
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -485,6 +703,9 @@ main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
   <?php if ($errors && empty($errors['_general'])): ?><div class="form-banner" style="display:block;"><?= $requiredEmpty ? 'All mandatory fields must be completed.' : 'Please review the highlighted fields and try again.' ?></div><?php endif; ?>
   <form id="oppForm" class="card section-card" style="padding:20px" method="post" novalidate>
     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+    <?php if ($reopenDraft): ?>
+    <input type="hidden" name="reopen_old_id" value="<?= (int) $reopenDraft['old_id'] ?>">
+<?php endif; ?>
     <?php if ($editing): ?><input type="hidden" name="opportunity_id" value="<?= (int)$opportunity['OpportunityID'] ?>"><?php endif; ?>
     <div class="form-group">
       <label class="form-label icon-label"><span class="icon" style="-webkit-mask-image:url('../images-website/icons/externalLink.png');mask-image:url('../images-website/icons/externalLink.png');"></span>Application Method</label>

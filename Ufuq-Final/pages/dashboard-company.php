@@ -38,13 +38,13 @@ if (isset($_GET['msg'])) {
         'added'   => 'Opportunity added successfully.',
         'updated' => 'Opportunity updated successfully.',
         'deleted' => 'Opportunity deleted successfully.',
-        'closed'  => 'Applications for this opportunity are now closed.',
+        // Show a clear confirmation after closing an opportunity.
+        'closed' => 'Opportunity closed successfully. Applications are no longer being accepted.',
         'reopened'=> 'The opportunity is open for applications again.',
         'status'  => 'Application status updated successfully.'
     ];
     $success = $messages[$_GET['msg']] ?? '';
 }
-
 try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         csrf_check();
@@ -59,21 +59,78 @@ try {
             company_redirect('opportunities', 'deleted');
         }
 
-        /* Close Opportunity: no more applications (User Story 28). Reopen is allowed while the deadline has not passed. */
-        if ($action === 'close_opportunity' || $action === 'reopen_opportunity') {
-            $oppId = (int)($_POST['opportunity_id'] ?? 0);
-            if ($action === 'reopen_opportunity') {
-                $check = $pdo->prepare('SELECT ApplicationDeadLine FROM opportunity WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
-                $check->execute([$oppId, $companyId]);
-                $deadline = $check->fetchColumn();
-                if ($deadline !== false && $deadline !== null && $deadline < date('Y-m-d')) {
-                    throw new RuntimeException('The application deadline has passed. Edit the opportunity and set a new deadline before reopening it.');
-                }
-            }
-            $stmt = $pdo->prepare('UPDATE opportunity SET Status = ? WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
-            $stmt->execute([$action === 'close_opportunity' ? 'Closed' : 'Open', $oppId, $companyId]);
-            company_redirect('opportunities', $action === 'close_opportunity' ? 'closed' : 'reopened');
-        }
+/* Close Opportunity: closes directly for now (the "review applicants first"
+   workflow isn't built yet — the confirm() on the button explains this). */
+if ($action === 'close_opportunity') {
+    $oppId = (int)($_POST['opportunity_id'] ?? 0);
+    $stmt = $pdo->prepare('UPDATE opportunity SET Status = ? WHERE OpportunityID = ? AND CreatedByCompanyID = ?');
+    $stmt->execute(['Closed', $oppId, $companyId]);
+    company_redirect('opportunities', 'closed');
+}
+
+   /* Reopen Opportunity (User Story 28, Layan's part): reopening a closed opportunity does NOT
+          just flip its Status back to Open — its old dates/timeline/schedule are stale. Instead:
+            1. A new `opportunity` row is INSERTed, copying the closed one's details, but the title
+                gets "(Version N)" and every date/timeline/schedule column is left NULL, Status stays
+                'Closed' so it's not shown as a live, half-filled-in listing.
+            2. The company is sent to opportunity-form.php for the NEW row — Start/End/Application
+                Opens/Deadline are required fields there, so the form itself forces fresh dates.
+            3. The old (closed) row stays exactly as it was.
+            4. Everyone who favorited the OLD opportunity gets an in-site notification that it
+                reopened, and their favorite on the old listing is removed.
+          If the opportunity being "reopened" is itself a just-created duplicate still missing
+          dates, there is nothing to duplicate — it's a plain Status flip to Open. */
+ 
+
+
+if ($action === 'reopen_opportunity') {
+    $oppId = (int) ($_POST['opportunity_id'] ?? 0);
+
+    // Only allow reopening a closed opportunity owned by this company.
+    $stmt = $pdo->prepare(
+        "SELECT *
+         FROM opportunity
+         WHERE OpportunityID = ?
+           AND CreatedByCompanyID = ?
+           AND Status = 'Closed'"
+    );
+    $stmt->execute([$oppId, $companyId]);
+    $oldOpp = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$oldOpp) {
+        throw new RuntimeException('Closed opportunity not found.');
+    }
+
+    // Calculate the next version number.
+    $baseTitle = (string) preg_replace(
+        '/\s*\(Version \d+\)\s*$/',
+        '',
+        (string) $oldOpp['Title']
+    );
+
+    $nextVersion = 2;
+
+    if (preg_match(
+        '/\(Version (\d+)\)\s*$/',
+        (string) $oldOpp['Title'],
+        $matches
+    )) {
+        $nextVersion = (int) $matches[1] + 1;
+    }
+
+    // Keep the draft in the session; do not insert a database row yet.
+    $_SESSION['reopen_opportunity_draft'] = [
+        'old_id' => $oppId,
+        'company_id' => $companyId,
+        'title' => $baseTitle . ' (Version ' . $nextVersion . ')',
+        'data' => $oldOpp
+    ];
+
+    header('Location: opportunity-form.php?reopen=1');
+    exit;
+}
+
+
 
         if ($action === 'update_application_status') {
             $oppId = (int)($_POST['opportunity_id'] ?? 0);
@@ -204,7 +261,8 @@ try {
     }
 } catch (Throwable $ex) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    $error = $ex instanceof PDOException ? 'Unable to save changes. Please check the information and try again.' : $ex->getMessage();
+    $error = $ex->getMessage();
+    //$error = $ex instanceof PDOException ? 'Unable to save changes. Please check the information and try again.' : $ex->getMessage();
     if ($ex instanceof FieldError) {
         /* Shown under the field; the form reopens with what the company typed (no passwords). */
         $old = array_filter($_POST, fn($v, $k) => is_string($v) && !in_array($k, ['csrf', 'action', 'tab', 'current_password', 'new_password'], true), ARRAY_FILTER_USE_BOTH);
@@ -220,13 +278,18 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 if (!$company) { http_response_code(404); exit('Company profile not found.'); }
 
+
 $stmt = $pdo->prepare('SELECT o.*,
     (SELECT COUNT(*) FROM application a WHERE a.OpportunityID = o.OpportunityID) AS ApplicationCount,
     (SELECT COUNT(*) FROM favorite f WHERE f.OpportunityID = o.OpportunityID) AS FavouriteCount,
     o.ViewCount AS ViewsCount
-    FROM opportunity o WHERE o.CreatedByCompanyID = ? ORDER BY o.OpportunityID DESC');
+    FROM opportunity o
+    WHERE o.CreatedByCompanyID = ?
+      AND o.Status <> \'Archived\'
+    ORDER BY o.OpportunityID DESC');
 $stmt->execute([$companyId]);
 $opportunities = $stmt->fetchAll();
+
 
 /*
  * Applicants + profile information.
@@ -434,6 +497,61 @@ $openCount = count(array_filter($opportunities, static fn($o) => strtolower((str
 $totalApplicants = count($applicants);
 $totalViews = array_sum(array_map(static fn($o) => (int)($o['ViewsCount'] ?? 0), $opportunities));
 $recentApplicants = array_slice($applicants, 0, 5);
+/* ---------- Recent reviews for each company opportunity ---------- */
+/* Get the average rating and total review count for every opportunity. */
+$opportunityReviewStats = $pdo->prepare("
+    SELECT
+        o.OpportunityID,
+        o.Title,
+        COUNT(r.Rating) AS ReviewCount,
+        AVG(r.Rating) AS AverageRating
+    FROM opportunity o
+    LEFT JOIN review r
+        ON r.OpportunityID = o.OpportunityID
+    WHERE o.CreatedByCompanyID = ?
+      AND o.Status <> 'Archived'
+    GROUP BY o.OpportunityID, o.Title
+    ORDER BY o.OpportunityID DESC
+");
+$opportunityReviewStats->execute([$companyId]);
+$opportunityReviewStats = $opportunityReviewStats->fetchAll(PDO::FETCH_ASSOC);
+
+/* Get the two newest reviews for each opportunity owned by this company. */
+$recentOpportunityReviews = $pdo->prepare("
+    SELECT
+        r.OpportunityID,
+        r.Rating,
+        r.ReviewText,
+        r.CreatedAt,
+        u.FirstName,
+        u.LastName
+    FROM review r
+    JOIN opportunity o
+        ON o.OpportunityID = r.OpportunityID
+    LEFT JOIN `user` u
+        ON u.UserID = r.UserID
+    WHERE o.CreatedByCompanyID = ?
+      AND o.Status <> 'Archived'
+    ORDER BY r.CreatedAt DESC
+");
+$recentOpportunityReviews->execute([$companyId]);
+$allOpportunityReviews = $recentOpportunityReviews->fetchAll(PDO::FETCH_ASSOC);
+
+/* Group reviews by opportunity and keep only the latest two comments. */
+$reviewsByOpportunity = [];
+
+foreach ($allOpportunityReviews as $review) {
+    $oppId = (int) $review['OpportunityID'];
+
+    if (!isset($reviewsByOpportunity[$oppId])) {
+        $reviewsByOpportunity[$oppId] = [];
+    }
+
+    if (count($reviewsByOpportunity[$oppId]) < 2) {
+        $reviewsByOpportunity[$oppId][] = $review;
+    }
+}
+
 // Use shared lists to keep company profile options consistent.
 $industryOptions = INDUSTRIES;
 $locationOptions = CITIES;
@@ -446,7 +564,7 @@ function display_date($date): string { return $date ? e(date('M j, Y', strtotime
 
 $heroTitles = [
     'opportunities' => ['Opportunities', 'Manage the training programs and courses you publish.'],
-    'applicants'    => ['Applicants', 'Review candidates and update their application status.'],
+    'applicants'    => ['Applications', 'Review candidates and update their application status.'],
     'reviews'       => ['Reviews', 'Read what students are saying about your opportunities.'],
     'profile'       => ['Company Profile', 'Keep your company information up to date.'],
 ];
@@ -545,25 +663,143 @@ $heroTitles = [
 /* Opportunities table: Close / Reopen, Edit and Delete stay on one line, lined up in every row */
 .company-dashboard .opp-actions{flex-wrap:nowrap;gap:4px}
 .company-dashboard .opp-actions .company-inline-form{margin:0}
-.company-dashboard .opp-status-btn{min-width:150px;white-space:nowrap;justify-content:center}
+.company-dashboard .opp-status-btn{min-width:150px;white-space:nowrap;justify-content:center;border:2px solid transparent}
+/* Reopen: gold accent — matches --c-gold المعرّف أصلاً بالملف */
+.company-dashboard .opp-status-btn-reopen{background:#fbf3e4;border-color:var(--c-gold);color:#8a6315}
+.company-dashboard .opp-status-btn-reopen:hover{background:var(--c-gold);color:#fff}
+/* Close: أحمر هادي — يختلف عن Reopen وعن زر Delete (اللي يستخدم icon-danger) */
+.company-dashboard .opp-status-btn-close{background:#fdeeee;border-color:#c0575f;color:#9c3a40}
+.company-dashboard .opp-status-btn-close:hover{background:#c0575f;color:#fff}
 /* My Opportunities: the whole table fits the page (no left/right scrolling), centered content, small action buttons */
-.company-dashboard .opp-table-wrap{overflow-x:visible}
-.company-dashboard .opp-table{table-layout:fixed;width:100%}
-.company-dashboard .company-table-wrap .opp-table th,.company-dashboard .company-table-wrap .opp-table td{text-align:center;padding:12px 8px;overflow-wrap:break-word}
-.company-dashboard .company-table-wrap .opp-table th{white-space:normal;font-size:.78rem;line-height:1.35}
-.company-dashboard .opp-table td{font-size:.87rem}
-.company-dashboard .opp-table th:nth-child(1){width:17%}
-.company-dashboard .opp-table th:nth-child(2){width:10%}
-.company-dashboard .opp-table th:nth-child(3){width:9%}
-.company-dashboard .opp-table th:nth-child(4){width:7%}
-.company-dashboard .opp-table th:nth-child(5){width:9%}
-.company-dashboard .opp-table th:nth-child(6){width:11%}
-.company-dashboard .opp-table th:nth-child(7){width:14%}
-.company-dashboard .opp-table th:nth-child(8){width:23%}
-.company-dashboard .opp-table .opp-actions{justify-content:center;flex-wrap:nowrap;gap:2px}
-.company-dashboard .opp-table .opp-status-btn{min-width:0;width:122px;justify-content:center;min-height:30px;padding:5px 9px;font-size:.74rem;border-radius:8px}
-.company-dashboard .opp-table .opp-actions .btn-ghost{min-height:30px;padding:4px 5px}
-.company-dashboard .opp-table .opp-actions .btn-ghost svg{width:16px;height:16px}
+
+/* My Opportunities table: cleaner spacing and aligned columns */
+.company-dashboard .opp-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--c-border);
+    border-radius: 14px;
+}
+
+.company-dashboard .opp-table {
+    width: 100%;
+    min-width: 1050px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.company-dashboard .company-table-wrap .opp-table th,
+.company-dashboard .company-table-wrap .opp-table td {
+    padding: 15px 12px;
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: break-word;
+    line-height: 1.6;
+}
+
+/* Table headings */
+.company-dashboard .company-table-wrap .opp-table th {
+    white-space: normal;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+/* Opportunity title */
+.company-dashboard .opp-table th:nth-child(1),
+.company-dashboard .opp-table td:nth-child(1) {
+    width: 22%;
+    text-align: left;
+}
+
+/* Type */
+.company-dashboard .opp-table th:nth-child(2) {
+    width: 12%;
+}
+
+/* Status */
+.company-dashboard .opp-table th:nth-child(3) {
+    width: 9%;
+}
+
+/* Views */
+.company-dashboard .opp-table th:nth-child(4) {
+    width: 7%;
+}
+
+/* Favorites */
+.company-dashboard .opp-table th:nth-child(5) {
+    width: 8%;
+}
+
+/* Applications */
+.company-dashboard .opp-table th:nth-child(6) {
+    width: 9%;
+}
+
+/* Application Method */
+.company-dashboard .opp-table th:nth-child(7) {
+    width: 13%;
+}
+
+/* Actions */
+.company-dashboard .opp-table th:nth-child(8) {
+    width: 20%;
+}
+
+/* Stack action buttons neatly */
+.company-dashboard .opp-table .opp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Keep Close Opportunity centered on the first row */
+.company-dashboard .opp-table .opp-actions > a.opp-status-btn,
+.company-dashboard .opp-table .opp-actions > form:first-child {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: center;
+}
+
+/* Keep Edit and Delete side by side on the second row */
+.company-dashboard .opp-table .opp-actions > .btn-ghost {
+    margin: 0;
+    flex: 0 0 auto;
+}
+.company-dashboard .opp-table .opp-status-btn {
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 0.78rem;
+    white-space: normal;
+    line-height: 1.4;
+}
+
+.company-dashboard .opp-table .opp-actions .btn-ghost {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 7px;
+    justify-content: center;
+}
+
+.company-dashboard .opp-table .opp-actions .company-inline-form {
+    margin: 0;
+}
+
+/* Smaller screens */
+@media (max-width: 900px) {
+    .company-dashboard .opp-table-wrap {
+        overflow-x: auto;
+    }
+
+    .company-dashboard .opp-table {
+        min-width: 1050px;
+    }
+}
+
 @media (max-width:900px){.company-dashboard .opp-table-wrap{overflow-x:auto}.company-dashboard .opp-table{table-layout:auto;min-width:820px}}
 .company-dashboard .company-inline-form{display:inline;margin:0}
 .company-dashboard .status-select{padding:7px 9px;min-width:135px}
@@ -783,6 +1019,220 @@ $heroTitles = [
   .company-dashboard .profile-section{padding:19px 16px}
   .company-dashboard .profile-view-grid{grid-template-columns:1fr;gap:17px}
     }
+/* Opportunity review cards on the company dashboard. */
+.company-dashboard .opportunity-review-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.company-dashboard .opportunity-review-card {
+    min-width: 0;
+    border: 1px solid var(--c-border);
+    border-top: 3px solid var(--c-gold);
+    border-radius: 16px;
+    padding: 20px;
+    background: #fff;
+}
+
+.company-dashboard .opportunity-review-card h3 {
+    margin: 0 0 12px;
+    color: var(--c-text);
+    font-size: 1rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.company-dashboard .opportunity-review-average {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 14px;
+}
+
+.company-dashboard .review-star {
+    color: #d99a2b;
+    font-size: 1.25rem;
+}
+
+.company-dashboard .opportunity-review-comment {
+    margin-top: 12px;
+    padding: 13px;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: #faf7f1;
+}
+
+.company-dashboard .opportunity-review-comment-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.company-dashboard .opportunity-review-comment p {
+    margin: 8px 0;
+    color: var(--c-text);
+    font-size: .9rem;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+.company-dashboard .opportunity-review-comment small {
+    color: var(--c-muted);
+}
+
+.company-dashboard .opportunity-review-link {
+    margin-top: 15px;
+}
+
+/* Close opportunity confirmation modal */
+.close-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(31, 47, 70, 0.65);
+}
+
+.close-confirm-modal {
+    width: 100%;
+    max-width: 480px;
+    padding: 30px;
+    border-radius: 16px;
+    background: #f5f2ec;
+    color: #1f2f46;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    text-align: center;
+}
+
+.close-confirm-modal h2 {
+    margin-top: 0;
+    color: #1f2f46;
+}
+
+.close-warning {
+    margin: 18px 0;
+    color: #b42318;
+    font-weight: 600;
+    line-height: 1.7;
+}
+
+.close-confirm-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+}
+
+.close-confirm-actions form {
+    margin: 0;
+}
+
+.close-confirm-submit {
+    border: none;
+    background: #b42318;
+    color: #fff;
+    cursor: pointer;
+    padding: 10px 16px;
+    border-radius: 8px;
+}
+
+.close-confirm-submit:hover {
+    background: #8f1c13;
+}
+
+/* Reopen confirmation modal */
+.company-dashboard .reopen-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    background: rgba(40, 26, 70, 0.55);
+    backdrop-filter: blur(3px);
+}
+
+.company-dashboard .reopen-confirm-modal {
+    width: 100%;
+    max-width: 440px;
+    padding: 30px;
+    border: 1px solid var(--c-border);
+    border-radius: 18px;
+    background: var(--c-bg);
+    color: var(--c-purple-dark);
+    text-align: center;
+    box-shadow: 0 18px 55px rgba(40, 26, 70, 0.22);
+    animation: reopenModalAppear 0.2s ease-out;
+}
+
+.company-dashboard .reopen-confirm-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    background: var(--c-lavender);
+    color: var(--c-purple);
+}
+
+.company-dashboard .reopen-confirm-modal h2 {
+    margin: 0 0 12px;
+    color: var(--c-purple);
+    font-size: 1.35rem;
+}
+
+.company-dashboard .reopen-confirm-message {
+    margin: 0;
+    color: var(--c-text, #62596d);
+    line-height: 1.8;
+}
+
+.company-dashboard .reopen-confirm-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 26px;
+}
+
+.company-dashboard .reopen-confirm-actions form {
+    margin: 0;
+}
+
+.company-dashboard .reopen-confirm-actions button {
+    min-width: 120px;
+    min-height: 42px;
+}
+
+@keyframes reopenModalAppear {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 700px) {
+    .company-dashboard .opportunity-review-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
 @keyframes companyFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes companyFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @media(prefers-reduced-motion:reduce){
@@ -793,75 +1243,11 @@ $heroTitles = [
 <body>
 
 <header id="site-header" class="site-header">
-    <div class="container">
-
-        <a href="../index.php" class="brand" style="text-decoration:none;">
-            <img
-                src="../images-website/logo.png"
-                alt="Ufuq"
-                class="brand-mark"
-                style="width:34px;height:34px;object-fit:contain;background:transparent;"
-            >
-            Ufuq
-        </a>
-
-        <nav class="nav-links" id="navLinks" aria-label="Company navigation">
-            <a
-                href="dashboard-company.php?tab=overview"
-                class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>"
-            >
-                Dashboard
-            </a>
-
-            <a
-                href="dashboard-company.php?tab=opportunities"
-                class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>"
-            >
-                Opportunities
-            </a>
-
-            <a
-                href="dashboard-company.php?tab=applicants"
-                class="<?= $activeTab === 'applicants' ? 'active' : '' ?>"
-            >
-                Applicants
-            </a>
-        </nav>
-
-        <div class="nav-actions" style="display:flex;align-items:center;gap:10px;">
-
-            <a
-                href="dashboard-company.php?tab=profile"
-                class="company-header-profile"
-                title="Open company profile"
-                aria-label="Open company profile"
-            >
-                <span class="company-header-avatar">
-                    <?php if ($logoSrc !== ''): ?>
-                        <img src="<?= e($logoSrc) ?>" alt="Company avatar">
-                    <?php else: ?>
-                        <?= e($companyInitial) ?>
-                    <?php endif; ?>
-                </span>
-            </a>
-
-            <a href="logout.php" class="btn btn-ghost btn-sm">
-                Log Out
-            </a>
-
-            <button
-                class="nav-toggle"
-                id="navToggle"
-                type="button"
-                aria-label="Toggle menu"
-                aria-controls="navLinks"
-                aria-expanded="false"
-            >
-                <?= icon('menu', 22) ?>
-            </button>
-
-        </div>
-    </div>
+  <div class="container">
+    <a href="../index.php" class="brand" style="text-decoration:none"><img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent"> Ufuq</a>
+    <nav class="nav-links"><a href="dashboard-company.php?tab=overview" class="<?= in_array($activeTab, ['overview', 'reviews', 'profile'], true) ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $activeTab === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
+    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
+  </div>
 </header>
 
 <script>
@@ -970,6 +1356,112 @@ $heroTitles = [
       </div>
     </section>
 
+<?php if (in_array($activeTab, ['home', 'opportunities'], true)): ?>
+    <!-- Opportunity Reviews: rating summaries and latest two comments -->
+<section class="dashboard-section opportunity-reviews-section">
+    <div class="card-heading-row">
+        <div>
+            <h2 class="section-heading" style="margin-bottom:7px">
+                Opportunity Reviews
+            </h2>
+            <p class="section-description" style="margin:0">
+                Average ratings and the latest comments for your opportunities.
+            </p>
+        </div>
+
+        <a href="dashboard-company.php?tab=reviews" class="dashboard-link">
+            View all reviews &rarr;
+        </a>
+    </div>
+
+    <?php if (!$opportunityReviewStats): ?>
+        <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+                <?= icon('favorite', 30, 'icon-muted') ?>
+            </div>
+            <h3>No opportunities yet</h3>
+            <p>Your opportunity ratings and reviews will appear here.</p>
+        </div>
+    <?php else: ?>
+        <div class="opportunity-review-grid">
+            <?php foreach ($opportunityReviewStats as $reviewStat): ?>
+                <?php
+                // Read the current opportunity's rating summary and comments.
+                $reviewOppId = (int) $reviewStat['OpportunityID'];
+                $latestReviews = $reviewsByOpportunity[$reviewOppId] ?? [];
+                $average = $reviewStat['AverageRating'];
+                ?>
+
+                <article class="dashboard-card opportunity-review-card">
+                    <h3><?= e($reviewStat['Title']) ?></h3>
+
+                    <div class="opportunity-review-average">
+                        <span class="review-star" aria-hidden="true">★</span>
+
+                        <?php if ($average !== null): ?>
+                            <strong><?= number_format((float) $average, 1) ?> / 5</strong>
+                        <?php else: ?>
+                            <strong>No ratings yet</strong>
+                        <?php endif; ?>
+
+                        <span class="company-help">
+                            (<?= (int) $reviewStat['ReviewCount'] ?>
+                            <?= (int) $reviewStat['ReviewCount'] === 1 ? 'review' : 'reviews' ?>)
+                        </span>
+                    </div>
+
+                    <?php if (!$latestReviews): ?>
+                        <p class="company-help">
+                            No comments have been submitted for this opportunity yet.
+                        </p>
+                    <?php else: ?>
+                        <?php foreach ($latestReviews as $latestReview): ?>
+                            <div class="opportunity-review-comment">
+                                <div class="opportunity-review-comment-top">
+                                    <strong>
+                                        <?= e(trim(
+                                            ($latestReview['FirstName'] ?? '') . ' ' .
+                                            ($latestReview['LastName'] ?? '')
+                                        ) ?: 'A user') ?>
+                                    </strong>
+
+                                    <span class="rating-stars">
+                                        <?= str_repeat(
+                                            '★',
+                                            max(0, min(5, (int) $latestReview['Rating']))
+                                        ) ?>
+                                        <?= str_repeat(
+                                            '☆',
+                                            5 - max(0, min(5, (int) $latestReview['Rating']))
+                                        ) ?>
+                                    </span>
+                                </div>
+
+                                <p>
+                                    <?= nl2br(e($latestReview['ReviewText'] ?? '')) ?>
+                                </p>
+
+                                <small>
+                                    <?= display_date($latestReview['CreatedAt']) ?>
+                                </small>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
+                    <!-- Open the opportunity details directly at the reviews section. -->
+                    <a
+                        class="dashboard-link opportunity-review-link"
+                        href="opportunity-detail.php?id=<?= $reviewOppId ?>#companyReviewsCard"
+                    >
+                        View opportunity reviews &rarr;
+                    </a>
+                </article>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</section>
+<?php endif; ?>
+
     <!-- Opportunities -->
     <section class="tab-panel <?= $activeTab === 'opportunities' ? 'active' : '' ?>" id="tab-opportunities">
       <div class="card-heading-row">
@@ -983,109 +1475,136 @@ $heroTitles = [
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Click "Add Opportunity" to publish your first training program or course.</p></div>
       <?php else: ?>
         <div class="company-table-wrap opp-table-wrap"><table class="data-table opp-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Applications</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
-        <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['ApplicationCount'] ?? 0) ?></strong></td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; ?><form method="post" class="company-inline-form" <?= $isOpenOpp ? 'onsubmit="return confirm(\'Close applications for this opportunity? Users will no longer be able to apply.\');"' : '' ?>><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="<?= $isOpenOpp ? 'close_opportunity' : 'reopen_opportunity' ?>"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-outline btn-sm opp-status-btn" type="submit"><?= $isOpenOpp ? 'Close Opportunity' : 'Reopen' ?></button></form><a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>
-        </tbody></table></div>
-      <?php endif; ?>
-    </section>
+      <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ($o['Status'] ?? '') === 'Open' ? 'badge-success' : 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td>—</td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; $closeMsg = 'Reviewing applicants before closing isn\'t available yet. Close this opportunity directly for now?'; $reopenMsg = 'Reopening will publish a new copy of this opportunity with fresh dates. You\'ll be taken to edit it next. Continue?'; ?>
+<?php if ($isOpenOpp): ?>
 
-    <!-- Applicants -->
-    <section class="tab-panel <?= $activeTab === 'applicants' ? 'active' : '' ?>" id="tab-applicants">
-      <div class="applicants-layout" id="applicantsLayout">
+  <!-- Redirect to the existing Applications tab before closing -->
+  <a
+    href="dashboard-company.php?tab=applicants&confirm_close=1&opportunity_id=<?= (int)$o['OpportunityID'] ?>"
+    class="btn btn-sm opp-status-btn opp-status-btn-close"
+  >
+    Close Opportunity
+  </a>
 
-      <!-- Filter sidebar (left) -->
-      <form method="get" class="applicant-filter-panel" id="applicantFilterPanel">
-        <input type="hidden" name="tab" value="applicants">
-        <h3 class="applicant-filter-title">Filter Applicants</h3>
-        <?php $opportunityOptions = []; foreach ($opportunities as $fo) { $opportunityOptions[(int)$fo['OpportunityID']] = (string)$fo['Title']; } ?>
-        <?= lookup_box('opportunity_filter', 'Opportunity', 'Search opportunities...', $opportunityOptions, $opportunityFilter) ?>
-        <?= lookup_box('status_filter', 'Application Status', 'Search statuses...', array_combine($validApplicantStatuses, $validApplicantStatuses), $statusFilter) ?>
-        <?= lookup_box('skill_filter', 'Skills', 'Search skills...', $skillOptions, $skillFilter) ?>
-        <?= lookup_box('qualification_filter', 'Qualifications', 'Search qualifications...', $qualificationOptions, $qualificationFilter) ?>
-        <?= lookup_box('experience_filter', 'Experience', 'Search experience...', $experienceOptions, $experienceFilter) ?>
-        <?= lookup_box('study_filter', 'Field of Study', 'Search fields of study...', $studyOptions ? array_combine($studyOptions, $studyOptions) : [], $studyFilter) ?>
-        <div class="applicant-filter-actions"><button type="submit" class="btn btn-primary">Apply</button><a href="dashboard-company.php?tab=applicants" class="btn btn-ghost">Reset</a></div>
-        <p class="applicant-filter-note">Skills, qualifications and experience: applicants must have all the ones you tick. Opportunity, status and field of study: any of the ones you tick.</p>
-      </form>
 
-      <div class="applicants-results">
-      <!-- Filters button: on the right, above the applicant counts -->
-      <div class="applicants-toolbar">
-        <p class="section-description">Applicants are grouped under each opportunity. Use the filters to find candidates by skills, qualifications, experience, field of study, or application status.</p>
-        <button type="button" class="btn btn-outline btn-sm filter-toggle" id="filterToggle" aria-controls="applicantFilterPanel" aria-expanded="true">
-          <span class="filter-toggle-text">Hide Filters</span>
-          <?php if ($activeFilterCount > 0): ?><span class="filter-toggle-count" title="Active filters"><?= $activeFilterCount ?></span><?php endif; ?>
+<?php else: ?>
+
+  <!-- Open the Reopen confirmation modal on the same page -->
+  <button
+    type="button"
+    class="btn btn-sm opp-status-btn opp-status-btn-reopen"
+    onclick="document.getElementById('reopenModal<?= (int)$o['OpportunityID'] ?>').style.display='flex'"
+  >
+    Reopen
+  </button>
+
+  <!-- Reopen confirmation modal -->
+  <div
+    id="reopenModal<?= (int)$o['OpportunityID'] ?>"
+    class="reopen-confirm-overlay"
+    style="display:none"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="reopenTitle<?= (int)$o['OpportunityID'] ?>"
+  >
+    <div class="reopen-confirm-modal">
+      <div class="reopen-confirm-icon"><?= icon('training', 28) ?></div>
+
+      <h2 id="reopenTitle<?= (int)$o['OpportunityID'] ?>">
+        Reopen Opportunity?
+      </h2>
+
+      <p class="reopen-confirm-message">
+        Reopening will publish a new copy of this opportunity with fresh dates.
+        You'll be taken to edit it next.
+      </p>
+
+      <div class="reopen-confirm-actions">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          onclick="document.getElementById('reopenModal<?= (int)$o['OpportunityID'] ?>').style.display='none'"
+        >
+          Cancel
         </button>
+
+        <form method="post" class="company-inline-form">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="action" value="reopen_opportunity">
+          <input type="hidden" name="tab" value="opportunities">
+          <input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>">
+
+          <button type="submit" class="btn btn-primary">
+            Yes, Reopen
+          </button>
+        </form>
       </div>
-      <?php if (!$opportunities): ?>
-        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Publish an opportunity first. Applicants will appear under each opportunity when they apply through Ufuq.</p><a href="opportunity-form.php" class="btn btn-primary">Add Opportunity</a></div>
-      <?php elseif (!$applicantsForDisplay && $hasApplicantFilters): ?>
-        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('userMale', 30, 'icon-muted') ?></div><h3>No applicants found</h3><p>Try changing the filters, or check back when students apply.</p></div>
-      <?php else: ?>
-        <?php foreach ($opportunities as $opportunity): ?>
-          <?php
-            $opportunityId = (int)$opportunity['OpportunityID'];
-            if ($opportunityFilter && !in_array($opportunityId, $opportunityFilter, true)) continue;
-            $opportunityApplicants = $applicantsByOpportunity[$opportunityId] ?? [];
-            if ($hasApplicantFilters && !$opportunityApplicants) continue;
-          ?>
-          <?php
-            $reqSkills = $oppSkillReq[$opportunityId] ?? [];
-            $reqQuals = $oppQualReq[$opportunityId] ?? [];
-            $reqExps = $oppExpReq[$opportunityId] ?? [];
-            $reqNames = array_map(static fn($r) => $r['name'], array_merge($reqSkills, $reqQuals, $reqExps));
-          ?>
-          <article class="applicant-opportunity-card" data-opp-card="<?= $opportunityId ?>">
-            <div class="applicant-opportunity-heading">
-              <button type="button" class="opp-toggle" aria-expanded="true" aria-controls="opp-applicants-<?= $opportunityId ?>">
-                <span class="opp-heading-text">
-                  <span class="opp-title"><?= e($opportunity['Title']) ?></span>
-                  <span class="opp-sub"><?= e($opportunity['Type'] ?? 'Training opportunity') ?><?php if ($reqNames): ?> &middot; Requires: <?= e(implode(', ', $reqNames)) ?><?php endif; ?></span>
-                </span>
-                <span class="applicant-count"><?= count($opportunityApplicants) ?> <?= count($opportunityApplicants) === 1 ? 'Applicant' : 'Applicants' ?></span>
-                <span class="opp-caret" aria-hidden="true"></span>
-              </button>
-            </div>
-            <div class="company-table-wrap" id="opp-applicants-<?= $opportunityId ?>"><table class="data-table applicants-table"><thead><tr><th class="col-applicant">Applicant</th><th>Skills</th><th>Qualifications</th><th>Experience</th><th class="col-status">Status</th></tr></thead><tbody>
-              <?php if (!$opportunityApplicants): ?>
-                <tr><td colspan="5" class="text-muted">No applicants for this opportunity yet.</td></tr>
-              <?php else: foreach ($opportunityApplicants as $a): $aid = (int)$a['UserID']; $st = (string)($a['ApplicationStatus'] ?? 'Pending'); ?>
-                <tr>
-                  <td>
-                    <strong class="applicant-name"><?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? '')) ?: 'Unknown') ?></strong>
-                    <?php $appStudy = applicant_profile_value($a, ['FieldOfStudy']); ?>
-                    <?php if ($appStudy !== ''): ?><span class="applicant-meta"><?= e($appStudy) ?></span><?php endif; ?>
-                    <?php if (!empty($a['Email'])): ?><a class="applicant-mail" href="mailto:<?= e($a['Email']) ?>"><?= e($a['Email']) ?></a><?php endif; ?>
-                    <a href="applicant-profile.php?id=<?= $aid ?>&amp;opportunity=<?= (int)$a['OpportunityID'] ?>" class="dashboard-link applicant-view-link">View Profile &rarr;</a>
-                  </td>
-                  <td data-label="Skills"><?= applicant_item_list($userSkillItems[$aid] ?? [], $reqSkills) ?></td>
-                  <td data-label="Qualifications"><?= applicant_item_list(array_merge($userDegrees[$aid] ?? [], $userQualItems[$aid] ?? []), $reqQuals) ?></td>
-                  <td data-label="Experience"><?= applicant_item_list($userExpItems[$aid] ?? [], $reqExps) ?></td>
-                  <td data-label="Status">
-                    <span class="status-pill is-<?= e(strtolower($st)) ?>"><?= e($st) ?></span>
-                    <form method="post" class="company-actions applicant-status-form">
-                      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                      <input type="hidden" name="action" value="update_application_status">
-                      <input type="hidden" name="tab" value="applicants">
-                      <input type="hidden" name="applicant_id" value="<?= $aid ?>">
-                      <input type="hidden" name="opportunity_id" value="<?= (int)$a['OpportunityID'] ?>">
-                      <select name="application_status" class="form-control status-select" aria-label="Application status of <?= e(trim(($a['FirstName'] ?? '') . ' ' . ($a['LastName'] ?? ''))) ?>">
-                        <?php foreach ($validApplicantStatuses as $opt): ?>
-                          <option value="<?= e($opt) ?>" <?= $st === $opt ? 'selected' : '' ?>><?= e($opt) ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                      <button type="submit" class="btn btn-primary btn-sm">Update</button>
-                    </form>
-                    <span class="applicant-meta">Applied <?= display_date($a['SubmissionDate']) ?></span>
-                  </td>
-                </tr>
-              <?php endforeach; endif; ?>
-            </tbody></table></div>
-          </article>
-        <?php endforeach; ?>
+    </div>
+  </div>
+
+<?php endif; ?>
+
+<a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>        </tbody></table></div>
       <?php endif; ?>
-      </div>
-      </div>
     </section>
+
+
+<!-- Applications tab — Coming Soon with close confirmation -->
+<section class="tab-panel <?= $activeTab === 'applicants' ? 'active' : '' ?>" id="tab-applicants">
+
+  <div class="empty-state">
+    <div class="empty-icon" aria-hidden="true">
+      <?= icon('userMale', 30, 'icon-muted') ?>
+    </div>
+    <h3>Coming soon</h3>
+    <p>
+      Reviewing Applications is not available yet.
+      This feature will be added in a future update.
+    </p>
+  </div>
+
+  <?php if (isset($_GET['confirm_close']) && isset($_GET['opportunity_id'])): ?>
+    <div class="close-confirm-overlay">
+      <div class="close-confirm-modal">
+
+        <h2>Close Opportunity?</h2>
+
+        <p class="close-warning">
+          Application management is not available yet.
+          You cannot review applicants before closing this opportunity.
+        </p>
+
+        <p>Are you sure you want to close this opportunity?</p>
+
+        <div class="close-confirm-actions">
+          <a
+            href="dashboard-company.php?tab=opportunities"
+            class="btn btn-ghost"
+          >
+            Cancel
+          </a>
+
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="close_opportunity">
+            <input type="hidden" name="tab" value="opportunities">
+            <input
+              type="hidden"
+              name="opportunity_id"
+              value="<?= (int) $_GET['opportunity_id'] ?>"
+            >
+
+            <button type="submit" class="btn close-confirm-submit">
+              Yes, Close Opportunity
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  <?php endif; ?>
+
+</section>
 
     <!-- Reviews -->
     <section class="tab-panel <?= $activeTab === 'reviews' ? 'active' : '' ?>" id="tab-reviews">
