@@ -441,7 +441,7 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
 <link rel="stylesheet" href="../css/base.css">
 <link rel="stylesheet" href="../css/layout.css">
 <link rel="stylesheet" href="../css/icons.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+
 <style>
   :root { --err: #e5646a; --err-text: #cf4a50; --err-bg: #fff6f6; }
   .req { color: var(--err); font-weight: 700; margin-left: 2px; }
@@ -501,8 +501,7 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
   }
   .entry-remove { align-self: end; height: 40px; border: none; background: transparent; font-size: 1.5rem; line-height: 1; color: #9ca3af; cursor: pointer; }
   .entry-remove:hover { color: var(--err-text); }
-  .fp-year-select { margin-left: 6px; padding: 2px 6px; border: 1px solid #d1d5db; border-radius: 4px; font: inherit; font-weight: 600; background: #fff; }
-  .flatpickr-current-month { display: flex; justify-content: center; align-items: center; gap: 4px; }
+ 
   .add-entry {
     display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px;
     border: 1.5px dashed #9ca3af; border-radius: 10px; background: transparent;
@@ -516,6 +515,42 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
     box-shadow: inset 0 3px 8px rgba(0, 0, 0, .28) !important;
     filter: brightness(.92);
   }
+
+
+
+  /* searchable drop-down (same look as the dashboards) */
+.search-select{position:relative}
+.search-select > select{display:none!important}
+.search-select-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer;background:#fff}
+.search-select-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-select-text.is-placeholder{color:#8a8396}
+.search-select-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
+.search-select.is-open .search-select-caret{transform:rotate(180deg)}
+.search-select-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
+.search-select-panel[hidden]{display:none!important}
+.search-select-list{max-height:210px;margin-top:8px;overflow-y:auto;overscroll-behavior:contain}
+.search-select-option{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;color:#29243a;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+.search-select-option:hover,.search-select-option.is-selected{background:#f2ecfa}
+.search-select-option.is-selected{color:#281a46;font-weight:650}
+.search-select-option[hidden]{display:none!important}
+.search-select-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
+
+
+/* password eye */
+.pw-wrap { position: relative; }
+.pw-wrap > input { padding-right: 44px; }
+.pw-eye {
+  position: absolute; top: 0; right: 0; height: 100%; width: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; cursor: pointer; color: var(--color-text-faint);
+}
+.pw-eye:hover, .pw-eye:focus-visible { color: var(--color-primary-dark); outline: none; }
+.pw-eye svg { width: 20px; height: 20px; }
+.pw-eye .eye-off { display: none; }
+.pw-eye.shown .eye-on { display: none; }
+.pw-eye.shown .eye-off { display: block; }
+
+
 </style>
 </head>
 <body>
@@ -594,9 +629,9 @@ require __DIR__ . '/../includes/header.php';
 
         <div class="form-group">
           <label class="form-label" for="uDob">Date of Birth <?= req() ?></label>
-          <input type="text" id="uDob" name="dob" class="form-control<?= inv($eU, 'dob') ?>" data-required data-check="dob"
-                 placeholder="Select your date of birth" autocomplete="off"
-                 data-min="<?= $dobMin ?>" data-max="<?= $dobMax ?>" value="<?= v($U, 'dob') ?>">
+          <input type="date" id="uDob" name="dob" class="form-control<?= inv($eU, 'dob') ?>" data-required data-check="dob"
+              min="<?= $dobMin ?>" max="<?= $dobMax ?>"
+              data-min="<?= $dobMin ?>" data-max="<?= $dobMax ?>" value="<?= v($U, 'dob') ?>">
           <?= errBox($eU, 'uDob', 'This field is required.', 'dob') ?>
         </div>
 
@@ -788,7 +823,7 @@ require __DIR__ . '/../includes/header.php';
 </main>
 
 
-<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+
 <script src="../js/store.js"></script>
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
@@ -887,33 +922,7 @@ require __DIR__ . '/../includes/header.php';
     el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 10); });
   });
 
-  /* ---------- Date of birth calendar (min age 15) ---------- */
-  (function () {
-    const dob = document.getElementById("uDob");
-    if (!dob) return;
-    const minD = dob.dataset.min, maxD = dob.dataset.max;
-    if (typeof flatpickr === "undefined") {          // fallback: browser's native calendar
-      dob.type = "date"; dob.min = minD; dob.max = maxD; return;
-    }
-    const minY = +minD.slice(0, 4), maxY = +maxD.slice(0, 4);
-    const syncYear = (d, str, fp) => { if (fp._yearSel) fp._yearSel.value = fp.currentYear; };
-    flatpickr(dob, {
-      dateFormat: "Y-m-d", minDate: minD, maxDate: maxD, disableMobile: true,
-      monthSelectorType: "dropdown",
-      onReady: [function (d, str, fp) {
-        const sel = document.createElement("select");
-        sel.className = "fp-year-select";
-        for (let y = maxY; y >= minY; y--) sel.add(new Option(y, y));
-        sel.value = fp.currentYear;
-        sel.addEventListener("change", () => fp.changeYear(+sel.value));
-        const wrap = fp.currentYearElement.parentNode;
-        wrap.style.display = "none";
-        wrap.parentNode.appendChild(sel);
-        fp._yearSel = sel;
-      }],
-      onOpen: [syncYear], onMonthChange: [syncYear], onYearChange: [syncYear]
-    });
-  })();
+  
 
   /* ---------- Optional part: open / close ---------- */
   const optToggle = document.getElementById("optToggle");
@@ -1091,8 +1100,9 @@ require __DIR__ . '/../includes/header.php';
       const first = form.querySelector(".invalid");
       if (first) {
         if (optBox && optBox.contains(first)) setOptional(true);   // the problem is in the optional part: open it
-        first.scrollIntoView({ behavior: "smooth", block: "center" });
-        if (first.focus) first.focus({ preventScroll: true });
+        const target = first._searchToggle || first;   // drop-downs: use the visible button
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (target.focus) target.focus({ preventScroll: true });
       }
     }
 
@@ -1102,6 +1112,183 @@ require __DIR__ . '/../includes/header.php';
   [userForm, compForm].forEach(f => {
     if (f) f.addEventListener("submit", e => { if (!validateForm(f)) e.preventDefault(); });
   });
+
+(function () {
+  "use strict";
+
+  var EYE = '<svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
+            '<svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94M9.9 4.24A10.9 10.9 0 0 1 12 5c7 0 11 7 11 7a19.7 19.7 0 0 1-3.17 4.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+  /* Drop-down with search : turns a <select> into a list you can type in.
+     The real <select> stays in the form, so saving and validation work the same. */
+  function addSearch(select) {
+    if (select._searchToggle || select.hasAttribute("data-no-search") || select.closest("template")) return;
+    var wrap = document.createElement("div");
+    wrap.className = "search-select";
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+    var firstEmpty = Array.prototype.find.call(select.options, function (o) { return o.value === ""; });
+    var placeholder = select.dataset.placeholder || (firstEmpty ? firstEmpty.textContent : "Select...");
+
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "form-control search-select-toggle";
+    toggle.setAttribute("aria-haspopup", "listbox");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.innerHTML = '<span class="search-select-text"></span><span class="search-select-caret" aria-hidden="true">&#9662;</span>';
+    wrap.appendChild(toggle);
+    select._searchToggle = toggle;
+
+    var panel = document.createElement("div");
+    panel.className = "search-select-panel";
+    panel.hidden = true;
+    panel.innerHTML = '<input type="text" class="form-control search-select-search" placeholder="Search..." autocomplete="off"><div class="search-select-list" role="listbox"></div><div class="search-select-empty" hidden>No matches found</div>';
+    wrap.appendChild(panel);
+    var search = panel.querySelector(".search-select-search");
+    var list = panel.querySelector(".search-select-list");
+    var empty = panel.querySelector(".search-select-empty");
+
+    Array.prototype.forEach.call(select.options, function (opt) {
+      if (opt.value === "") return;
+      var row = document.createElement("div");
+      row.className = "search-select-option";
+      row.setAttribute("role", "option");
+      row.dataset.value = opt.value;
+      row.dataset.text = opt.textContent.toLowerCase();
+      row._opt = opt;
+      row.textContent = opt.textContent;
+      row.addEventListener("click", function () {
+        select.value = opt.value;
+        select.dispatchEvent(new Event("change"));
+        close();
+        toggle.focus();
+      });
+      list.appendChild(row);
+    });
+
+    function refresh() {
+      var chosen = select.selectedOptions[0];
+      var has = chosen && chosen.value !== "";
+      var textEl = toggle.querySelector(".search-select-text");
+      textEl.textContent = has ? chosen.textContent : placeholder;
+      textEl.classList.toggle("is-placeholder", !has);
+      list.querySelectorAll(".search-select-option").forEach(function (row) {
+        row.classList.toggle("is-selected", row.dataset.value === select.value);
+      });
+    }
+    function filter() {
+      var q = search.value.trim().toLowerCase(), shown = 0;
+      list.querySelectorAll(".search-select-option").forEach(function (row) {
+        var match = row.dataset.text.indexOf(q) !== -1 && !row._opt.disabled;   // skills already added are hidden
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      empty.hidden = shown !== 0;
+    }
+    function open() {
+      document.querySelectorAll(".search-select.is-open").forEach(function (o) { if (o !== wrap) o._close(); });
+      panel.hidden = false;
+      wrap.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+      search.value = "";
+      filter();
+      search.focus();
+    }
+    function close() {
+      panel.hidden = true;
+      wrap.classList.remove("is-open");
+      toggle.setAttribute("aria-expanded", "false");
+    }
+    wrap._close = close;
+
+    toggle.addEventListener("click", function () { panel.hidden ? open() : close(); });
+    search.addEventListener("input", filter);
+    search.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var first = list.querySelector(".search-select-option:not([hidden])");
+        if (first) first.click();
+      }
+      if (e.key === "Escape") { close(); toggle.focus(); }
+    });
+    document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) close(); });
+    select.addEventListener("change", function () { setTimeout(refresh, 0); });   // after other change handlers
+    // red border: copy the "invalid" class of the real <select> to the visible button
+    new MutationObserver(function () { toggle.classList.toggle("invalid", select.classList.contains("invalid")); })
+      .observe(select, { attributes: true, attributeFilter: ["class"] });
+    toggle.classList.toggle("invalid", select.classList.contains("invalid"));
+    refresh();
+  }
+
+
+
+  function addEye(input) {
+    if (input.dataset.eye) return;
+    input.dataset.eye = "1";
+    var wrap = document.createElement("div");
+    wrap.className = "pw-wrap";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pw-eye";
+    btn.setAttribute("aria-label", "Show password");
+    btn.innerHTML = EYE;
+    btn.addEventListener("click", function () {
+      var show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.classList.toggle("shown", show);
+      btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    });
+    wrap.appendChild(btn);
+  }
+
+  function scan(root) {
+    root.querySelectorAll('input[type="password"]').forEach(addEye);
+    root.querySelectorAll("select").forEach(addSearch);
+    root.querySelectorAll("input[data-date-mask]").forEach(maskDate);
+  }
+
+function maskDate(input) {
+    if (input.dataset.masked) return;
+    input.dataset.masked = "1";
+    input.setAttribute("inputmode", "numeric");
+    input.setAttribute("maxlength", "10");
+    input.addEventListener("input", function () {
+      var d = input.value.replace(/\D/g, "").slice(0, 8);
+      var out = d.slice(0, 4);
+      if (d.length > 4) out += "-" + d.slice(4, 6);
+      if (d.length > 6) out += "-" + d.slice(6, 8);
+      if (out !== input.value) input.value = out;
+    });
+  }
+
+
+
+  function start() {
+    scan(document);
+    new MutationObserver(function (list) {   // rows added with the "+" buttons
+      list.forEach(function (m) {
+        m.addedNodes.forEach(function (n) { if (n.nodeType === 1) scan(n); });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();
+
+function maskDate(input) {
+    if (input.dataset.masked) return;
+    input.dataset.masked = "1";
+    input.setAttribute("inputmode", "numeric");
+    input.setAttribute("maxlength", "10");
+    input.addEventListener("input", function () {
+      var d = input.value.replace(/\D/g, "").slice(0, 8);
+      var out = d.slice(0, 4);
+      if (d.length > 4) out += "-" + d.slice(4, 6);
+      if (d.length > 6) out += "-" + d.slice(6, 8);
+      if (out !== input.value) input.value = out;
+    });
+  }
+
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
 
