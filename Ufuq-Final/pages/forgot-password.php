@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <style>
 <?= auth_css() ?>
+body { background: var(--color-cream); }   /* beige page background*/
 </style>
 </head>
 

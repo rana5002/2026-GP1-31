@@ -159,6 +159,8 @@ function mask_email(string $email): string
 <style>
 <?= auth_css() ?>
 
+body { background: var(--color-cream); }   /* beige page background*/
+
 .code-input {
     text-align: center;
     font-size: 1.8rem;

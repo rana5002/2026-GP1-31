@@ -150,6 +150,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    Original form layout and styling retained
    ====================================== */
 
+   body { background: var(--color-cream); }   /* beige page background*/
+
 /* Soft entrance for the existing login card */
 .auth-wrapper {
     animation: loginPageFade .55s ease-out both;

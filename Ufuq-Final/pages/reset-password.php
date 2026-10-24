@@ -77,6 +77,8 @@ if ($member && $_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
 <?= auth_css() ?>
 
+body { background: var(--color-cream); }   /* beige page background*/
+
 .pw-wrap { position: relative; }
 .pw-wrap > input { padding-right: 44px; }
 .pw-eye {

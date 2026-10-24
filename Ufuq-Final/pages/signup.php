@@ -443,6 +443,9 @@ $dobMin = date('Y-m-d', strtotime('-100 years'));
 <link rel="stylesheet" href="../css/icons.css">
 
 <style>
+
+body { background: var(--color-cream); }   /* beige page background*/
+
   :root { --err: #e5646a; --err-text: #cf4a50; --err-bg: #fff6f6; }
   .req { color: var(--err); font-weight: 700; margin-left: 2px; }
   .form-error { color: var(--err-text); font-weight: 500; font-size: .85rem; margin-top: 6px; }
