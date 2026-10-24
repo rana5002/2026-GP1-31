@@ -13,7 +13,12 @@ const FIELDS = [
 
 const INDUSTRIES = [
     'Technology', 'Education & Training', 'Marketing', 'Trading', 'Media', 'Administration',
-    'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 
+    'Healthcare', 'Finance', 'Engineering & Construction', 'Retail',
+    'Telecommunications', 'Cybersecurity', 'Artificial Intelligence & Data', 'Insurance',
+    'Government & Public Sector', 'Energy, Oil & Gas', 'Utilities & Environment',
+    'Manufacturing & Industrial', 'Logistics & Transportation', 'E-commerce', 'Real Estate',
+    'Hospitality & Tourism', 'Consulting & Professional Services', 'Pharmaceuticals',
+    'Non-profit & Social Services', 'Agriculture & Food',
 ];
 
 
