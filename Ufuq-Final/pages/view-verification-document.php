@@ -56,7 +56,7 @@ if ($filename === '' || !in_array($extension, $allowedExtensions, true)) {
 }
 
 
-$docsDirectory = realpath(__DIR__ . '/../../private-uploads/docs');
+$docsDirectory = realpath(__DIR__ . '/../uploads/docs');
 
 if ($docsDirectory === false) {
     http_response_code(500);

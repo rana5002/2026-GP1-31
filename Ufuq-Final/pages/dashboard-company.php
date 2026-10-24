@@ -126,12 +126,12 @@ try {
             $mime = $finfo->file($file['tmp_name']);
             $allowedLogo = ['image/jpeg' => 'jpg', 'image/png' => 'png'];
             if (!isset($allowedLogo[$mime])) throw new FieldError('logoPanel', 'logoInput', 'Please upload a PNG, JPG or JPEG image.');
-            $uploadDir = __DIR__ . '/../uploads/company/logos';
+            $uploadDir = __DIR__ . '/../uploads/logos';
             if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) throw new RuntimeException('Could not create the logo upload folder.');
             $fileName = 'company_' . $companyId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedLogo[$mime];
             if (!move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $fileName)) throw new RuntimeException('Could not save the uploaded logo.');
             $stmt = $pdo->prepare('UPDATE company SET Logo = ? WHERE CompanyID = ?');
-            $stmt->execute(['uploads/company/logos/' . $fileName, $companyId]);
+            $stmt->execute(['uploads/logos/' . $fileName, $companyId]);
             company_redirect('profile', 'saved');
         }
 

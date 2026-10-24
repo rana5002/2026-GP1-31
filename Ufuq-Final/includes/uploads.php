@@ -44,7 +44,6 @@ function check_file(string $key, array $exts, array $mimes): string
 
 /**
  * Store an uploaded file.
- * Verification documents are stored outside the public website directory.
  * The database path format remains compatible with existing records.
  */
 function store_file(string $key, string $sub): string
@@ -99,8 +98,23 @@ function store_file(string $key, string $sub): string
     $folder = UPLOAD_FOLDERS[$sub];
 
     if ($sub === 'docs') {
-        // This directory must be outside the public website root.
-        $dir = __DIR__ . '/../../private-uploads/docs';
+       if ($sub === 'docs') {
+    // Verification documents: Ufuq-Final/uploads/docs (direct access is blocked by .htaccess)
+    $dir = __DIR__ . '/../uploads/docs';
+
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException('Could not create upload directory.');
+    }
+
+    $docsHtaccess = $dir . '/.htaccess';
+
+    if (!is_file($docsHtaccess)) {
+        file_put_contents(
+            $docsHtaccess,
+            "Options -Indexes\n\n# Block direct access to uploaded verification documents.\nRequire all denied\n",
+            LOCK_EX
+        );
+    }
     } else {
         $uploadRoot = __DIR__ . '/../uploads';
         $dir = $uploadRoot . '/' . $folder;
@@ -173,11 +187,8 @@ function stored_file_path(string $path): ?string
         return null;
     }
 
-    $filename = basename($path);
-
-    if (str_starts_with($path, 'uploads/docs/')) {
-        return __DIR__ . '/../../private-uploads/docs/' . $filename;
-    }
+   
+    
 
     return __DIR__ . '/../' . $path;
 }
@@ -236,7 +247,7 @@ function cleanup_orphan_uploads(
     $directories = [
         __DIR__ . '/../uploads/profile-pictures',
         __DIR__ . '/../uploads/logos',
-        __DIR__ . '/../../private-uploads/docs',
+        __DIR__ . '/../uploads/docs',
     ];
 
     $deleted = 0;
