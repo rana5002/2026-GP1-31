@@ -73,16 +73,15 @@ if ($view === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = signup_save($pdo, $payload);
             } catch (Throwable $ex) {
                 // Was the email (or the company's CR number) taken while the code was waiting?
-                $taken = false;
+               $taken = false;
                 try {
-                    $st = $pdo->prepare('SELECT 1 FROM member WHERE Email = ?');
-                    $st->execute([$email]);
-                    $taken = (bool) $st->fetchColumn();
-
-                    if (!$taken && !$isUser) {
-                        $st = $pdo->prepare('SELECT 1 FROM company WHERE CrNumber = ?');
-                        $st->execute([(string) ($payload['cr'] ?? '')]);
+                    if ($isUser) {
+                        $st = $pdo->prepare('SELECT 1 FROM member WHERE Email = ?');
+                        $st->execute([$email]);
                         $taken = (bool) $st->fetchColumn();
+                    } else {
+                        // a rejected company does not count as taken (it is replaced when the new one is saved)
+                        $taken = company_duplicate_field($pdo, $email, (string) ($payload['cr'] ?? '')) !== null;
                     }
                 } catch (Throwable $ignore) {
                     // keep $taken = false

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/email_templates.php';
 require_once __DIR__ . '/../includes/verification.php';
 require_once __DIR__ . '/../includes/uploads.php';    // check_file(), store_file(), delete_files(), cleanup_orphan_uploads()
 require_once __DIR__ . '/../includes/lists.php';   // shared lists (EDU_STATUSES, FIELDS, INDUSTRIES, CITIES)
+require_once __DIR__ . '/../includes/signup_save.php';   // company_duplicate_field()
 
 /* ================= Config ================= */
 const PHONE_USER  = '/^05[0-9]{8}$/';     // Saudi mobile: 05XXXXXXXX
@@ -369,16 +370,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $banner = error_summary($errors, $LABELS_COMP);
         }
 
-        // email or CR already registered?
+         // email or CR already registered? (a REJECTED company does not block: it may register again)
         if (!$errors) {
-            $st = $pdo->prepare('SELECT 1 FROM member WHERE Email = ?');
-            $st->execute([$email]);
-            $dupEmail = (bool)$st->fetchColumn();
-            $st = $pdo->prepare('SELECT 1 FROM company WHERE CrNumber = ?');
-            $st->execute([$cr]);
-            $dupCr = (bool)$st->fetchColumn();
-            if ($dupEmail || $dupCr) {
-                $errors[$dupEmail ? 'email' : 'cr_number'] = 'Company already registered';
+            $dup = company_duplicate_field($pdo, $email, $cr);
+            if ($dup !== null) {
+                $errors[$dup] = 'Company already registered';
                 $banner = 'Company already registered';
             }
         }

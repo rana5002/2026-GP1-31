@@ -2,10 +2,62 @@
 // Saves a VERIFIED registration into the database. Called only after the email code is confirmed.
 // Text values inside SQL use SINGLE quotes: on some servers (e.g. Aiven) double quotes mean a column name.
 
+
+require_once __DIR__ . '/uploads.php';   // delete_files() 
+
+// Can this email / CR number be used for a NEW company registration?
+// Returns null if yes, or the form field that is already taken ('email' or 'cr_number').
+// A company that was REJECTED does not block: it may register again (its old record is replaced when the new one is saved).
+function company_duplicate_field(PDO $pdo, string $email, string $cr): ?string
+{
+    $st = $pdo->prepare('SELECT m.Role, c.Status
+                         FROM member m
+                         LEFT JOIN company c ON c.CompanyID = m.MemberID
+                         WHERE m.Email = ?');
+    $st->execute([$email]);
+    $row = $st->fetch();
+    if ($row && !($row['Role'] === 'Company' && $row['Status'] === 'Rejected')) {
+        return 'email';
+    }
+
+    $st = $pdo->prepare('SELECT Status FROM company WHERE CrNumber = ?');
+    $st->execute([$cr]);
+    $status = $st->fetchColumn();
+    if ($status !== false && $status !== 'Rejected') {
+        return 'cr_number';
+    }
+
+    return null;
+}
+
+// Deletes the REJECTED company records that use this email or CR number (their member row, so the company row goes too).
+// Call it inside the registration transaction. Returns the uploaded file paths to delete AFTER the commit.
+function company_delete_rejected(PDO $pdo, string $email, string $cr): array
+{
+    $st = $pdo->prepare("SELECT c.CompanyID, c.Logo, c.VerificationDocument
+                         FROM company c
+                         JOIN member m ON m.MemberID = c.CompanyID
+                         WHERE c.Status = 'Rejected' AND (m.Email = ? OR c.CrNumber = ?)");
+    $st->execute([$email, $cr]);
+
+    $files = [];
+    foreach ($st->fetchAll() as $old) {
+        $pdo->prepare("DELETE FROM member WHERE MemberID = ? AND Role = 'Company'")->execute([(int) $old['CompanyID']]);
+        $files[] = (string) $old['Logo'];
+        $files[] = (string) $old['VerificationDocument'];
+    }
+
+    return $files;
+}
+
+
+
 // Returns the new MemberID. Throws on failure (PDOException, errorInfo[1] === 1062 means "already registered").
 function signup_save(PDO $pdo, array $d): int
 {
     $pdo->beginTransaction();
+
+        $oldFiles = [];   // files of a replaced (rejected) company, deleted after the commit
 
     try {
         if (($d['type'] ?? '') === 'User') {
@@ -47,6 +99,9 @@ function signup_save(PDO $pdo, array $d): int
 
             $id = $uid;
         } else {
+            
+            $oldFiles = company_delete_rejected($pdo, $d['email'], $d['cr']);
+
             $pdo->prepare("INSERT INTO member (Email, Password, Role) VALUES (?, ?, 'Company')")
                 ->execute([$d['email'], $d['pass_hash']]);
             $cid = (int) $pdo->lastInsertId();
@@ -60,6 +115,8 @@ function signup_save(PDO $pdo, array $d): int
         }
 
         $pdo->commit();
+        delete_files($oldFiles);   // only after the new registration is safely saved
+
         return $id;
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) {
