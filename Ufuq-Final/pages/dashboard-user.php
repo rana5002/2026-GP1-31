@@ -206,8 +206,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($degree === '') throw new FieldError('studyForm', 'StudyDegree', 'This field is required.');
             if ($field === '') throw new FieldError('studyForm', 'StudyField', 'This field is required.');
             if ($university === '') throw new FieldError('studyForm', 'UniversityName', 'This field is required.');
-            if (mb_strlen($field) > 100 || mb_strlen($university) > 100) {
-                throw new FieldError('studyForm', 'StudyField', 'Field of study and university name must be 100 characters or fewer.');
+            if (mb_strlen($university) > 100) {
+                throw new FieldError('studyForm', 'UniversityName', 'University name must be 100 characters or fewer.');
+            }
+            if (!in_array($field, FIELDS, true)) {
+                throw new FieldError('studyForm', 'StudyField', 'Please select a valid field of study.');
             }
             if (!in_array($degree, PROFILE_DEGREES, true)) {
                 throw new FieldError('studyForm', 'StudyDegree', 'Please select a valid degree level.');
@@ -319,11 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new FieldError('experienceForm', 'ExperienceID', 'Please select a valid experience type.');
             }
 
-            $stmt = $pdo->prepare('SELECT 1 FROM userexperience WHERE UserID = ? AND ExperienceID = ?');
-            $stmt->execute([$uid, $experienceId]);
-            if ($stmt->fetchColumn()) {
-                throw new FieldError('experienceForm', 'ExperienceID', 'You have already added this experience type.');
-            }
+            
 
             // Duration is a generated column in the database, so it is not inserted
             $stmt = $pdo->prepare(
@@ -364,11 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new FieldError('qualificationForm', 'QualificationID', 'Please select a valid qualification.');
             }
 
-            $stmt = $pdo->prepare('SELECT 1 FROM userqualification WHERE UserID = ? AND QualificationID = ?');
-            $stmt->execute([$uid, $qualificationId]);
-            if ($stmt->fetchColumn()) {
-                throw new FieldError('qualificationForm', 'QualificationID', 'You have already added this qualification.');
-            }
+            
 
             $stmt = $pdo->prepare(
                 'INSERT INTO userqualification (UserID, QualificationID, Institution, YearObtained, Duration)
@@ -379,18 +374,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_redirect();
         }
 
-        if ($action === 'delete_experience') {
+
+        /* Edit an experience (the type can be changed too; the same type may be used more than once) */
+        if ($action === 'edit_experience') {
+            $recordId = (int)($_POST['UserExperienceID'] ?? 0);
             $experienceId = (int)($_POST['ExperienceID'] ?? 0);
-            $stmt = $pdo->prepare('DELETE FROM userexperience WHERE UserID = ? AND ExperienceID = ?');
-            $stmt->execute([$uid, $experienceId]);
+            $jobTitle = trim($_POST['JobTitle'] ?? '');
+            $organization = trim($_POST['Organization'] ?? '');
+            $startDate = trim($_POST['StartDate'] ?? '');
+            $endDate = trim($_POST['EndDate'] ?? '');
+
+            if ($experienceId <= 0) throw new FieldError('editExperienceForm', 'EditExperienceID', 'This field is required.');
+            if ($jobTitle === '') throw new FieldError('editExperienceForm', 'EditJobTitle', 'This field is required.');
+            if ($organization === '') throw new FieldError('editExperienceForm', 'EditOrganization', 'This field is required.');
+            if ($startDate === '') throw new FieldError('editExperienceForm', 'EditStartDate', 'This field is required.');
+            if (mb_strlen($jobTitle) > 50) {
+                throw new FieldError('editExperienceForm', 'EditJobTitle', 'Job title must be 50 characters or fewer.');
+            }
+            if (mb_strlen($organization) > 100) {
+                throw new FieldError('editExperienceForm', 'EditOrganization', 'Organization must be 100 characters or fewer.');
+            }
+
+            $start = profile_valid_date($startDate);
+            $end = $endDate !== '' ? profile_valid_date($endDate) : null;
+            if (!$start || ($endDate !== '' && !$end)) {
+                throw new FieldError('editExperienceForm', 'EditStartDate', 'Please enter valid experience dates.');
+            }
+            if ($end && $end < $start) {
+                throw new FieldError('editExperienceForm', 'EditEndDate', 'End date cannot be earlier than start date.');
+            }
+
+            /* The record must belong to this user. */
+            $stmt = $pdo->prepare('SELECT 1 FROM userexperience WHERE UserID = ? AND UserExperienceID = ?');
+            $stmt->execute([$uid, $recordId]);
+            if (!$stmt->fetchColumn()) {
+                throw new RuntimeException('This experience was not found on your profile.');
+            }
+
+            $stmt = $pdo->prepare('SELECT 1 FROM experience WHERE ExperienceID = ?');
+            $stmt->execute([$experienceId]);
+            if (!$stmt->fetchColumn()) {
+                throw new FieldError('editExperienceForm', 'EditExperienceID', 'Please select a valid experience type.');
+            }
+
+            // Duration is a generated column in the database, so it is not updated
+            $stmt = $pdo->prepare(
+                'UPDATE userexperience SET ExperienceID = ?, JobTitle = ?, Organization = ?, StartDate = ?, EndDate = ?
+                 WHERE UserID = ? AND UserExperienceID = ?'
+            );
+            $stmt->execute([$experienceId, $jobTitle, $organization, $startDate, $endDate !== '' ? $endDate : null, $uid, $recordId]);
+            profile_flash('success', 'Experience updated successfully.');
+            profile_redirect();
+        }
+
+        /* Edit a qualification (the qualification can be changed too; the same one may be used more than once) */
+        if ($action === 'edit_qualification') {
+            $recordId = (int)($_POST['UserQualificationID'] ?? 0);
+            $qualificationId = (int)($_POST['QualificationID'] ?? 0);
+            $institution = trim($_POST['Institution'] ?? '');
+            $year = (int)($_POST['YearObtained'] ?? 0);
+            $durationRaw = trim($_POST['Duration'] ?? '');
+
+            if ($qualificationId <= 0) throw new FieldError('editQualificationForm', 'EditQualificationID', 'This field is required.');
+            if ($institution === '') throw new FieldError('editQualificationForm', 'EditInstitution', 'This field is required.');
+            if (mb_strlen($institution) > 100) {
+                throw new FieldError('editQualificationForm', 'EditInstitution', 'Institution must be 100 characters or fewer.');
+            }
+            if ($year < 1900 || $year > (int)date('Y')) {
+                throw new FieldError('editQualificationForm', 'EditYearObtained', 'Please enter a valid year obtained.');
+            }
+            $duration = null;
+            if ($durationRaw !== '') {
+                $duration = (int)$durationRaw;
+                if ($duration < 1 || $duration > 120) {
+                    throw new FieldError('editQualificationForm', 'EditDuration', 'Duration must be between 1 and 120 months.');
+                }
+            }
+
+            /* The record must belong to this user. */
+            $stmt = $pdo->prepare('SELECT 1 FROM userqualification WHERE UserID = ? AND UserQualificationID = ?');
+            $stmt->execute([$uid, $recordId]);
+            if (!$stmt->fetchColumn()) {
+                throw new RuntimeException('This qualification was not found on your profile.');
+            }
+
+            $stmt = $pdo->prepare('SELECT 1 FROM qualification WHERE QualificationID = ?');
+            $stmt->execute([$qualificationId]);
+            if (!$stmt->fetchColumn()) {
+                throw new FieldError('editQualificationForm', 'EditQualificationID', 'Please select a valid qualification.');
+            }
+
+            $stmt = $pdo->prepare(
+                'UPDATE userqualification SET QualificationID = ?, Institution = ?, YearObtained = ?, Duration = ?
+                 WHERE UserID = ? AND UserQualificationID = ?'
+            );
+            $stmt->execute([$qualificationId, $institution, $year, $duration, $uid, $recordId]);
+            profile_flash('success', 'Qualification updated successfully.');
+            profile_redirect();
+        }
+
+
+        if ($action === 'delete_experience') {
+            $recordId = (int)($_POST['UserExperienceID'] ?? 0);
+            $stmt = $pdo->prepare('DELETE FROM userexperience WHERE UserID = ? AND UserExperienceID = ?');
+            $stmt->execute([$uid, $recordId]);
             profile_flash('success', 'Experience removed from your profile.');
             profile_redirect();
         }
 
         if ($action === 'delete_qualification') {
-            $qualificationId = (int)($_POST['QualificationID'] ?? 0);
-            $stmt = $pdo->prepare('DELETE FROM userqualification WHERE UserID = ? AND QualificationID = ?');
-            $stmt->execute([$uid, $qualificationId]);
+            $recordId = (int)($_POST['UserQualificationID'] ?? 0);
+            $stmt = $pdo->prepare('DELETE FROM userqualification WHERE UserID = ? AND UserQualificationID = ?');
+            $stmt->execute([$uid, $recordId]);
             profile_flash('success', 'Qualification removed from your profile.');
             profile_redirect();
         }
@@ -422,7 +517,7 @@ $studies = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* Read experience records */
 $stmt = $pdo->prepare(
-    'SELECT ue.ExperienceID, ue.JobTitle, ue.Organization, ue.StartDate, ue.EndDate, e.ExperienceName
+    'SELECT ue.UserExperienceID, ue.ExperienceID, ue.JobTitle, ue.Organization, ue.StartDate, ue.EndDate, e.ExperienceName
      FROM userexperience ue
      JOIN experience e ON e.ExperienceID = ue.ExperienceID
      WHERE ue.UserID = ? ORDER BY ue.StartDate DESC'
@@ -432,11 +527,11 @@ $experiences = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $usedExperienceIds = array_map('intval', array_column($experiences, 'ExperienceID'));
 
 $allExperienceTypes = $pdo->query('SELECT ExperienceID, ExperienceName FROM experience ORDER BY ExperienceName')->fetchAll(PDO::FETCH_ASSOC);
-$experienceOptions = array_values(array_filter($allExperienceTypes, fn($e) => !in_array((int)$e['ExperienceID'], $usedExperienceIds, true)));
+$experienceOptions = $allExperienceTypes; // the same type can be added more than once
 
 /* Read qualifications */
 $stmt = $pdo->prepare(
-    'SELECT uq.QualificationID, uq.Institution, uq.YearObtained, uq.Duration, q.QualificationName
+    'SELECT uq.UserQualificationID, uq.QualificationID, uq.Institution, uq.YearObtained, uq.Duration, q.QualificationName
      FROM userqualification uq
      JOIN qualification q ON q.QualificationID = uq.QualificationID
      WHERE uq.UserID = ? ORDER BY uq.YearObtained DESC'
@@ -446,7 +541,7 @@ $qualifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $usedQualificationIds = array_map('intval', array_column($qualifications, 'QualificationID'));
 
 $allQualificationTypes = $pdo->query('SELECT QualificationID, QualificationName FROM qualification ORDER BY QualificationName')->fetchAll(PDO::FETCH_ASSOC);
-$qualificationOptions = array_values(array_filter($allQualificationTypes, fn($q) => !in_array((int)$q['QualificationID'], $usedQualificationIds, true)));
+$qualificationOptions = $allQualificationTypes; // the same qualification can be added more than once
 
 /* Skills */
 $skills = $pdo->query('SELECT SkillID, SkillName FROM skill ORDER BY SkillName')->fetchAll(PDO::FETCH_ASSOC);
@@ -609,7 +704,8 @@ user_header($me, 'My Profile', '');
 .profile-dashboard .profile-record:last-child { padding-bottom: 0; border-bottom: 0; }
 .profile-dashboard .profile-record-title { margin: 0 0 5px; color: var(--profile-text); font-size: .96rem; font-weight: 750; }
 .profile-dashboard .profile-record-subtitle { color: var(--profile-muted); font-size: .85rem; line-height: 1.7; }
-.profile-dashboard .profile-record-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.profile-dashboard .profile-record-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; }
+.profile-dashboard .profile-record-actions form { margin: 0; display: flex; }
 .profile-dashboard .profile-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .profile-dashboard .profile-chip {
     display: inline-flex; padding: 7px 11px; border: 1px solid #e2d8ef; border-radius: 9px;
@@ -625,7 +721,7 @@ user_header($me, 'My Profile', '');
 .profile-dashboard .profile-empty { color: var(--profile-muted); font-size: .9rem; line-height: 1.7; }
 .profile-dashboard .profile-inline-form { padding-top: 17px; margin-top: 20px; border-top: 1px solid #e9e4ef; }
 .profile-dashboard .profile-subheading { margin: 24px 0 14px; color: var(--profile-muted); font-size: .82rem; font-weight: 650; letter-spacing: .02em; }
-.profile-dashboard .profile-danger-btn { border: 0; padding: 5px 8px; border-radius: 7px; background: transparent; color: #a43c45; font-size: .82rem; cursor: pointer; }
+.profile-dashboard .profile-danger-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 6px 10px; border-radius: 9px; background: transparent; color: #a43c45; font-family: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; transition: background .18s ease; }
 .profile-dashboard .profile-danger-btn:hover { background: #fff0f1; }
 .profile-dashboard .icon-btn { border-radius: 9px; transition: background .18s ease, color .18s ease; }
 .profile-dashboard .icon-btn:hover { background: var(--profile-lavender); color: var(--profile-purple); }
@@ -896,8 +992,7 @@ user_header($me, 'My Profile', '');
                         <form method="post" onsubmit="return confirm('Remove this study from your profile?')">
                             <input type="hidden" name="action" value="delete_study">
                             <input type="hidden" name="FieldID" value="<?= (int)$study['FieldID'] ?>">
-                            <button class="profile-danger-btn" type="submit">Remove</button>
-                        </form>
+                            <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>                          </form>
                     </div>
                 </div>
             <?php endforeach; endif; ?>
@@ -908,7 +1003,7 @@ user_header($me, 'My Profile', '');
                     <div class="profile-view-grid">
                         <div class="form-group">
                             <label class="form-label" for="StudyDegree">Degree Level</label>
-                            <select class="form-control" id="StudyDegree" name="DegreeLevel" required>
+                            <select class="form-control" id="StudyDegree" name="DegreeLevel" required data-search>
                                 <option value="">Select degree level</option>
                                 <?php foreach (PROFILE_DEGREES as $degree): ?>
                                     <option value="<?= profile_escape($degree) ?>"><?= profile_escape($degree) ?></option>
@@ -917,7 +1012,12 @@ user_header($me, 'My Profile', '');
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="StudyField">Field of Study</label>
-                            <input class="form-control" id="StudyField" name="FieldOfStudy" required maxlength="100">
+                            <select class="form-control" id="StudyField" name="FieldOfStudy" required data-search>
+                                     <option value="">Select field of study</option>
+                                        <?php foreach (FIELDS as $f): ?>
+                                     <option value="<?= profile_escape($f) ?>"><?= profile_escape($f) ?></option>
+                                         <?php endforeach; ?>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="UniversityName">University / Institution</label>
@@ -953,10 +1053,12 @@ user_header($me, 'My Profile', '');
                         <?php if ($durationText !== ''): ?> · <?= profile_escape($durationText) ?><?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
+
+                    <button type="button" class="icon-btn" onclick="editRecord('experience', <?= (int)$experience['UserExperienceID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
                         <form method="post" onsubmit="return confirm('Remove this experience from your profile?')">
                             <input type="hidden" name="action" value="delete_experience">
-                            <input type="hidden" name="ExperienceID" value="<?= (int)$experience['ExperienceID'] ?>">
-                            <button class="profile-danger-btn" type="submit">Remove</button>
+                            <input type="hidden" name="UserExperienceID" value="<?= (int)$experience['UserExperienceID'] ?>">   
+                         <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>
                         </form>
                     </div>
                 </div>
@@ -993,6 +1095,31 @@ user_header($me, 'My Profile', '');
                 </form>
                 <?php endif; ?>
             </div>
+
+            <div id="editExperienceForm" class="profile-inline-form profile-hidden">
+                <form method="post" class="profile-form" data-validate>
+                    <input type="hidden" name="action" value="edit_experience">
+                    <input type="hidden" name="UserExperienceID" id="UserExperienceID" value="">
+                    <div class="form-group">
+                        <label class="form-label" for="EditExperienceID">Experience Type</label>
+                        <select class="form-control" id="EditExperienceID" name="ExperienceID" required>
+                            <?php foreach ($allExperienceTypes as $opt): ?>
+                                <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group"><label class="form-label" for="EditJobTitle">Job Title</label><input class="form-control" id="EditJobTitle" name="JobTitle" required maxlength="50"></div>
+                    <div class="form-group"><label class="form-label" for="EditOrganization">Organization</label><input class="form-control" id="EditOrganization" name="Organization" required maxlength="100"></div>
+                    <div class="profile-view-grid">
+                        <div class="form-group"><label class="form-label" for="EditStartDate">Start Date</label><input class="form-control" id="EditStartDate" name="StartDate" type="date" required></div>
+                        <div class="form-group"><label class="form-label" for="EditEndDate">End Date</label><input class="form-control" id="EditEndDate" name="EndDate" type="date"><small class="profile-empty">Leave blank if this experience is ongoing.</small></div>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('editExperienceForm')">Cancel</button>
+                    </div>
+                </form>
+            </div>
         </section>
 
         <section class="profile-section">
@@ -1011,10 +1138,14 @@ user_header($me, 'My Profile', '');
                         <?php if (!empty($qualification['Duration'])): ?> · <?= (int)$qualification['Duration'] ?> month(s)<?php endif; ?>
                     </div>
                     <div class="profile-record-actions">
+
+
+                        <button type="button" class="icon-btn" onclick="editRecord('qualification', <?= (int)$qualification['UserQualificationID'] ?>)"><?= icon('edit', 14) ?> Edit</button>
+
                         <form method="post" onsubmit="return confirm('Remove this qualification from your profile?')">
                             <input type="hidden" name="action" value="delete_qualification">
-                            <input type="hidden" name="QualificationID" value="<?= (int)$qualification['QualificationID'] ?>">
-                            <button class="profile-danger-btn" type="submit">Remove</button>
+                            <input type="hidden" name="UserQualificationID" value="<?= (int)$qualification['UserQualificationID'] ?>">
+                            <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>
                         </form>
                     </div>
                 </div>
@@ -1049,6 +1180,30 @@ user_header($me, 'My Profile', '');
                     </div>
                 </form>
                 <?php endif; ?>
+            </div>
+
+                <div id="editQualificationForm" class="profile-inline-form profile-hidden">
+                <form method="post" class="profile-form" data-validate>
+                    <input type="hidden" name="action" value="edit_qualification">
+                    <input type="hidden" name="UserQualificationID" id="UserQualificationID" value="">
+                    <div class="form-group">
+                        <label class="form-label" for="EditQualificationID">Qualification</label>
+                        <select class="form-control" id="EditQualificationID" name="QualificationID" required>
+                            <?php foreach ($allQualificationTypes as $opt): ?>
+                                <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group"><label class="form-label" for="EditInstitution">Institution</label><input class="form-control" id="EditInstitution" name="Institution" required maxlength="100"></div>
+                    <div class="profile-view-grid">
+                        <div class="form-group"><label class="form-label" for="EditYearObtained">Year Obtained</label><input class="form-control" id="EditYearObtained" name="YearObtained" type="number" min="1900" max="<?= date('Y') ?>" required></div>
+                        <div class="form-group"><label class="form-label" for="EditDuration">Duration (months)</label><input class="form-control" id="EditDuration" name="Duration" type="number" min="1" max="120"><small class="profile-empty">Optional.</small></div>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleProfileForm('editQualificationForm')">Cancel</button>
+                    </div>
+                </form>
             </div>
         </section>
 
@@ -1277,7 +1432,10 @@ const FIELD_RULES = {
     GraduationYear: { msg: 'Please enter a valid graduation year.' },
     YearObtained: { msg: 'Please enter a valid year obtained.' },
     Duration: { msg: 'Duration must be between 1 and 120 months.' },
-    EndDate: { after: 'StartDate', afterMsg: 'End date cannot be earlier than start date.' }
+    EndDate: { after: 'StartDate', afterMsg: 'End date cannot be earlier than start date.' },
+    EditYearObtained: { msg: 'Please enter a valid year obtained.' },
+    EditDuration: { msg: 'Duration must be between 1 and 120 months.' },
+    EditEndDate: { after: 'EditStartDate', afterMsg: 'End date cannot be earlier than start date.' }
 };
 
 function setFieldError(el, msg) {
@@ -1377,6 +1535,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (el.tagName === 'SELECT') el.dispatchEvent(new Event('change'));
         }
     });
+
+if (serverError.form === 'editExperienceForm') fillEditRecord('experience', +((serverError.old || {}).UserExperienceID || 0));
+if (serverError.form === 'editQualificationForm') fillEditRecord('qualification', +((serverError.old || {}).UserQualificationID || 0));
     const field = document.getElementById(serverError.field);
     if (field) {
         setFieldError(field, serverError.message);
@@ -1419,6 +1580,45 @@ function cancelImage(inputId, panelId) {
     if (avatar && avatar.dataset.original !== undefined) avatar.innerHTML = avatar.dataset.original;
     if (panel) panel.classList.add('profile-hidden');
 }
+
+
+/* Edit an experience / qualification: fill the edit form with the saved values and open it. */
+const EDIT_DATA = {
+    experience: <?= json_encode(array_column($experiences, null, 'UserExperienceID'), JSON_HEX_TAG | JSON_HEX_AMP) ?>,
+    qualification: <?= json_encode(array_column($qualifications, null, 'UserQualificationID'), JSON_HEX_TAG | JSON_HEX_AMP) ?>
+};
+
+function fillEditRecord(kind, id) {
+    const row = (EDIT_DATA[kind] || {})[id];
+    if (!row) return;
+    if (kind === 'experience') {
+        document.getElementById('UserExperienceID').value = id;
+        document.getElementById('EditExperienceID').value = row.ExperienceID;
+        document.getElementById('EditJobTitle').value = row.JobTitle || '';
+        document.getElementById('EditOrganization').value = row.Organization || '';
+        document.getElementById('EditStartDate').value = row.StartDate || '';
+        document.getElementById('EditEndDate').value = row.EndDate || '';
+    } else {
+        document.getElementById('UserQualificationID').value = id;
+        document.getElementById('EditQualificationID').value = row.QualificationID;
+        document.getElementById('EditInstitution').value = row.Institution || '';
+        document.getElementById('EditYearObtained').value = row.YearObtained || '';
+        document.getElementById('EditDuration').value = row.Duration || '';
+    }
+}
+
+function editRecord(kind, id) {
+    const panelId = kind === 'experience' ? 'editExperienceForm' : 'editQualificationForm';
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    fillEditRecord(kind, id);
+    panel.querySelectorAll('.invalid').forEach(function (el) { setFieldError(el, ''); });
+    if (panel.classList.contains('profile-hidden')) toggleProfileForm(panelId);
+    else panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+
+
 
 function toggleProfileForm(id) {
     const target = document.getElementById(id);
