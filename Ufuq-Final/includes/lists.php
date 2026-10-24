@@ -16,6 +16,19 @@ const INDUSTRIES = [
     'Healthcare', 'Finance', 'Engineering & Construction', 'Retail', 'Other',
 ];
 
-const CITIES = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk', 'Online'];
+const CITIES = ['Riyadh', 'Jeddah', 'Dammam', 'Khobar', 'Makkah', 'Madinah', 'Abha', 'Tabuk'];
+
+
+const CITIES = [
+    'Riyadh', 'Jeddah', 'Makkah', 'Madinah', 'Dammam', 'Khobar', 'Dhahran', 'Jubail',
+    'Taif', 'Abha', 'Khamis Mushait', 'Tabuk', 'Buraidah', 'Hail', 'Najran', 'Jazan',
+    'Yanbu', 'Al Ahsa', 'Qatif', 'Al Kharj', 'Arar', 'Sakaka', 'Al Baha', 'Unaizah',
+    'Other',
+];
+
+// Opportunity location: Online + all the cities above
+define('OPPORTUNITY_LOCATIONS', array_merge(['Online'], CITIES));
+
+
 //Type
 const OPPORTUNITY_TYPES = ['Training', 'Course'];  

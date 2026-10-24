@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/lists.php';
 
 $adminId = require_admin();
 
@@ -358,7 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (
         $v['location'] !== '' &&
-        !in_array($v['location'], CITIES, true)
+        !in_array($v['location'], OPPORTUNITY_LOCATIONS, true)
     ) {
         $errors['location'] = 'Invalid location.';
     }
@@ -1214,7 +1215,7 @@ admin_header(
         <select id="location" name="location" required
                 class="form-control <?= inv($errors, 'location') ?>">
           <option value="">Select city</option>
-          <?php foreach (CITIES as $c): ?>
+          <?php foreach (OPPORTUNITY_LOCATIONS as $c): ?>
             <option value="<?= e($c) ?>"
               <?= $v['location'] === $c ? 'selected' : '' ?>>
               <?= e($c) ?>

@@ -9,7 +9,7 @@ $companyId = (int)($_SESSION['user_id'] ?? 0);
 
 
 $types = OPPORTUNITY_TYPES;
-$cities = CITIES;
+$cities = OPPORTUNITY_LOCATIONS;
 
 /* ApplicationMethod values as stored in the database. The buttons keep their labels. */
 const METHOD_LINK   = 'External Link';

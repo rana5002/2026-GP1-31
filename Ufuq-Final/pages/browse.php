@@ -259,7 +259,7 @@ if ($search !== '') {
 $sectors = INDUSTRIES;
 
 $typeFilter = array_values(array_intersect(browse_str_list($_GET['type'] ?? []), OPPORTUNITY_TYPES));
-$locationFilter = array_values(array_intersect(browse_str_list($_GET['location'] ?? []), CITIES));
+$locationFilter = array_values(array_intersect(browse_str_list($_GET['location'] ?? []), OPPORTUNITY_LOCATIONS));
 $sectorFilter = array_values(array_intersect(browse_str_list($_GET['sector'] ?? []), $sectors));
 $durationFilter = browse_str_list($_GET['duration'] ?? []);
 
@@ -1686,7 +1686,7 @@ user_header($me, 'Browse', 'browse');
             <h3 class="filter-panel-title">Filter Opportunities</h3>
 
             <?php browse_lookup_box('type', 'Opportunity Type', 'Search types...', browse_pairs(OPPORTUNITY_TYPES), $typeFilter); ?>
-            <?php browse_lookup_box('location', 'City', 'Search cities...', browse_pairs(CITIES), $locationFilter); ?>
+            <?php browse_lookup_box('location', 'City', 'Search cities...', browse_pairs(OPPORTUNITY_LOCATIONS), $locationFilter); ?>
             <?php browse_lookup_box('sector', 'Industry Sector', 'Search sectors...', browse_pairs($sectors), $sectorFilter); ?>
             <?php browse_lookup_box('duration', 'Duration', 'Search durations...', browse_pairs($allowedDurations), $durationFilter); ?>
 
