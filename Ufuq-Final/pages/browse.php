@@ -1082,6 +1082,30 @@ user_header($me, 'Browse', 'browse');
     color: #80521b;
 }
 
+/* Upcoming: applications not open yet (grey) */
+.user-browse .badge-upcoming {
+    border: 1px solid #e3e0e8;
+    background: #f3f2f5;
+    color: #5f5a6b;
+}
+
+/* Card footer: status on the left, View Details on the right */
+.user-browse .opportunity-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid #f0edf4;
+}
+
+.user-browse .opportunity-footer .badge {
+    padding: 6px 12px;
+    font-size: .8rem;
+}
+
 
 
 .user-browse .empty-state {
@@ -2157,7 +2181,21 @@ user_header($me, 'Browse', 'browse');
 
                         </div>
 
-                        
+                        <?php
+                        /* Same status as the Status filter: Open, Upcoming or Closed. */
+                        $cardState = browse_state($o);
+                        $cardStateClass = $cardState === 'Open'
+                            ? 'badge-open'
+                            : ($cardState === 'Upcoming' ? 'badge-upcoming' : 'badge-closed');
+                        ?>
+                        <div class="opportunity-footer">
+                            <span class="badge <?= $cardStateClass ?>"><?= browse_h($cardState) ?></span>
+
+                            <a class="btn btn-primary" href="opportunity-detail.php?id=<?= $id ?>">
+                                View Details <span aria-hidden="true">&rarr;</span>
+                            </a>
+                        </div>
+
                     </article>
 
                 <?php endforeach; ?>

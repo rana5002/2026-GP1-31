@@ -41,14 +41,7 @@ function user_header(array $me, string $title, string $active): void {
         'history'     => ['Application History', 'application-history.php'],
     ];
 
-    /* IsRead is stored on the usernotification relationship table. */
-    $st = $pdo->prepare(
-        'SELECT COUNT(*)
-         FROM usernotification
-         WHERE UserID = ? AND IsRead = 0'
-    );
-    $st->execute([$me['UserID']]);
-    $unread = (int) $st->fetchColumn();
+    /* Notifications are "Coming Soon", so the unread count badge is not shown for now. */
 
     $firstName = $me['FirstName'] ?? '';
     $lastName  = $me['LastName'] ?? '';
@@ -141,13 +134,6 @@ function user_header(array $me, string $title, string $active): void {
                 style="padding:8px;position:relative;"
             >
                 <?= icon('notification') ?>
-
-                <?php if ($unread > 0): ?>
-                    <span
-                        aria-label="<?= $unread ?> unread notifications"
-                        style="position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--color-danger);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;"
-                    ><?= $unread > 99 ? '99+' : $unread ?></span>
-                <?php endif; ?>
             </a>
 
             <!-- Log out -->
@@ -205,4 +191,3 @@ document.getElementById("navToggle")?.addEventListener("click", function () {
 </body>
 </html>
     <?php
-

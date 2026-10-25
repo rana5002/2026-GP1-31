@@ -488,8 +488,18 @@ user_header($me, 'Home', 'user-home');
 }
 
 .user-dashboard .stat-number.coming-soon-text {
+    /* h3 so it uses the same heading font as the other "Coming soon" titles */
+    margin: 0 0 5px;
     font-size: 1.35rem;
+    font-weight: 750;
     line-height: 1.5;
+}
+
+/* Explore Opportunities sits directly on the page background (no shaded block) */
+.user-dashboard #opportunities {
+    background: transparent;
+    box-shadow: none;
+    border: 0;
 }
 
 .user-dashboard .stat-note {
@@ -1098,9 +1108,9 @@ user_header($me, 'Home', 'user-home');
                 </div>
 
                 <div>
-                    <span class="stat-number coming-soon-text">
+                    <h3 class="stat-number coming-soon-text">
                         Coming Soon
-                    </span>
+                    </h3>
 
                     <span class="stat-note">
                         Skill gap analysis will be activated soon.
@@ -1266,50 +1276,15 @@ user_header($me, 'Home', 'user-home');
                     </a>
                 </div>
 
-                <?php if ($notifications): ?>
+                <div class="empty-state">
+                    <div class="empty-icon" aria-hidden="true">✦</div>
 
-                    <div class="notification-list">
+                    <h3>Coming soon</h3>
 
-                        <?php foreach ($notifications as $n): ?>
-
-                            <div class="notification-item">
-
-                                <span class="notification-dot <?= empty($n['IsRead']) ? 'unread' : '' ?>"
-                                      aria-hidden="true">
-                                </span>
-
-                                <div style="min-width:0;flex:1;">
-
-                                    <p class="notification-message <?= empty($n['IsRead']) ? 'unread' : '' ?>">
-                                        <?= e($n['Message']) ?>
-                                    </p>
-
-                                    <span class="notification-date">
-                                        <?= e(dashboard_date($n['CreatedAt'])) ?>
-                                    </span>
-
-                                </div>
-
-                            </div>
-
-                        <?php endforeach; ?>
-
-                    </div>
-
-                <?php else: ?>
-
-                    <div class="empty-state">
-                        <div class="empty-icon" aria-hidden="true">♧</div>
-
-                        <h3>No notifications yet</h3>
-
-                        <p>
-                            Updates about your opportunities and applications
-                            will appear here.
-                        </p>
-                    </div>
-
-                <?php endif; ?>
+                    <p>
+                        Notifications will be activated soon.
+                    </p>
+                </div>
 
             </div>
 
@@ -1447,4 +1422,3 @@ user_header($me, 'Home', 'user-home');
     </div>
 </div>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
