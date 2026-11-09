@@ -1,0 +1,12 @@
+# The libraries (ready-made tools) the recommender needs.
+# We install all of them at once, later, with one command.
+
+numpy          # fast math on lists of numbers
+pandas         # holds data in tables, like a spreadsheet inside Python
+scipy          # math helper that scikit-learn uses
+scikit-learn   # gives us TF-IDF and cosine similarity (the text matching)
+fastapi        # makes the small web service that PHP will call
+uvicorn        # the program that runs that web service
+sqlalchemy     # lets Python talk to the MySQL database
+pymysql        # the MySQL driver that sqlalchemy uses
+cryptography   # needed to log in to MySQL 8 (the version on Clever Cloud)
