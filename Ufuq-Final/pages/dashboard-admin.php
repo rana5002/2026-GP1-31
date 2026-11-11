@@ -515,7 +515,7 @@ admin_header('Admin Dashboard', $tab);
     color: var(--admin-purple);
     font-size: .87rem;
     font-weight: 750;
-    text-align: start;
+    text-align: center;
     white-space: nowrap;
     border-bottom: 1px solid #e6deef;
 }
@@ -525,6 +525,7 @@ admin_header('Admin Dashboard', $tab);
     border-bottom: 1px solid #f0edf4;
     color: #464052;
     font-size: .91rem;
+    text-align: center;
     vertical-align: middle;
 }
 
@@ -550,6 +551,8 @@ admin_header('Admin Dashboard', $tab);
     font-size: .76rem;
     font-weight: 750;
     white-space: nowrap;
+    min-width: 92px;          /* Pending / Verified / Rejected / Open / Closed: same size */
+    box-sizing: border-box;
 }
 
 /* Buttons */
@@ -585,6 +588,7 @@ admin_header('Admin Dashboard', $tab);
 .admin-dashboard .admin-action-buttons {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 7px;
 }
 

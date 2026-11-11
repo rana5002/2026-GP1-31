@@ -71,7 +71,9 @@ function browse_duration_text($startDate, $endDate): string
     return $days === null ? 'Not specified' : $days . ($days === 1 ? ' day' : ' days');
 }
 
-/* Status of an opportunity: Open, Upcoming (applications not open yet) or Closed. */
+/* Status of an opportunity: Open, Upcoming (applications not open yet) or Closed.
+   Closed when the company closed it, or the application deadline has passed;
+   otherwise worked out from the application dates. */
 function browse_state(array $o): string
 {
     $today    = date('Y-m-d');
@@ -79,7 +81,7 @@ function browse_state(array $o): string
     $deadline = (string)($o['ApplicationDeadLine'] ?? '');
     $openDate = (string)($o['ApplicationOpenDate'] ?? '');
 
-    if (strcasecmp($status, 'Open') !== 0 || ($deadline !== '' && $deadline < $today)) {
+    if (strcasecmp($status, 'Closed') === 0 || ($deadline !== '' && $deadline < $today)) {
         return 'Closed';
     }
     if ($openDate !== '' && $openDate > $today) {
@@ -253,6 +255,19 @@ if (mb_strlen($search, 'UTF-8') > 150) {
     $search = mb_substr($search, 0, 150, 'UTF-8');
 }
 
+/* ---------- Companies on Ufuq (collapsible list above the opportunities) ---------- */
+$platformCompanies = [];
+try {
+    $platformCompanies = $pdo->query(
+        "SELECT c.CompanyID, c.CompanyName, c.IndustrySector, c.Logo
+         FROM company c
+         WHERE c.Status = 'Verified'
+         ORDER BY c.CompanyName"
+    )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('Company list failed: ' . $e->getMessage());
+}
+
 /* ---------- Matching company profiles ---------- */
 $companySearchResults = [];
 if ($search !== '') {
@@ -366,8 +381,10 @@ foreach ($listFilters as $column => $values) {
  * Keep the original behavior: do not restrict results to Status = Open.
  * This lets the user see records with other status values as well.
  */
-$sql = 'SELECT o.*
-        FROM opportunity o';
+/* The posting company's logo and name are used for the card avatar. */
+$sql = 'SELECT o.*, cmp.Logo AS CompanyLogo, cmp.CompanyName AS PostingCompanyName
+        FROM opportunity o
+        LEFT JOIN company cmp ON cmp.CompanyID = o.CreatedByCompanyID';
 
 if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
@@ -921,6 +938,7 @@ user_header($me, 'Browse', 'browse');
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 250px;         /* same height for every card */
     padding: 19px;
     border: 1px solid #ece7f2;
     border-radius: 16px;
@@ -947,7 +965,7 @@ user_header($me, 'Browse', 'browse');
 
 .user-browse .company-info {
     display: flex;
-    align-items: center;
+    align-items: flex-start;   /* logo and title start on the same line */
     gap: 11px;
     min-width: 0;
 }
@@ -960,10 +978,18 @@ user_header($me, 'Browse', 'browse');
     height: 48px;
     flex-shrink: 0;
     border-radius: 14px;
+    overflow: hidden;
     background: var(--browse-lavender);
     color: var(--browse-purple);
     font-size: 1.15rem;
     font-weight: 800;
+}
+
+.user-browse .company-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
 }
 
 .user-browse .company-details {
@@ -971,17 +997,23 @@ user_header($me, 'Browse', 'browse');
 }
 
 .user-browse .opportunity-title {
-    margin: 0 0 4px;
+    margin: 0;
+    min-height: calc(2 * 1.55em);   /* at least 2 lines, so the company name below lines up across cards */
     color: var(--browse-text);
     font-size: 1rem;
     font-weight: 750;
     line-height: 1.55;
     overflow-wrap: anywhere;
+    /* Shown in full; it sits under the company row, so long titles don't move anything above it. */
 }
 
 .user-browse .company-name {
+    margin: auto 0 8px;        /* sits right above the type row, at the bottom of the card */
+    padding: 0 0 0 11px;       /* starts where the text inside the type button starts (1px border + 10px padding) */
+    text-align: left;
     color: var(--browse-muted);
-    font-size: .82rem;
+    font-weight: 400;          /* regular weight, lighter than the title */
+    font-size: .86rem;
     line-height: 1.55;
     overflow-wrap: anywhere;
 }
@@ -1035,6 +1067,8 @@ user_header($me, 'Browse', 'browse');
 
 .user-browse .opportunity-meta {
     display: flex;
+    justify-content: flex-start;
+    padding: 0;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
@@ -1056,14 +1090,15 @@ user_header($me, 'Browse', 'browse');
     overflow-wrap: anywhere;
 }
 
-.user-browse .badge-course {
-    background: #e8f5ec;
-    color: #24653c;
-}
-
+.user-browse .badge-course,
 .user-browse .badge-program {
-    background: #eee8f8;
-    color: var(--browse-purple);
+    margin-left: 0;
+    /* Type is information, not a state: one calm neutral style for every type,
+       so colour is kept only for the status (Open / Upcoming / Closed). */
+    border: 1px solid #e7e0ef;
+    background: #faf8fc;
+    color: #5b4a7a;
+    font-weight: 650;
 }
 
 .user-browse .badge-open {
@@ -1096,14 +1131,38 @@ user_header($me, 'Browse', 'browse');
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: auto;
     padding-top: 15px;
     border-top: 1px solid #f0edf4;
 }
 
 .user-browse .opportunity-footer .badge {
-    padding: 6px 12px;
-    font-size: .8rem;
+    min-width: 96px;           /* Open / Upcoming / Closed: same size */
+    gap: 7px;
+    padding: 5px 12px;
+    font-size: .78rem;
+    border: 1px solid transparent;
+}
+
+/* Small dot in the status colour, so the state reads at a glance without a loud fill */
+.user-browse .opportunity-footer .badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.user-browse .opportunity-footer .badge-open {
+    border-color: #cfe8d9;
+}
+
+.user-browse .opportunity-footer .badge-closed {
+    border-color: #f1d4d8;
+}
+
+.user-browse .opportunity-footer .badge-upcoming {
+    border-color: #e3e0e8;
 }
 
 
@@ -1691,6 +1750,68 @@ user_header($me, 'Browse', 'browse');
     }
 }
 
+/* Companies on Ufuq: collapsible panel above the opportunities */
+.user-browse .companies-panel {
+    margin: 0 0 26px;
+    padding: 16px 18px;
+    border: 1px solid var(--browse-border);
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
+}
+.user-browse .companies-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    cursor: pointer;
+}
+.user-browse .companies-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 1px solid var(--browse-border);
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+}
+.user-browse .companies-toggle:hover {
+    background: var(--browse-lavender);
+}
+.user-browse .companies-toggle:focus-visible {
+    outline: 2px solid var(--browse-purple);
+    outline-offset: 4px;
+    border-radius: 8px;
+}
+.user-browse .companies-sub {
+    margin-top: 4px;
+}
+.user-browse .companies-body {
+    margin-top: 14px;
+}
+.user-browse .companies-caret {
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid var(--browse-purple);
+    transition: transform .2s ease;
+}
+.user-browse .companies-toggle[aria-expanded="true"] .companies-caret {
+    transform: rotate(180deg);
+}
+.user-browse .companies-body[hidden] {
+    display: none !important;
+}
+.user-browse .companies-body {
+    animation: browseFadeUp .25s ease both;
+}
+
 /* Company profile search results */
 .user-browse .company-search-results {
     margin: 0 0 24px;
@@ -1970,6 +2091,45 @@ user_header($me, 'Browse', 'browse');
                 </section>
             <?php endif; ?>
 
+            <?php if ($search === '' && $platformCompanies): ?>
+                <!-- Companies on Ufuq: opens / closes with the arrow (remembered in this browser) -->
+                <section class="companies-panel" id="companiesPanel">
+                    <div class="companies-head" id="companiesHead">
+                        <div>
+                            <h2 class="section-heading" style="margin:0">Companies on Ufuq</h2>
+                            <p class="section-description companies-sub"><?= count($platformCompanies) ?> verified <?= count($platformCompanies) === 1 ? 'company' : 'companies' ?> &middot; open a profile to see all its opportunities</p>
+                        </div>
+                        <button type="button" class="companies-toggle" id="companiesToggle" aria-expanded="true" aria-controls="companiesBody" aria-label="Show or hide companies">
+                            <span class="companies-caret" aria-hidden="true"></span>
+                        </button>
+                    </div>
+
+                    <div class="company-search-grid companies-body" id="companiesBody">
+                        <?php foreach ($platformCompanies as $pc): ?>
+                            <?php
+                                $pcName = trim((string)($pc['CompanyName'] ?? 'Company'));
+                                $pcLogo = trim((string)($pc['Logo'] ?? ''));
+                                $pcLogoSrc = $pcLogo === '' ? '' : (preg_match('~^https?://~i', $pcLogo) ? $pcLogo : '../' . ltrim($pcLogo, '/'));
+                            ?>
+                            <a class="company-search-card" href="company-profile.php?id=<?= (int)$pc['CompanyID'] ?>">
+                                <span class="company-search-logo">
+                                    <?php if ($pcLogoSrc !== ''): ?>
+                                        <img src="<?= browse_h($pcLogoSrc) ?>" alt="">
+                                    <?php else: ?>
+                                        <?= browse_h(browse_initial($pcName)) ?>
+                                    <?php endif; ?>
+                                </span>
+                                <span style="min-width:0">
+                                    <span class="company-search-name"><?= browse_h($pcName) ?></span>
+                                    <span class="company-search-meta"><?= browse_h($pc['IndustrySector'] ?: 'Company profile') ?></span>
+                                </span>
+                                <span class="company-search-arrow" aria-hidden="true">›</span>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endif; ?>
+
         <!-- Results -->
         <div class="browse-toolbar">
 
@@ -2051,6 +2211,21 @@ user_header($me, 'Browse', 'browse');
 
                     $isFav = in_array($id, $favorites, true);
 
+                    /* Avatar: company logo if it has one, otherwise the first letter of the company name.
+                       Opportunities added by the admin use the first letter of the opportunity provider. */
+                    $avatarLogo = '';
+                    $avatarName = $provider;
+                    if (!empty($o['CreatedByCompanyID'])) {
+                        $logo = trim((string)($o['CompanyLogo'] ?? ''));
+                        if ($logo !== '') {
+                            $avatarLogo = preg_match('~^https?://~i', $logo) ? $logo : '../' . ltrim($logo, '/');
+                        }
+                        $postingName = trim((string)($o['PostingCompanyName'] ?? ''));
+                        if ($postingName !== '') {
+                            $avatarName = $postingName;
+                        }
+                    }
+
                     $descriptionLength = function_exists('mb_strlen')
                         ? mb_strlen($description, 'UTF-8')
                         : strlen($description);
@@ -2095,19 +2270,17 @@ user_header($me, 'Browse', 'browse');
                             <div class="company-info">
 
                                 <div class="company-logo" aria-hidden="true">
-                                    <?= browse_h(browse_initial($provider)) ?>
+                                    <?php if ($avatarLogo !== ''): ?>
+                                        <img src="<?= browse_h($avatarLogo) ?>" alt="">
+                                    <?php else: ?>
+                                        <?= browse_h(browse_initial($avatarName)) ?>
+                                    <?php endif; ?>
                                 </div>
 
                                 <div class="company-details">
-
                                     <h3 class="opportunity-title">
                                         <a href="opportunity-detail.php?id=<?= $id ?>"><?= browse_h($title) ?></a>
                                     </h3>
-
-                                    <div class="company-name">
-                                        <?= browse_h($provider) ?>
-                                    </div>
-
                                 </div>
 
                             </div>
@@ -2152,16 +2325,10 @@ user_header($me, 'Browse', 'browse');
 
                         </div>
 
-                        <p class="opportunity-description">
-                            <?php if ($description !== ''): ?>
-                                <?= browse_h($shortDescription) ?>
-                                <?= $descriptionLength > 150 ? '…' : '' ?>
-                            <?php else: ?>
-                                <span class="text-muted">
-                                    No description provided.
-                                </span>
-                            <?php endif; ?>
-                        </p>
+                        <!-- Company name: under the logo + title row -->
+                        <div class="company-name">
+                            <?= browse_h($provider) ?>
+                        </div>
 
                         <div class="opportunity-meta">
 
@@ -2215,6 +2382,26 @@ user_header($me, 'Browse', 'browse');
 
 
 <script>
+/* Companies on Ufuq: the arrow opens / closes the list; the choice is remembered in this browser. */
+(function () {
+    var toggle = document.getElementById('companiesToggle');
+    var head = document.getElementById('companiesHead');
+    var body = document.getElementById('companiesBody');
+    if (!toggle || !body || !head) return;
+    function set(open) {
+        body.hidden = !open;
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    var saved = null;
+    try { saved = localStorage.getItem('ufuqCompaniesOpen'); } catch (e) {}
+    set(saved !== '0');                         /* open the first time, so new users see the companies */
+    head.addEventListener('click', function () {   /* the whole heading row (and the arrow) toggles */
+        var open = toggle.getAttribute('aria-expanded') !== 'true';
+        set(open);
+        try { localStorage.setItem('ufuqCompaniesOpen', open ? '1' : '0'); } catch (e) {}
+    });
+})();
+
 /* Toast: slides down, stays for a few seconds, then slides up and is removed. */
 (function () {
     const toast = document.getElementById('browseToast');
