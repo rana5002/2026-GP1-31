@@ -1096,7 +1096,7 @@ user_header($me, 'Browse', 'browse');
     /* Type is information, not a state: one calm neutral style for every type,
        so colour is kept only for the status (Open / Upcoming / Closed). */
     border: 1px solid #e7e0ef;
-    background: #faf8fc;
+    background: transparent;   /* outline only: lighter than the status, which keeps its soft colour */
     color: #5b4a7a;
     font-weight: 650;
 }
@@ -1685,9 +1685,20 @@ user_header($me, 'Browse', 'browse');
     text-align: center;
 }
 
-/* With the filter open, the cards share the remaining width. */
+/* With the filter open: always 3 cards per row on wide screens (even when the page is zoomed out),
+   so the opportunities line up with the 3 company cards above. */
 .user-browse .browse-layout:not(.filters-hidden) .opportunity-grid {
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+    .user-browse .browse-layout:not(.filters-hidden) .opportunity-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 620px) {
+    .user-browse .browse-layout:not(.filters-hidden) .opportunity-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 900px) {
@@ -1752,12 +1763,8 @@ user_header($me, 'Browse', 'browse');
 
 /* Companies on Ufuq: collapsible panel above the opportunities */
 .user-browse .companies-panel {
-    margin: 0 0 26px;
-    padding: 16px 18px;
-    border: 1px solid var(--browse-border);
-    border-radius: 16px;
-    background: #fff;
-    box-shadow: 0 5px 18px rgba(40,26,70,.045);
+    /* No outer box: same width as the opportunities below, so the company cards line up with them */
+    margin: 0 0 30px;
 }
 .user-browse .companies-head {
     display: flex;
@@ -1790,8 +1797,84 @@ user_header($me, 'Browse', 'browse');
 .user-browse .companies-sub {
     margin-top: 4px;
 }
-.user-browse .companies-body {
+.user-browse .companies-panel .companies-body {
+    /* One horizontal row: each company card is exactly as wide as an opportunity card (3 per row);
+       more companies scroll sideways instead of making the page longer. */
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-columns: calc((100% - 2 * 18px) / 3);
+    gap: 18px;
     margin-top: 14px;
+    padding: 4px 0 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+}
+/* Company card: same white card, border, radius, shadow and hover as the opportunity cards */
+.user-browse .company-tile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid #ece7f2;
+    border-radius: 16px;
+    background: #fff;
+    color: var(--browse-text);
+    text-decoration: none;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
+    scroll-snap-align: start;
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+.user-browse .company-tile:hover {
+    transform: translateY(-3px);
+    border-color: #cfc1e2;
+    box-shadow: 0 12px 28px rgba(40,26,70,.1);
+}
+.user-browse .company-tile-text {
+    flex: 1;
+    min-width: 0;
+}
+.user-browse .company-tile-name {
+    margin: 0;
+    color: var(--browse-text);
+    font-size: .95rem;
+    font-weight: 750;
+    line-height: 1.45;
+    overflow-wrap: anywhere;   /* full name and sector, no … */
+}
+.user-browse .company-tile-meta {
+    color: var(--browse-muted);   /* same as the company name on the opportunity cards */
+    font-size: .86rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;   /* full name and sector, no … */
+}
+.user-browse .company-tile-link {
+    flex-shrink: 0;
+    color: var(--browse-purple);
+    font-size: .82rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.user-browse .company-tile-btn {
+    flex-shrink: 0;           /* purple button, same colour as "View Details", a little smaller */
+    padding: 7px 10px;
+    min-height: 34px;
+    font-size: .78rem;
+    white-space: nowrap;
+}
+/* slightly smaller logo box here, so the full name and sector fit on one line */
+.user-browse .company-tile .company-logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+}
+@media (max-width: 950px) {
+    .user-browse .companies-panel .companies-body { grid-auto-columns: calc((100% - 18px) / 2); }
+}
+@media (max-width: 620px) {
+    .user-browse .companies-panel .companies-body { grid-auto-columns: 85%; }
 }
 .user-browse .companies-caret {
     flex-shrink: 0;
@@ -1805,8 +1888,18 @@ user_header($me, 'Browse', 'browse');
 .user-browse .companies-toggle[aria-expanded="true"] .companies-caret {
     transform: rotate(180deg);
 }
-.user-browse .companies-body[hidden] {
+.user-browse .companies-body[hidden],
+.user-browse .collapse-body[hidden] {
     display: none !important;
+}
+.user-browse .section-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+.user-browse .collapse-body {
+    animation: browseFadeUp .25s ease both;
 }
 .user-browse .companies-body {
     animation: browseFadeUp .25s ease both;
@@ -2097,33 +2190,39 @@ user_header($me, 'Browse', 'browse');
                     <div class="companies-head" id="companiesHead">
                         <div>
                             <h2 class="section-heading" style="margin:0">Companies on Ufuq</h2>
-                            <p class="section-description companies-sub"><?= count($platformCompanies) ?> verified <?= count($platformCompanies) === 1 ? 'company' : 'companies' ?> &middot; open a profile to see all its opportunities</p>
+                            <p class="section-description companies-sub">Verified companies on the platform. Open a profile to see all its opportunities.</p>
                         </div>
-                        <button type="button" class="companies-toggle" id="companiesToggle" aria-expanded="true" aria-controls="companiesBody" aria-label="Show or hide companies">
-                            <span class="companies-caret" aria-hidden="true"></span>
-                        </button>
+                        <div class="section-actions">
+                            <div class="results-count">
+                                <?= count($platformCompanies) ?> <?= count($platformCompanies) === 1 ? 'result' : 'results' ?>
+                            </div>
+                            <button type="button" class="companies-toggle" id="companiesToggle" aria-expanded="true" aria-controls="companiesBody" aria-label="Show or hide companies">
+                                <span class="companies-caret" aria-hidden="true"></span>
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="company-search-grid companies-body" id="companiesBody">
+                    <div class="companies-body" id="companiesBody">
                         <?php foreach ($platformCompanies as $pc): ?>
                             <?php
                                 $pcName = trim((string)($pc['CompanyName'] ?? 'Company'));
                                 $pcLogo = trim((string)($pc['Logo'] ?? ''));
                                 $pcLogoSrc = $pcLogo === '' ? '' : (preg_match('~^https?://~i', $pcLogo) ? $pcLogo : '../' . ltrim($pcLogo, '/'));
                             ?>
-                            <a class="company-search-card" href="company-profile.php?id=<?= (int)$pc['CompanyID'] ?>">
-                                <span class="company-search-logo">
+                            <!-- Same look as the opportunity cards: white card, same logo box, same title font -->
+                            <a class="company-tile" href="company-profile.php?id=<?= (int)$pc['CompanyID'] ?>">
+                                <div class="company-logo" aria-hidden="true">
                                     <?php if ($pcLogoSrc !== ''): ?>
                                         <img src="<?= browse_h($pcLogoSrc) ?>" alt="">
                                     <?php else: ?>
                                         <?= browse_h(browse_initial($pcName)) ?>
                                     <?php endif; ?>
-                                </span>
-                                <span style="min-width:0">
-                                    <span class="company-search-name"><?= browse_h($pcName) ?></span>
-                                    <span class="company-search-meta"><?= browse_h($pc['IndustrySector'] ?: 'Company profile') ?></span>
-                                </span>
-                                <span class="company-search-arrow" aria-hidden="true">›</span>
+                                </div>
+                                <div class="company-tile-text">
+                                    <h3 class="company-tile-name"><?= browse_h($pcName) ?></h3>
+                                    <div class="company-tile-meta"><?= browse_h($pc['IndustrySector'] ?: 'Company profile') ?></div>
+                                </div>
+                                <span class="btn btn-primary btn-sm company-tile-btn">View profile <span aria-hidden="true">&rarr;</span></span>
                             </a>
                         <?php endforeach; ?>
                     </div>
@@ -2131,7 +2230,7 @@ user_header($me, 'Browse', 'browse');
             <?php endif; ?>
 
         <!-- Results -->
-        <div class="browse-toolbar">
+        <div class="browse-toolbar companies-head" id="oppHead">
 
             <div>
                 <h2 class="section-heading">Available Opportunities</h2>
@@ -2141,13 +2240,19 @@ user_header($me, 'Browse', 'browse');
                 </p>
             </div>
 
-            <div class="results-count">
-                <?= count($opportunities) ?>
-                <?= count($opportunities) === 1 ? 'result' : 'results' ?>
+            <div class="section-actions">
+                <div class="results-count">
+                    <?= count($opportunities) ?>
+                    <?= count($opportunities) === 1 ? 'result' : 'results' ?>
+                </div>
+                <button type="button" class="companies-toggle" id="oppToggle" aria-expanded="true" aria-controls="oppBody" aria-label="Show or hide opportunities">
+                    <span class="companies-caret" aria-hidden="true"></span>
+                </button>
             </div>
 
         </div>
 
+        <div id="oppBody" class="collapse-body">
         <?php if (!$opportunities): ?>
 
             <div class="empty-state">
@@ -2370,6 +2475,7 @@ user_header($me, 'Browse', 'browse');
             </div>
 
         <?php endif; ?>
+        </div><!-- /#oppBody -->
 
         </div><!-- /.browse-results -->
         </div><!-- /.browse-layout -->
@@ -2382,24 +2488,30 @@ user_header($me, 'Browse', 'browse');
 
 
 <script>
-/* Companies on Ufuq: the arrow opens / closes the list; the choice is remembered in this browser. */
+/* Sections that open / close with the arrow (clicking the heading row also works).
+   Companies: the choice is remembered in this browser. Opportunities: always open when the page loads. */
 (function () {
-    var toggle = document.getElementById('companiesToggle');
-    var head = document.getElementById('companiesHead');
-    var body = document.getElementById('companiesBody');
-    if (!toggle || !body || !head) return;
-    function set(open) {
-        body.hidden = !open;
-        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    function collapsible(headId, toggleId, bodyId, storageKey) {
+        var head = document.getElementById(headId);
+        var toggle = document.getElementById(toggleId);
+        var body = document.getElementById(bodyId);
+        if (!head || !toggle || !body) return;
+        function set(open) {
+            body.hidden = !open;
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        var saved = null;
+        if (storageKey) { try { saved = localStorage.getItem(storageKey); } catch (e) {} }
+        set(saved !== '0');
+        head.addEventListener('click', function (ev) {
+            if (ev.target.closest('a')) return;
+            var open = toggle.getAttribute('aria-expanded') !== 'true';
+            set(open);
+            if (storageKey) { try { localStorage.setItem(storageKey, open ? '1' : '0'); } catch (e) {} }
+        });
     }
-    var saved = null;
-    try { saved = localStorage.getItem('ufuqCompaniesOpen'); } catch (e) {}
-    set(saved !== '0');                         /* open the first time, so new users see the companies */
-    head.addEventListener('click', function () {   /* the whole heading row (and the arrow) toggles */
-        var open = toggle.getAttribute('aria-expanded') !== 'true';
-        set(open);
-        try { localStorage.setItem('ufuqCompaniesOpen', open ? '1' : '0'); } catch (e) {}
-    });
+    collapsible('companiesHead', 'companiesToggle', 'companiesBody', 'ufuqCompaniesOpen');
+    collapsible('oppHead', 'oppToggle', 'oppBody', null);
 })();
 
 /* Toast: slides down, stays for a few seconds, then slides up and is removed. */
