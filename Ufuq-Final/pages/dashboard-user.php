@@ -832,7 +832,16 @@ user_header($me, 'My Profile', '');
                     <?php if (!empty($me['ProfilePicture'])): ?>
                         <img src="../<?= profile_escape(ltrim($me['ProfilePicture'], '/')) ?>" alt="Profile picture">
                     <?php else: ?>
-                        <?= profile_escape(mb_strtoupper($firstInitial . $lastInitial)) ?>
+                        <?php
+                        /* No uploaded picture: same default avatar as the header (by gender), otherwise initials. */
+                        $avatarGender = strtoupper(substr((string)($me['Gender'] ?? ''), 0, 1));
+                        $defaultAvatar = $avatarGender === 'M' ? 'default-avatar-male.png' : ($avatarGender === 'F' ? 'default-avatar-female.png' : '');
+                        ?>
+                        <?php if ($defaultAvatar !== ''): ?>
+                            <img src="../images-website/<?= profile_escape($defaultAvatar) ?>" alt="Profile picture">
+                        <?php else: ?>
+                            <?= profile_escape(mb_strtoupper($firstInitial . $lastInitial)) ?>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
                 <button type="button" class="profile-avatar-upload" title="Change profile picture" aria-label="Change profile picture" onclick="document.getElementById('pictureInput').click()">
