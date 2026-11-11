@@ -22,3 +22,19 @@ $pdo = new PDO(
     $pass,
     $options
 );
+
+$pdo->exec("SET time_zone = '+03:00'");
+
+$pdo->exec("
+    UPDATE opportunity
+    SET Status = CASE
+        WHEN ApplicationOpenDate IS NOT NULL AND CURDATE() < ApplicationOpenDate THEN 'Upcoming'
+        WHEN ApplicationDeadLine IS NULL OR CURDATE() <= ApplicationDeadLine      THEN 'Open'
+        ELSE 'Closed'
+    END
+    WHERE Status <> CASE
+        WHEN ApplicationOpenDate IS NOT NULL AND CURDATE() < ApplicationOpenDate THEN 'Upcoming'
+        WHEN ApplicationDeadLine IS NULL OR CURDATE() <= ApplicationDeadLine      THEN 'Open'
+        ELSE 'Closed'
+    END
+");

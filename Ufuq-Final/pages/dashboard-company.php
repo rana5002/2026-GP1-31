@@ -4,6 +4,8 @@ require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/auth.php';
 // Load shared dropdown options.
 require_once __DIR__ . '/../includes/lists.php';
+// Shared confirmation modal (Delete / Close Opportunity).
+require_once __DIR__ . '/../includes/confirm-modal.php';
 
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
@@ -92,9 +94,10 @@ if ($action === 'reopen_opportunity') {
          FROM opportunity
          WHERE OpportunityID = ?
            AND CreatedByCompanyID = ?
-           AND Status = 'Closed'"
+           AND Status = 'Closed'
+           AND EndDate < ?"
     );
-    $stmt->execute([$oppId, $companyId]);
+    $stmt->execute([$oppId, $companyId, date('Y-m-d')]);
     $oldOpp = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$oldOpp) {
@@ -574,7 +577,7 @@ function display_date($date): string { return $date ? e(date('M j, Y', strtotime
 $heroTitles = [
     'opportunities' => ['Opportunities', 'Manage the training programs and courses you publish.'],
     'applicants'    => ['Applications', 'Review candidates and update their application status.'],
-    'reviews'       => ['Reviews', 'Read what students are saying about your opportunities.'],
+    'reviews'       => ['Reviews', 'See how users rate and review your opportunities.'],
     'profile'       => ['Company Profile', 'Keep your company information up to date.'],
 ];
 ?>
@@ -729,6 +732,9 @@ $heroTitles = [
 /* Opportunity status: Open green, Closed red, Upcoming grey */
 .company-dashboard .badge-status-closed{background:#fff1f2;color:#9c263d;border:1px solid #f1d4d8}
 .company-dashboard .badge-status-upcoming{background:#efeef2;color:#5f5b68;border:1px solid #e0dee5}
+/* Opportunities table: every status badge the same size (Open / Upcoming / Closed) */
+.company-dashboard .opp-table .badge{min-width:92px;box-sizing:border-box}
+.company-dashboard .opp-table .badge-success{border:1px solid #cfe8d9}
 /* My Opportunities: the whole table fits the page (no left/right scrolling), centered content, small action buttons */
 
 /* My Opportunities table: cleaner spacing and aligned columns */
@@ -1223,84 +1229,6 @@ $heroTitles = [
     background: #8f1c13;
 }
 
-/* Reopen confirmation modal */
-.company-dashboard .reopen-confirm-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
-    background: rgba(40, 26, 70, 0.55);
-    backdrop-filter: blur(3px);
-}
-
-.company-dashboard .reopen-confirm-modal {
-    width: 100%;
-    max-width: 440px;
-    padding: 30px;
-    border: 1px solid var(--c-border);
-    border-radius: 18px;
-    background: var(--c-bg);
-    color: var(--c-purple-dark);
-    text-align: center;
-    box-shadow: 0 18px 55px rgba(40, 26, 70, 0.22);
-    animation: reopenModalAppear 0.2s ease-out;
-}
-
-.company-dashboard .reopen-confirm-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 58px;
-    height: 58px;
-    margin: 0 auto 16px;
-    border-radius: 50%;
-    background: var(--c-lavender);
-    color: var(--c-purple);
-}
-
-.company-dashboard .reopen-confirm-modal h2 {
-    margin: 0 0 12px;
-    color: var(--c-purple);
-    font-size: 1.35rem;
-}
-
-.company-dashboard .reopen-confirm-message {
-    margin: 0;
-    color: var(--c-text, #62596d);
-    line-height: 1.8;
-}
-
-.company-dashboard .reopen-confirm-actions {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 26px;
-}
-
-.company-dashboard .reopen-confirm-actions form {
-    margin: 0;
-}
-
-.company-dashboard .reopen-confirm-actions button {
-    min-width: 120px;
-    min-height: 42px;
-}
-
-@keyframes reopenModalAppear {
-    from {
-        opacity: 0;
-        transform: translateY(8px) scale(0.98);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
 
 @media (max-width: 700px) {
     .company-dashboard .opportunity-review-grid {
@@ -1372,7 +1300,7 @@ $heroTitles = [
         <div class="welcome-label"><span aria-hidden="true">✦</span><span>Ufuq Company Space</span></div>
         <?php if ($activeTab === 'overview'): ?>
           <h1>Welcome back, <?= e($company['CompanyName']) ?>!</h1>
-          <p>Share your training programs and courses, manage applicants, and see how students respond.</p>
+          <p>Share your training programs and courses, manage applicants, and see how users respond.</p>
         <?php else: ?>
           <h1><?= e($heroTitles[$activeTab][0]) ?></h1>
           <p><?= e($heroTitles[$activeTab][1]) ?></p>
@@ -1411,7 +1339,7 @@ $heroTitles = [
       <div class="card-heading-row">
         <div>
           <h2 class="section-heading" style="margin-bottom:7px">Overview</h2>
-          <p class="section-description" style="margin:0">A quick look at your opportunities and how students interact with them.</p>
+          <p class="section-description" style="margin:0">A quick look at your opportunities and how users interact with them.</p>
         </div>
       </div>
 
@@ -1485,7 +1413,7 @@ $heroTitles = [
         <div class="card-heading-row">
           <div>
             <h2 class="section-heading" style="margin-bottom:7px">Recent Applicants</h2>
-            <p class="section-description" style="margin:0">The latest students who applied to your opportunities.</p>
+            <p class="section-description" style="margin:0">The latest users who applied to your opportunities.</p>
           </div>
           <a href="dashboard-company.php?tab=applicants&amp;from=overview" class="dashboard-link">View all &rarr;</a>
         </div>
@@ -1508,76 +1436,33 @@ $heroTitles = [
         <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('training', 30, 'icon-muted') ?></div><h3>No opportunities yet</h3><p>Click "Add Opportunity" to publish your first training program or course.</p></div>
       <?php else: ?>
         <div class="company-table-wrap opp-table-wrap"><table class="data-table opp-table"><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Views</th><th>Favorites</th><th>Applications</th><th>Application Method</th><th>Actions</th></tr></thead><tbody>
-      <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ['Open' => 'badge-success', 'Closed' => 'badge-status-closed', 'Upcoming' => 'badge-status-upcoming'][$o['Status'] ?? ''] ?? 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td>—</td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; $closeMsg = 'Reviewing applicants before closing isn\'t available yet. Close this opportunity directly for now?'; $reopenMsg = 'Reopening will publish a new copy of this opportunity with fresh dates. You\'ll be taken to edit it next. Continue?'; ?>
+      <?php foreach ($opportunities as $o): ?><tr><td><?= e($o['Title']) ?></td><td><?= e($o['Type'] ?? '—') ?></td><td><span class="badge <?= ['Open' => 'badge-success', 'Closed' => 'badge-status-closed', 'Upcoming' => 'badge-status-upcoming'][$o['Status'] ?? ''] ?? 'badge-neutral' ?>"><?= e($o['Status'] ?? '—') ?></span></td><td><strong><?= (int)($o['ViewsCount'] ?? 0) ?></strong></td><td><strong><?= (int)($o['FavouriteCount'] ?? 0) ?></strong></td><td>—</td><td><?= e($o['ApplicationMethod'] ?? '—') ?></td><td><div class="company-actions opp-actions"><?php $isOpenOpp = ($o['Status'] ?? '') === 'Open'; $canReopen = ($o['Status'] ?? '') === 'Closed' && !empty($o['EndDate']) && $o['EndDate'] < date('Y-m-d'); $closeMsg = 'Reviewing applicants before closing isn\'t available yet. Close this opportunity directly for now?'; $reopenMsg = 'Reopening will publish a new copy of this opportunity with fresh dates. You\'ll be taken to edit it next. Continue?'; ?>
 <?php if ($isOpenOpp): ?>
 
-  <!-- Redirect to the existing Applications tab before closing -->
-  <a
-    href="dashboard-company.php?tab=applicants&confirm_close=1&opportunity_id=<?= (int)$o['OpportunityID'] ?>"
-    class="btn btn-sm opp-status-btn opp-status-btn-close"
-  >
-    Close Opportunity
-  </a>
-
-
-<?php else: ?>
-
-  <!-- Open the Reopen confirmation modal on the same page -->
+  <!-- Close Opportunity: confirmation modal on the same page -->
   <button
     type="button"
-    class="btn btn-sm opp-status-btn opp-status-btn-reopen"
-    onclick="document.getElementById('reopenModal<?= (int)$o['OpportunityID'] ?>').style.display='flex'"
+    class="btn btn-sm opp-status-btn opp-status-btn-close"
+    onclick="openConfirmModal('closeOppModal', <?= (int)$o['OpportunityID'] ?>)"
   >
-    Reopen
+    Close Opportunity
   </button>
 
-  <!-- Reopen confirmation modal -->
-  <div
-    id="reopenModal<?= (int)$o['OpportunityID'] ?>"
-    class="reopen-confirm-overlay"
-    style="display:none"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="reopenTitle<?= (int)$o['OpportunityID'] ?>"
-  >
-    <div class="reopen-confirm-modal">
-      <div class="reopen-confirm-icon"><?= icon('training', 28) ?></div>
 
-      <h2 id="reopenTitle<?= (int)$o['OpportunityID'] ?>">
-        Reopen Opportunity?
-      </h2>
+<?php elseif ($canReopen): ?>
 
-      <p class="reopen-confirm-message">
-        Reopening will publish a new copy of this opportunity with fresh dates.
-        You'll be taken to edit it next.
-      </p>
-
-      <div class="reopen-confirm-actions">
-        <button
-          type="button"
-          class="btn btn-ghost"
-          onclick="document.getElementById('reopenModal<?= (int)$o['OpportunityID'] ?>').style.display='none'"
-        >
-          Cancel
-        </button>
-
-        <form method="post" class="company-inline-form">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-          <input type="hidden" name="action" value="reopen_opportunity">
-          <input type="hidden" name="tab" value="opportunities">
-          <input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>">
-
-          <button type="submit" class="btn btn-primary">
-            Yes, Reopen
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
+  <!-- Reopen: only for a Closed opportunity whose EndDate has passed (no confirmation) -->
+  <form method="post" class="opp-reopen-form">
+    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+    <input type="hidden" name="action" value="reopen_opportunity">
+    <input type="hidden" name="tab" value="opportunities">
+    <input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>">
+    <button type="submit" class="btn btn-sm opp-status-btn opp-status-btn-reopen">Reopen</button>
+  </form>
 
 <?php endif; ?>
 
-<a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><form method="post" class="company-inline-form" onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete_opportunity"><input type="hidden" name="tab" value="opportunities"><input type="hidden" name="opportunity_id" value="<?= (int)$o['OpportunityID'] ?>"><button class="btn btn-ghost btn-sm" type="submit" title="Delete"><?= icon('delete', 18, 'icon-danger') ?></button></form></div></td></tr><?php endforeach; ?>        </tbody></table></div>
+<a href="opportunity-form.php?id=<?= (int)$o['OpportunityID'] ?>" class="btn btn-ghost btn-sm" title="Edit"><?= icon('edit') ?></a><button class="btn btn-ghost btn-sm" type="button" title="Delete" onclick="openConfirmModal('deleteOppModal', <?= (int)$o['OpportunityID'] ?>)"><?= icon('delete', 18, 'icon-danger') ?></button></div></td></tr><?php endforeach; ?>        </tbody></table></div>
       <?php endif; ?>
 
       <!-- Opportunity Reviews (under My Opportunities): one card per opportunity, same look as the applicants list.
@@ -1586,7 +1471,7 @@ $heroTitles = [
         <div class="card-heading-row">
           <div>
             <h2 class="section-heading" style="margin-bottom:7px">Opportunity Reviews</h2>
-            <p class="section-description" style="margin:0">Average rating and student reviews for each of your opportunities.</p>
+            <p class="section-description" style="margin:0">Average rating and user reviews for each of your opportunities.</p>
           </div>
           <a href="dashboard-company.php?tab=reviews&amp;from=opportunities" class="dashboard-link">View all reviews &rarr;</a>
         </div>
@@ -1621,12 +1506,12 @@ $heroTitles = [
                   <p class="review-table-empty">No reviews have been submitted for this opportunity yet.</p>
                 <?php else: ?>
                   <table class="data-table reviews-table">
-                    <thead><tr><th>Student</th><th>Rating</th><th>Review</th><th>Date</th></tr></thead>
+                    <thead><tr><th>User</th><th>Rating</th><th>Review</th><th>Date</th></tr></thead>
                     <tbody>
                       <?php foreach ($oppReviews as $rv): ?>
                         <?php $stars = max(0, min(5, (int)$rv['Rating'])); ?>
                         <tr>
-                          <td data-label="Student"><strong><?= e(trim(($rv['FirstName'] ?? '') . ' ' . ($rv['LastName'] ?? '')) ?: 'A user') ?></strong></td>
+                          <td data-label="User"><strong><?= e(trim(($rv['FirstName'] ?? '') . ' ' . ($rv['LastName'] ?? '')) ?: 'A user') ?></strong></td>
                           <td data-label="Rating"><span class="rating-stars" title="<?= $stars ?> / 5"><?= str_repeat('★', $stars) . str_repeat('☆', 5 - $stars) ?></span></td>
                           <td data-label="Review" class="review-text-cell"><?= nl2br(e($rv['ReviewText'] ?? '')) ?></td>
                           <td data-label="Date" class="review-date-cell"><?= display_date($rv['CreatedAt']) ?></td>
@@ -1635,9 +1520,6 @@ $heroTitles = [
                     </tbody>
                   </table>
                 <?php endif; ?>
-                <div class="review-card-footer">
-                  <a class="dashboard-link" href="opportunity-detail.php?id=<?= $reviewOppId ?>#companyReviewsCard">View on opportunity page &rarr;</a>
-                </div>
               </div>
             </article>
           <?php endforeach; ?>
@@ -1706,11 +1588,11 @@ $heroTitles = [
     <!-- Reviews -->
     <section class="tab-panel <?= $activeTab === 'reviews' ? 'active' : '' ?>" id="tab-reviews">
       <div class="card-heading-row">
-        <p class="section-description" style="margin:0">What students are saying about your opportunities.</p>
+        <p class="section-description" style="margin:0">All ratings and comments users have left on your opportunities.</p>
         <?php if ($averageRating !== null): ?><span class="rating-pill">★ <?= number_format((float)$averageRating, 1) ?> / 5 (<?= $reviewCount ?>)</span><?php endif; ?>
       </div>
       <?php if (!$reviews): ?>
-        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('favorite', 30, 'icon-muted') ?></div><h3>No reviews yet</h3><p>Student reviews of your opportunities will appear here.</p></div>
+        <div class="empty-state"><div class="empty-icon" aria-hidden="true"><?= icon('favorite', 30, 'icon-muted') ?></div><h3>No reviews yet</h3><p>User reviews of your opportunities will appear here.</p></div>
       <?php else: ?>
         <?php foreach ($reviews as $r): ?>
           <div class="dashboard-card review-card">
@@ -1832,6 +1714,28 @@ $heroTitles = [
     </section>
 
   </div>
+
+  <!-- Confirmation modals (includes/confirm-modal.php) — kept outside the animated tab panels -->
+  <?php
+  confirm_modal([
+      'id'            => 'deleteOppModal',
+      'title'         => 'Delete Opportunity?',
+      'message'       => 'This opportunity will be permanently deleted. This cannot be undone.',
+      'confirm_label' => 'Yes, Delete',
+      'icon'          => 'trash',
+      'fields'        => ['action' => 'delete_opportunity', 'tab' => 'opportunities'],
+      'id_field'      => 'opportunity_id',
+  ]);
+  confirm_modal([
+      'id'            => 'closeOppModal',
+      'title'         => 'Close Opportunity?',
+      'message'       => 'Users will no longer be able to apply. Reviewing applicants before closing isn\'t available yet.',
+      'confirm_label' => 'Yes, Close',
+      'icon'          => 'lock',
+      'fields'        => ['action' => 'close_opportunity', 'tab' => 'opportunities'],
+      'id_field'      => 'opportunity_id',
+  ]);
+  ?>
 </div>
 </main>
 
