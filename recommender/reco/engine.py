@@ -172,7 +172,7 @@ class Recommender:
     def _prepare_availability(self):
         """Open / Upcoming / Closed, with the same rule as browse.php. (Upcoming = applications open later.)"""
         deadline, opens = self.opp["ApplicationDeadLine"], self.opp["ApplicationOpenDate"]
-        status_is_open = self.opp["Status"].str.strip().str.lower() == "open"
+        status_is_open = self.opp["Status"].str.strip().str.lower().isin(["open", "upcoming"])
         self.state = np.where(~status_is_open | (deadline < self.today), "Closed",
                               np.where(opens.notna() & (opens > self.today), "Upcoming", "Open"))
 
@@ -242,6 +242,8 @@ class Recommender:
             scaled[name] = values / best if best > 0 else values * 0.0
         return pd.DataFrame(scaled, index=scores.index)
 
+
+
     def recommend(self, uid, k=5):
         """The best k opportunities for one student, best first. Only Open and Upcoming ones (never Closed),
         and never one the student already saved."""
@@ -258,3 +260,32 @@ class Recommender:
 
         return [{"rank": rank, "opportunity_id": int(oid), "title": self.opp.Title.iloc[self.opp_row[int(oid)]],
                  "score": round(float(score), 4)} for rank, (oid, score) in enumerate(best.items(), 1)]
+
+
+    def explain(self, uid, k=20):
+        """Same as recommend(), but also shows the 6 scores of each opportunity (for checking and for the report).
+        raw = the score before scaling (None = unknown). points = what it adds to the total."""
+        uid = int(uid)
+        saved_ids = {self.opp_ids[row] for row, _ in self.favorites.get(uid, [])}
+        allowed = np.isin(self.state, ["Open", "Upcoming"]) & ~np.isin(self.opp_ids, list(saved_ids))
+        if not allowed.any():
+            return []
+
+        scores = self._scores_of(uid)[allowed]
+        scaled = self._to_same_scale(scores)
+        total = sum(WEIGHTS[name] * scaled[name] for name in WEIGHTS)
+        best = total.sort_values(ascending=False, kind="mergesort").head(k)
+
+        rows = []
+        for rank, (oid, score) in enumerate(best.items(), 1):
+            rows.append({
+                "rank": rank,
+                "title": self.opp.Title.iloc[self.opp_row[int(oid)]],
+                "total": round(float(score), 4),
+                "raw": {name: (None if pd.isna(scores.loc[oid, name]) else round(float(scores.loc[oid, name]), 3))
+                        for name in WEIGHTS},
+                "points": {name: round(float(WEIGHTS[name] * scaled.loc[oid, name]), 3) for name in WEIGHTS},
+            })
+        return rows
+
+        

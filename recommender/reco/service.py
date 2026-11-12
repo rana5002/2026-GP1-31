@@ -17,7 +17,7 @@ from .loader import load_default, today
 
 # The data is read from the database again after this many seconds, so new students,
 # new opportunities and new favorites are picked up without restarting the service.
-REFRESH_SECONDS = 300
+REFRESH_SECONDS = 30
 
 # What the service remembers: the recommender, when its data was read, and whether a refresh is running now.
 _state = {"recommender": None, "loaded_at": 0.0, "refreshing": False}
@@ -74,11 +74,35 @@ def health():
     return {"status": "ok", "opportunities": int(len(recommender.opp_ids))}
 
 
+RELOAD_IF_UNKNOWN_SECONDS = 20
+
 @app.get("/recommend/{user_id}")
 def recommend(user_id: int, k: int = Query(5, ge=1, le=50)):
-    """Returns the best k open opportunities for one student (k = how many, from 1 to 50)."""
     recommender = get_recommender()
+
+    # A student the service has not seen yet (just signed up): reload the data once.
     if user_id not in recommender.students:
-        raise HTTPException(404, "unknown user")             # for example a company or an admin
+        with _lock:
+            if time.time() - _state["loaded_at"] > RELOAD_IF_UNKNOWN_SECONDS:
+                _load_now()
+            recommender = _state["recommender"]
+
+    if user_id not in recommender.students:
+        raise HTTPException(404, "unknown user")
+
     items = recommender.recommend(user_id, k=k)
     return {"user_id": user_id, "count": len(items), "recommendations": items}
+
+
+@app.get("/reload")
+def reload_data():
+    with _lock:
+        _load_now()
+    return {"status": "reloaded"}
+
+@app.get("/explain/{user_id}")
+def explain(user_id: int, k: int = Query(20, ge=1, le=50)):
+    recommender = get_recommender()
+    if user_id not in recommender.students:
+        raise HTTPException(404, "unknown user")
+    return {"user_id": user_id, "explain": recommender.explain(user_id, k=k)}

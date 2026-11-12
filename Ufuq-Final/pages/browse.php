@@ -7,6 +7,7 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/user-layout.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/../includes/lists.php';
+require_once __DIR__ . '/../includes/recommendations.php';
 
 /* ---------- Database connection ---------- */
 if (!isset($pdo) && isset($db)) {
@@ -212,6 +213,8 @@ if (
         }
 
         $pdo->commit();
+
+        recommender_reload();
 
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {

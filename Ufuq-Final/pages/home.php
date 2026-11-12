@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/recommendations.php';
 
 /* ---------- Authentication ---------- */
 $userId = require_user();
@@ -73,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         SELECT OpportunityID
         FROM opportunity
         WHERE OpportunityID = ?
-          AND Status = 'Open'
+        AND Status IN ('Open', 'Upcoming')
         LIMIT 1
     ");
     $check->execute([$opportunityId]);
@@ -104,6 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         ");
         $insert->execute([$userId, $opportunityId]);
     }
+
+    recommender_reload();
 
     // Redirect to a safe local page to prevent duplicate POST submissions.
     $returnTo = $_POST['return_to'] ?? 'home.php';
@@ -255,6 +258,77 @@ $stmt->execute();
 $opportunities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ---------- Page header ---------- */
+
+/* ---------- Recommended opportunities (top 5 from the recommender) ---------- */
+/* Status shown on the card, same rule as browse.php: Open, Upcoming or Closed. */
+if (!function_exists('home_state')) {
+    function home_state(array $o): string
+    {
+        $today    = date('Y-m-d');
+        $status   = trim((string)($o['Status'] ?? ''));
+        $deadline = (string)($o['ApplicationDeadLine'] ?? '');
+        $openDate = (string)($o['ApplicationOpenDate'] ?? '');
+
+        if (strcasecmp($status, 'Closed') === 0 || ($deadline !== '' && $deadline < $today)) {
+            return 'Closed';
+        }
+        if ($openDate !== '' && $openDate > $today) {
+            return 'Upcoming';
+        }
+        return 'Open';
+    }
+}
+
+/* Duration in days, same text as browse.php. */
+if (!function_exists('home_duration')) {
+    function home_duration($start, $end): string
+    {
+        if (empty($start) || empty($end)) {
+            return 'Not specified';
+        }
+        try {
+            $days = (int)(new DateTime($start))->diff(new DateTime($end))->format('%r%a');
+            return $days >= 0 ? $days . ($days === 1 ? ' day' : ' days') : 'Not specified';
+        } catch (Throwable $e) {
+            return 'Not specified';
+        }
+    }
+}
+
+$recoItems = [];
+try {
+    $recoRows = get_recommended_opportunities($pdo, (int)$userId, 5);
+    $recoIds  = array_values(array_filter(array_map(
+        static fn($r) => (int)($r['OpportunityID'] ?? 0),
+        $recoRows
+    )));
+
+    if ($recoIds) {
+        // Full rows + company logo, then put them back in the recommender's order.
+        $marks = implode(',', array_fill(0, count($recoIds), '?'));
+        $stmt = $pdo->prepare("
+            SELECT o.*, cmp.Logo AS CompanyLogo, cmp.CompanyName AS PostingCompanyName
+            FROM opportunity o
+            LEFT JOIN company cmp ON cmp.CompanyID = o.CreatedByCompanyID
+            WHERE o.OpportunityID IN ($marks)
+        ");
+        $stmt->execute($recoIds);
+
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $byId[(int)$row['OpportunityID']] = $row;
+        }
+        foreach ($recoIds as $rid) {
+            if (isset($byId[$rid])) {
+                $recoItems[] = $byId[$rid];
+            }
+        }
+    }
+} catch (Throwable $e) {
+    error_log('Home recommendations failed: ' . $e->getMessage());
+    $recoItems = [];
+}
+
 user_header($me, 'Home', 'user-home');
 
 ?>
@@ -1044,6 +1118,231 @@ user_header($me, 'Home', 'user-home');
         scroll-behavior: auto !important;
     }
 }
+
+/* ===== Recommended cards (same look as the Browse cards) ===== */
+.user-dashboard .reco-grid {
+    /* One row: each card is as wide as 1/3 of the box; the rest scroll sideways. */
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: calc((100% - 2 * 18px) / 3);
+    gap: 18px;
+    padding: 4px 4px 14px;
+    margin: 0 -4px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+}
+
+.user-dashboard .reco-card {
+    scroll-snap-align: start;
+}
+
+.user-dashboard .reco-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 250px;
+    padding: 19px;
+    border: 1px solid #ece7f2;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40,26,70,.045);
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+
+.user-dashboard .reco-card:hover {
+    transform: translateY(-3px);
+    border-color: #cfc1e2;
+    box-shadow: 0 12px 28px rgba(40,26,70,.1);
+}
+
+.user-dashboard .reco-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.user-dashboard .reco-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    min-width: 0;
+}
+
+.user-dashboard .reco-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--user-lavender);
+    color: var(--user-purple);
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+.user-dashboard .reco-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+}
+
+.user-dashboard .reco-title {
+    margin: 0;
+    min-height: calc(2 * 1.55em);
+    color: var(--user-text);
+    font-size: 1rem;
+    font-weight: 750;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.user-dashboard .reco-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.user-dashboard .reco-title a:hover {
+    color: var(--user-purple);
+    text-decoration: underline;
+}
+
+.user-dashboard .reco-company {
+    margin: auto 0 8px;
+    padding-left: 11px;
+    color: var(--user-muted);
+    font-size: .86rem;
+    font-weight: 400;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.user-dashboard .reco-fav-form {
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.user-dashboard .reco-fav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 37px;
+    height: 37px;
+    padding: 0;
+    border: 1px solid #e9e3ed;
+    border-radius: 11px;
+    background: #fff;
+    color: #777184;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform .18s ease, background .18s ease, border-color .18s ease;
+}
+
+.user-dashboard .reco-fav:hover {
+    transform: translateY(-1px);
+    border-color: #e5b9c1;
+    background: #fff6f7;
+}
+
+.user-dashboard .reco-fav.is-favorite {
+    border-color: #f1d4d8;
+    background: #fff1f2;
+    color: #bd334d;
+}
+
+.user-dashboard .reco-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 17px;
+    color: var(--user-muted);
+    font-size: .81rem;
+    line-height: 1.6;
+}
+
+.user-dashboard .reco-type,
+.user-dashboard .reco-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    box-sizing: border-box;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid #e7e0ef;
+    border-radius: 30px;
+    font-size: .78rem;
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.user-dashboard .reco-type {
+    background: transparent;
+    color: #5b4a7a;
+}
+
+.user-dashboard .reco-status {
+    font-weight: 750;
+}
+
+.user-dashboard .reco-status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.user-dashboard .reco-status.badge-open {
+    border-color: #cfe8d9;
+    background: #e8f5ec;
+    color: #24653c;
+}
+
+.user-dashboard .reco-status.badge-upcoming {
+    border-color: #e3e0e8;
+    background: #f3f2f5;
+    color: #5f5a6b;
+}
+
+.user-dashboard .reco-status.badge-closed {
+    border-color: #f1d4d8;
+    background: #fff1f2;
+    color: #9c263d;
+}
+
+.user-dashboard .reco-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid #f0edf4;
+}
+
+@media (max-width: 950px) {
+    .user-dashboard .reco-grid { grid-auto-columns: calc((100% - 18px) / 2); }
+}
+
+@media (max-width: 620px) {
+    .user-dashboard .reco-grid { grid-auto-columns: 85%; }
+    .user-dashboard .reco-card { padding: 16px; }
+}
+
+
+
 </style>
 
 <div class="user-dashboard">
@@ -1168,6 +1467,7 @@ user_header($me, 'Home', 'user-home');
         </section>
 
         <!-- Recommended Opportunities -->
+               
         <section class="dashboard-section">
             <div class="dashboard-card recommendation-card">
 
@@ -1176,17 +1476,110 @@ user_header($me, 'Home', 'user-home');
                         <span class="ai-badge">AI</span>
                         <h2>Recommended Opportunities</h2>
                     </div>
+                    <a href="browse.php" class="dashboard-link">Browse all &rarr;</a>
                 </div>
 
-                <div class="empty-state">
-                    <div class="empty-icon" aria-hidden="true">✦</div>
+                <?php if ($recoItems): ?>
 
-                    <h3>Coming soon</h3>
+                    <div class="reco-grid">
+                        <?php foreach ($recoItems as $o): ?>
+                            <?php
+                            $oppId      = (int)$o['OpportunityID'];
+                            $isFavorite = in_array($oppId, $favoriteIds, true);
+                            $provider   = dashboard_company_name($o);
 
-                    <p>
-                        Personalized recommendations will be activated soon.
-                    </p>
-                </div>
+                            // Avatar: posting company's logo, otherwise the first letter of the name.
+                            $avatarName = $provider;
+                            $avatarLogo = '';
+                            if (!empty($o['CreatedByCompanyID'])) {
+                                $logo = trim((string)($o['CompanyLogo'] ?? ''));
+                                if ($logo !== '') {
+                                    $avatarLogo = preg_match('~^https?://~i', $logo) ? $logo : '../' . ltrim($logo, '/');
+                                }
+                                $postingName = trim((string)($o['PostingCompanyName'] ?? ''));
+                                if ($postingName !== '') {
+                                    $avatarName = $postingName;
+                                }
+                            }
+
+                            $opType     = trim((string)($o['Type'] ?? 'Opportunity'));
+                            $opLocation = trim((string)($o['Location'] ?? ''));
+                            if ($opLocation === '') {
+                                $opLocation = 'Location not specified';
+                            }
+                            $opDuration = home_duration($o['StartDate'] ?? null, $o['EndDate'] ?? null);
+
+                            $state      = home_state($o);
+                            $stateClass = $state === 'Open'
+                                ? 'badge-open'
+                                : ($state === 'Upcoming' ? 'badge-upcoming' : 'badge-closed');
+                            ?>
+
+                            <article class="reco-card">
+
+                                <div class="reco-top">
+                                    <div class="reco-info">
+                                        <div class="reco-logo" aria-hidden="true">
+                                            <?php if ($avatarLogo !== ''): ?>
+                                                <img src="<?= e($avatarLogo) ?>" alt="">
+                                            <?php else: ?>
+                                                <?= e(mb_strtoupper(mb_substr($avatarName, 0, 1, 'UTF-8'), 'UTF-8')) ?>
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <h3 class="reco-title">
+                                            <a href="opportunity-detail.php?id=<?= $oppId ?>"><?= e($o['Title']) ?></a>
+                                        </h3>
+                                    </div>
+
+                                    <form method="post" class="reco-fav-form">
+                                        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="action" value="toggle_favorite">
+                                        <input type="hidden" name="opportunity_id" value="<?= $oppId ?>">
+                                        <input type="hidden" name="return_to" value="home.php">
+
+                                        <button type="submit"
+                                                class="reco-fav <?= $isFavorite ? 'is-favorite' : '' ?>"
+                                                aria-label="<?= $isFavorite ? 'Remove from favorites' : 'Add to favorites' ?>"
+                                                title="<?= $isFavorite ? 'Remove from favorites' : 'Save to favorites' ?>">
+                                            <span aria-hidden="true"><?= $isFavorite ? '♥' : '♡' ?></span>
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <div class="reco-company"><?= e($provider) ?></div>
+
+                                <div class="reco-meta">
+                                    <span class="reco-type"><?= e($opType) ?></span>
+                                    <span><span aria-hidden="true">⌖</span> <?= e($opLocation) ?></span>
+                                    <span><span aria-hidden="true">◷</span> <?= e($opDuration) ?></span>
+                                </div>
+
+                                <div class="reco-footer">
+                                    <span class="reco-status <?= $stateClass ?>"><?= e($state) ?></span>
+
+                                    <a class="btn btn-primary btn-sm"
+                                       href="opportunity-detail.php?id=<?= $oppId ?>">
+                                        View Details <span aria-hidden="true">&rarr;</span>
+                                    </a>
+                                </div>
+
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+
+                <?php else: ?>
+
+                    <div class="empty-state">
+                        <div class="empty-icon" aria-hidden="true">✦</div>
+                        <h3>No recommendations yet</h3>
+                        <p>
+                            Complete your profile and save a few opportunities,
+                            and we will suggest ones that fit you.
+                        </p>
+                    </div>
+
+                <?php endif; ?>
 
             </div>
         </section>

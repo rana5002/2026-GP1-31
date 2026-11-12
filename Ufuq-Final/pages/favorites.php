@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/recommendations.php';
 
 /* ---------- Authentication ---------- */
 $uid = require_user();
@@ -84,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             if ($deleteStmt->rowCount() > 0) {
+                recommender_reload();
                 $_SESSION['favorites_message'] = [
                     'type' => 'success',
                     'text' => 'Opportunity removed from your favorites.'

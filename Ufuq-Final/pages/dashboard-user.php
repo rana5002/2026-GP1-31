@@ -8,6 +8,7 @@ require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
 // Load shared lists used across the platform.
 require_once __DIR__ . '/../includes/lists.php';
+require_once __DIR__ . '/../includes/recommendations.php';
 
 $uid = require_user();
 
@@ -21,6 +22,7 @@ function profile_escape($value): string
 
 function profile_redirect(): void
 {
+    recommender_reload();   // the profile changed: the recommender reads it again now
     header('Location: dashboard-user.php');
     exit;
 }

@@ -70,3 +70,23 @@ function get_recommended_opportunities(PDO $pdo, int $userId, int $limit = 5): a
     }
     return $ordered;
 }
+
+/* Tells the recommender to read the database again, so a change (a saved favorite, for example)
+   shows at once. If the service is off or slow, nothing breaks: its 30-second refresh catches up. */
+if (!function_exists('recommender_reload')) {
+    function recommender_reload(): void
+    {
+        require_once __DIR__ . '/env.php';
+
+        $base = rtrim((string)env('RECO_URL', 'http://127.0.0.1:8000'), '/');
+
+        $ch = curl_init($base . '/reload');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 1,   // service off: give up after 1 second
+            CURLOPT_TIMEOUT        => 5,   // wait for the reload to finish, then continue
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+}
