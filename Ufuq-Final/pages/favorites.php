@@ -120,7 +120,9 @@ $stmt = $pdo->prepare(
     "SELECT
         o.*,
         COALESCE(NULLIF(TRIM(o.OpportunityProvider), ''), c.CompanyName)
-            AS CompanyName
+            AS CompanyName,
+        c.Logo AS CompanyLogo,
+        c.CompanyName AS PostingCompanyName
      FROM favorite f
      JOIN opportunity o
        ON o.OpportunityID = f.OpportunityID
@@ -443,8 +445,8 @@ user_header($me, 'Favorites', 'favorites');
 /* ----------  Favorites styles ---------- */
 .user-favorites .favorites-grid {
     display: grid !important;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
-    gap: 20px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 18px !important;
     overflow-x: visible !important;
     scroll-snap-type: none !important;
     padding: 10px 0 !important;
@@ -453,6 +455,18 @@ user_header($me, 'Favorites', 'favorites');
 .user-favorites .favorite-card {
     width: 100% !important;
     flex: 1 1 auto !important;
+}
+
+@media (max-width: 950px) {
+    .user-favorites .favorites-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 620px) {
+    .user-favorites .favorites-grid {
+        grid-template-columns: 1fr !important;
+    }
 }
 
 .user-favorites .favorites-grid::-webkit-scrollbar {
@@ -473,19 +487,17 @@ user_header($me, 'Favorites', 'favorites');
     background: #a994c9;
 }
 
-/* ---------- Favorite Card (same card and icons as the Browse page) ---------- */
+/* ---------- Favorite Card (same card as the Browse page) ---------- */
 .user-favorites .favorite-card {
     display: flex;
     flex-direction: column;
-    flex: 0 0 320px;
-    width: 320px;
     min-width: 0;
+    min-height: 250px;
     padding: 19px;
     border: 1px solid #ece7f2;
     border-radius: 16px;
     background: #fff;
     box-shadow: 0 5px 18px rgba(40,26,70,.045);
-    scroll-snap-align: start;
     transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
 }
 
@@ -505,7 +517,7 @@ user_header($me, 'Favorites', 'favorites');
 
 .user-favorites .company-info {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 11px;
     min-width: 0;
 }
@@ -518,10 +530,18 @@ user_header($me, 'Favorites', 'favorites');
     height: 48px;
     flex-shrink: 0;
     border-radius: 14px;
+    overflow: hidden;
     background: var(--fav-lavender);
     color: var(--fav-purple);
     font-size: 1.15rem;
     font-weight: 800;
+}
+
+.user-favorites .company-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
 }
 
 .user-favorites .company-details {
@@ -529,7 +549,8 @@ user_header($me, 'Favorites', 'favorites');
 }
 
 .user-favorites .opportunity-title {
-    margin: 0 0 4px;
+    margin: 0;
+    min-height: calc(2 * 1.55em);
     color: var(--fav-text);
     font-size: 1rem;
     font-weight: 750;
@@ -548,8 +569,12 @@ user_header($me, 'Favorites', 'favorites');
 }
 
 .user-favorites .company-name {
+    margin: auto 0 8px;
+    padding: 0 0 0 11px;
+    text-align: left;
     color: var(--fav-muted);
-    font-size: .82rem;
+    font-weight: 400;
+    font-size: .86rem;
     line-height: 1.55;
     overflow-wrap: anywhere;
 }
@@ -582,20 +607,9 @@ user_header($me, 'Favorites', 'favorites');
     background: #fff6f7;
 }
 
-.user-favorites .opportunity-description {
-    display: -webkit-box;
-    overflow: hidden;
-    margin: 0 0 17px;
-    color: #625b6d;
-    font-size: .87rem;
-    line-height: 1.8;
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-}
-
 .user-favorites .opportunity-meta {
     display: flex;
+    justify-content: flex-start;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
@@ -617,14 +631,13 @@ user_header($me, 'Favorites', 'favorites');
     overflow-wrap: anywhere;
 }
 
-.user-favorites .badge-course {
-    background: #e8f5ec;
-    color: #24653c;
-}
-
+/* Type: outline only */
+.user-favorites .badge-course,
 .user-favorites .badge-program {
-    background: #eee8f8;
-    color: var(--fav-purple);
+    border: 1px solid #e7e0ef;
+    background: transparent;
+    color: #5b4a7a;
+    font-weight: 650;
 }
 
 .user-favorites .badge-open {
@@ -638,31 +651,80 @@ user_header($me, 'Favorites', 'favorites');
     color: #9c263d;
 }
 
+.user-favorites .badge-upcoming {
+    border: 1px solid #e3e0e8;
+    background: #f3f2f5;
+    color: #5f5a6b;
+}
+
+/* Type (top) and status (bottom): exactly the same size */
+.user-favorites .opportunity-meta .badge,
+.user-favorites .opportunity-footer .badge {
+    box-sizing: border-box;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    border-width: 1px;
+    border-style: solid;
+    font-size: .78rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+/* Deadline: on its own line under the type row */
+.user-favorites .opportunity-deadline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -6px 0 15px;
+    color: var(--fav-muted);
+    font-size: .81rem;
+    line-height: 1.6;
+}
+
 .user-favorites .opportunity-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: auto;
-    padding-top: 14px;
+    padding-top: 15px;
     border-top: 1px solid #f0edf4;
 }
+
+.user-favorites .opportunity-footer .badge {
+    gap: 7px;
+}
+
+/* Small dot in the status colour */
+.user-favorites .opportunity-footer .badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.user-favorites .opportunity-footer .badge-open { border-color: #cfe8d9; }
+.user-favorites .opportunity-footer .badge-closed { border-color: #f1d4d8; }
+.user-favorites .opportunity-footer .badge-upcoming { border-color: #e3e0e8; }
 
 .user-favorites .favorite-details-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 7px;
-    min-height: 35px;
-    padding: 8px 12px;
+    min-height: 38px;
+    padding: 9px 14px;
     color: #fff;
     background: var(--fav-purple);
     border: 1px solid var(--fav-purple);
     border-radius: 9px;
     box-shadow: 0 4px 12px rgba(57,38,95,.15);
-    font-size: .82rem;
+    font-size: .85rem;
     font-weight: 700;
+    line-height: 1.35;
     text-decoration: none;
     white-space: nowrap;
     transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
@@ -763,16 +825,7 @@ user_header($me, 'Favorites', 'favorites');
     }
 
     .user-favorites .favorite-card {
-        flex-basis: 285px;
-        width: 285px;
-        padding: 17px;
-    }
-}
-
-@media (max-width: 400px) {
-    .user-favorites .favorite-card {
-        flex-basis: 265px;
-        width: 265px;
+        padding: 16px;
     }
 }
 
@@ -907,8 +960,9 @@ user_header($me, 'Favorites', 'favorites');
                         );
 
                         /* Duration is stored as a number of days. */
-                        $durationDays = (int) ($opportunity['Duration'] ?? 0);
-                        $duration = $durationDays > 0
+                        $durationDays = isset($opportunity['Duration']) && $opportunity['Duration'] !== null
+                            ? (int) $opportunity['Duration'] : -1;
+                        $duration = $durationDays >= 0
                             ? $durationDays . ($durationDays === 1 ? ' day' : ' days')
                             : '';
 
@@ -921,25 +975,37 @@ user_header($me, 'Favorites', 'favorites');
                             $deadlineText = date('d M Y', strtotime($deadline));
                         }
 
-                        $statusValue = strtolower(
-                            trim((string) ($opportunity['Status'] ?? ''))
-                        );
+                        /* Status: same as Browse (Open / Upcoming / Closed). */
+                        $today = date('Y-m-d');
+                        $statusValue = trim((string) ($opportunity['Status'] ?? ''));
+                        $openDate = (string) ($opportunity['ApplicationOpenDate'] ?? '');
 
-                        $isClosed = $statusValue === 'closed';
-
-                        if (
-                            !$isClosed
-                            && $deadline !== ''
-                            && strtotime($deadline) !== false
-                            && strtotime($deadline) < strtotime(date('Y-m-d'))
-                        ) {
-                            $isClosed = true;
+                        if (strcasecmp($statusValue, 'Closed') === 0 || ($deadline !== '' && $deadline < $today)) {
+                            $statusLabel = 'Closed';
+                        } elseif ($openDate !== '' && $openDate > $today) {
+                            $statusLabel = 'Upcoming';
+                        } else {
+                            $statusLabel = 'Open';
                         }
 
-                        /* Same status badge as the Browse page: Open, or Closed after the deadline / when closed. */
-                        $statusLabel = $isClosed ? 'Closed' : 'Open';
-                        $statusClass = $isClosed ? 'badge-closed' : 'badge-open';
+                        $statusClass = $statusLabel === 'Open'
+                            ? 'badge-open'
+                            : ($statusLabel === 'Upcoming' ? 'badge-upcoming' : 'badge-closed');
                         $typeClass = strcasecmp($opportunityType, 'Course') === 0 ? 'badge-course' : 'badge-program';
+
+                        /* Avatar: company logo if it has one, otherwise the first letter of the name (same as Browse). */
+                        $avatarLogo = '';
+                        $avatarName = $companyName;
+                        if (!empty($opportunity['CreatedByCompanyID'])) {
+                            $logo = trim((string) ($opportunity['CompanyLogo'] ?? ''));
+                            if ($logo !== '') {
+                                $avatarLogo = preg_match('~^https?://~i', $logo) ? $logo : '../' . ltrim($logo, '/');
+                            }
+                            $postingName = trim((string) ($opportunity['PostingCompanyName'] ?? ''));
+                            if ($postingName !== '') {
+                                $avatarName = $postingName;
+                            }
+                        }
 
                         $detailUrl = 'opportunity-detail.php?id='
                             . rawurlencode((string) $opportunityId);
@@ -952,19 +1018,17 @@ user_header($me, 'Favorites', 'favorites');
                                 <div class="company-info">
 
                                     <div class="company-logo" aria-hidden="true">
-                                        <?= fav_e(fav_initial($companyName)) ?>
+                                        <?php if ($avatarLogo !== ''): ?>
+                                            <img src="<?= fav_e($avatarLogo) ?>" alt="">
+                                        <?php else: ?>
+                                            <?= fav_e(fav_initial($avatarName)) ?>
+                                        <?php endif; ?>
                                     </div>
 
                                     <div class="company-details">
-
                                         <h3 class="opportunity-title">
                                             <a href="<?= fav_e($detailUrl) ?>"><?= fav_e($opportunityTitle) ?></a>
                                         </h3>
-
-                                        <div class="company-name">
-                                            <?= fav_e($companyName) ?>
-                                        </div>
-
                                     </div>
 
                                 </div>
@@ -992,11 +1056,10 @@ user_header($me, 'Favorites', 'favorites');
 
                             </div>
 
-                            <p class="opportunity-description">
-                                <?= $description !== ''
-                                    ? fav_e($description)
-                                    : 'No description provided.' ?>
-                            </p>
+                            <!-- Company name: under the logo + title row -->
+                            <div class="company-name">
+                                <?= fav_e($companyName) ?>
+                            </div>
 
                             <div class="opportunity-meta">
 
@@ -1014,14 +1077,14 @@ user_header($me, 'Favorites', 'favorites');
                                     <?= fav_e($duration !== '' ? $duration : 'Not specified') ?>
                                 </span>
 
-                                <?php if ($deadlineText !== ''): ?>
-                                    <span>
-                                        <span aria-hidden="true">⧗</span>
-                                        Deadline: <?= fav_e($deadlineText) ?>
-                                    </span>
-                                <?php endif; ?>
-
                             </div>
+
+                            <?php if ($deadlineText !== ''): ?>
+                                <div class="opportunity-deadline">
+                                    <span aria-hidden="true">⧗</span>
+                                    Deadline: <?= fav_e($deadlineText) ?>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="opportunity-footer">
 
