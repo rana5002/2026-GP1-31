@@ -120,55 +120,61 @@ if (!function_exists('getCompanyColor')) {
     }
 }
 
-/* ---------- Render opportunity card ---------- */
+/* ---------- Render opportunity card ----------
+   Same card for every opportunity (same size).
+   Avatar: the company logo if it has one, otherwise the first letter of the company name;
+   opportunities added by the admin use the first letter of the opportunity provider. */
 
 if (!function_exists('renderOpportunityCard')) {
     function renderOpportunityCard(array $opportunity): void
     {
         $title = (string) ($opportunity['Title'] ?? '');
         $company = getCompanyName($opportunity);
-        $type = (string) ($opportunity['Type'] ?? '');
-        $location = (string) ($opportunity['Location'] ?? '');
+        $location = trim((string) ($opportunity['Location'] ?? ''));
 
-        $initial = $company !== ''
-            ? strtoupper(substr($company, 0, 1))
+        $logo = '';
+        $avatarName = $company;
+
+        if (!empty($opportunity['CreatedByCompanyID'])) {
+            $rawLogo = trim((string) ($opportunity['CompanyLogo'] ?? ''));
+            if ($rawLogo !== '') {
+                $logo = preg_match('~^https?://~i', $rawLogo) ? $rawLogo : ltrim($rawLogo, '/');
+            }
+        } else {
+            $provider = trim((string) ($opportunity['OpportunityProvider'] ?? ''));
+            if ($provider !== '') {
+                $avatarName = $provider;
+            }
+        }
+
+        $initial = $avatarName !== ''
+            ? (function_exists('mb_substr')
+                ? mb_strtoupper(mb_substr($avatarName, 0, 1, 'UTF-8'), 'UTF-8')
+                : strtoupper(substr($avatarName, 0, 1)))
             : 'C';
-
-        $badgeClass = $type === 'Course'
-            ? 'badge-success'
-            : 'badge-primary';
-
-        $color = getCompanyColor($company);
         ?>
-        <div class="card opp-card card-hover reveal">
-            <div class="opp-card-top">
-                <div class="flex gap-3" style="align-items:center;">
-                    <div
-                        class="opp-logo"
-                        style="background:<?= e($color) ?>;"
-                    ><?= e($initial) ?></div>
-
-                    <div>
-                        <h3 style="margin:0 0 2px;font-size:1.02rem;">
-                            <?= e($title) ?>
-                        </h3>
-
-                        <div class="text-muted" style="font-size:0.82rem;">
-                            <?= e($company) ?>
-                        </div>
-                    </div>
+        <div class="card opp-card home-opp-card card-hover reveal">
+            <div class="home-opp-top">
+                <div class="home-opp-logo" aria-hidden="true">
+                    <?php if ($logo !== ''): ?>
+                        <img src="<?= e($logo) ?>" alt="">
+                    <?php else: ?>
+                        <?= e($initial) ?>
+                    <?php endif; ?>
                 </div>
+
+                <h3 class="home-opp-title"><?= e($title) ?></h3>
             </div>
 
-            <div class="opp-meta">
-                <span class="badge <?= e($badgeClass) ?>">
-                    <?= e($type) ?>
+            <div class="home-opp-company"><?= e($company) ?></div>
+
+            <!-- Location and View Details on the same row -->
+            <div class="home-opp-footer">
+                <span class="home-opp-meta">
+                    <span aria-hidden="true">⌖</span>
+                    <?= e($location !== '' ? $location : 'Location not specified') ?>
                 </span>
 
-                <span><?= e($location) ?></span>
-            </div>
-
-            <div class="opp-footer">
                 <a class="btn btn-outline btn-sm" href="pages/login.php">
                     View Details
                 </a>
@@ -197,7 +203,8 @@ try {
             o.Status,
             o.OpportunityProvider,
             o.CreatedByCompanyID,
-            c.CompanyName
+            c.CompanyName,
+            c.Logo AS CompanyLogo
         FROM opportunity o
         LEFT JOIN company c
             ON c.CompanyID = o.CreatedByCompanyID
@@ -224,7 +231,8 @@ try {
             o.Status,
             o.OpportunityProvider,
             o.CreatedByCompanyID,
-            c.CompanyName
+            c.CompanyName,
+            c.Logo AS CompanyLogo
         FROM opportunity o
         LEFT JOIN company c
             ON c.CompanyID = o.CreatedByCompanyID
@@ -318,12 +326,78 @@ html {
     box-shadow: 0 14px 32px rgba(31, 53, 102, .11);
 }
 
-.opp-logo {
+/* ---------- Opportunity cards: one size and layout for all ---------- */
+.home-opp-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 22px !important;          /* same size in the Training and Courses sections */
+    border-radius: 16px !important;
+}
+
+.home-opp-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.home-opp-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f0ebf8;
+    color: var(--color-primary);
+    font-size: 1.15rem;
+    font-weight: 800;
     transition: transform .28s ease;
 }
 
-.opp-card:hover .opp-logo {
+.home-opp-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+}
+
+.opp-card:hover .home-opp-logo {
     transform: scale(1.08);
+}
+
+.home-opp-title {
+    margin: 0;
+    min-height: calc(2 * 1.5em);   /* at least 2 lines, so every card lines up */
+    font-size: 1.02rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.home-opp-company {
+    margin-top: auto;              /* company, location and button sit at the bottom */
+    color: var(--color-text-muted);
+    font-size: 0.86rem;
+    line-height: 1.55;
+}
+
+.home-opp-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+}
+
+.home-opp-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
 }
 
 .section-journey .card {
