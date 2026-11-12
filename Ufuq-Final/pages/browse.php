@@ -2190,7 +2190,7 @@ user_header($me, 'Browse', 'browse');
                     <div class="companies-head" id="companiesHead">
                         <div>
                             <h2 class="section-heading" style="margin:0">Companies on Ufuq</h2>
-                            <p class="section-description companies-sub">Verified companies on the platform. Open a profile to see all its opportunities.</p>
+                            <p class="section-description companies-sub">Discover who offers opportunities on Ufuq, and open a company to see everything it offers.</p>
                         </div>
                         <div class="section-actions">
                             <div class="results-count">
@@ -2511,6 +2511,7 @@ user_header($me, 'Browse', 'browse');
         });
     }
     collapsible('companiesHead', 'companiesToggle', 'companiesBody', 'ufuqCompaniesOpen');
+
     collapsible('oppHead', 'oppToggle', 'oppBody', null);
 })();
 
