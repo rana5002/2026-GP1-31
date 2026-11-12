@@ -260,6 +260,7 @@ $headerUserJson = json_encode(
 /* ---------- Shared PHP header/footer files ---------- */
 
 $headerPath = __DIR__ . '/includes/header.php';
+$headerActive = 'home';   /* underline "Home" in the header */
 $footerPath = __DIR__ . '/includes/footer.php';
 
 ?>

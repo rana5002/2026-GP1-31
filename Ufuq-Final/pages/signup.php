@@ -563,7 +563,7 @@ body { background: var(--color-cream); }   /* beige page background*/
 
 <?php
 $headerBase = '../';
-$headerActive = '';
+$headerActive = 'signup';   /* Sign Up button shows this is the current page */
 require __DIR__ . '/../includes/header.php';
 ?>
 <main>
@@ -836,22 +836,6 @@ require __DIR__ . '/../includes/header.php';
 <script src="../js/constants.js"></script>
 <script src="../js/components.js"></script>
 <script>
-
-  /* Header: no underline on "Opportunities" here; the Sign Up button looks pressed */
-  (function () {
-    const header = document.getElementById("site-header");
-    if (!header) return;
-    header.querySelectorAll(".active, [aria-current]").forEach(el => {
-      el.classList.remove("active");
-      el.removeAttribute("aria-current");
-    });
-    header.querySelectorAll("a").forEach(a => {
-      if ((a.getAttribute("href") || "").toLowerCase().includes("signup")) {
-        a.classList.add("is-pressed");
-        a.setAttribute("aria-current", "page");
-      }
-    });
-  })();
 
   const PHONE_USER_RE = /^05\d{8}$/;
   const PHONE_COMP_RE = /^0[15]\d{8}$/;

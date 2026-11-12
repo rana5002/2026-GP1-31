@@ -119,15 +119,17 @@ $headerLogo = $headerBase . 'images-website/logo.png';
             <?php else: ?>
 
                 <a
-                    class="header-action-link"
+                    class="header-action-link header-login<?= $headerActive === 'login' ? ' is-current' : '' ?>"
                     href="<?= header_escape($headerBase . 'pages/login.php') ?>"
+                    <?= $headerActive === 'login' ? 'aria-current="page"' : '' ?>
                 >
                     Log In
                 </a>
 
                 <a
-                    class="btn btn-primary btn-sm"
+                    class="btn btn-primary btn-sm header-signup<?= $headerActive === 'signup' ? ' is-current' : '' ?>"
                     href="<?= header_escape($headerBase . 'pages/signup.php') ?>"
+                    <?= $headerActive === 'signup' ? 'aria-current="page"' : '' ?>
                 >
                     Sign Up
                 </a>
@@ -177,6 +179,19 @@ $headerLogo = $headerBase . 'images-website/logo.png';
     align-items: center;
     justify-content: space-between;
     gap: 20px;
+}
+
+/* Home / About Us in the middle of the header */
+@media (min-width: 861px) {
+    .site-header .container {
+        position: relative;
+    }
+
+    .site-header .nav-links {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+    }
 }
 
 /* Header actions */
@@ -303,6 +318,54 @@ $headerLogo = $headerBase . 'images-website/logo.png';
 
 .site-header .nav-actions .btn-sm {
     padding: 9px 14px;
+}
+
+/* Log In / Sign Up: same size */
+.site-header .nav-actions .header-login,
+.site-header .nav-actions .header-signup {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 96px;
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+}
+
+.site-header .nav-actions .header-login {
+    color: var(--color-primary-dark);
+    background: transparent;
+    border-color: transparent;
+}
+
+.site-header .nav-actions .header-login:hover {
+    background: #f0ebf8;
+}
+
+/* Current page: the button of the page you are on looks pressed */
+.site-header .nav-actions .header-login.is-current,
+.site-header .nav-actions .header-signup.is-current {
+    cursor: default;
+    pointer-events: none;
+}
+
+.site-header .nav-actions .header-login.is-current {
+    color: var(--color-primary-dark);
+    background: #ece4f7;
+    border-color: #c9b8e2;
+    box-shadow: inset 0 1px 3px rgba(40, 26, 70, .12);
+}
+
+/* Sign Up keeps its own colour, with a dark shadow under it */
+.site-header .nav-actions .header-signup.is-current {
+    box-shadow: 0 7px 14px -3px rgba(20, 10, 40, .6);
 }
 
 </style>

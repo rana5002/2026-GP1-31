@@ -298,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <?php
 $headerBase = '../';
-$headerActive = '';
+$headerActive = 'login';   /* Log In button shows this is the current page */
 require __DIR__ . '/../includes/header.php';
 ?>
 
@@ -460,7 +460,6 @@ document.getElementById("loginForm").addEventListener("submit", e => {
 
 
 
-<?= header_js('login') ?>
 
 
 
