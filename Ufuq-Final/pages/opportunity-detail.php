@@ -62,7 +62,7 @@ function detail_not_open_yet($openDate): bool
 
 function detail_is_open($status, $deadline, $openDate = null): bool
 {
-    if (strcasecmp(trim((string) $status), 'Open') !== 0) {
+    if (strcasecmp(trim((string) $status), 'Closed') === 0) {
         return false;
     }
 
@@ -504,9 +504,12 @@ $retail = $opp['Retail'] ?? null;
 $industrySector = $opp['IndustrySector'] ?? 'Not specified';
 
 $isOpen = detail_is_open($status, $deadline, $openDate);
-$notOpenYet = strcasecmp(trim((string) $status), 'Open') === 0 && detail_not_open_yet($openDate);
-/* Shown status: Closed when the company closed it or the application deadline has passed. */
-$displayStatus = $isOpen ? 'Open' : ($notOpenYet ? 'Not Open Yet' : 'Closed');
+$notOpenYet = strcasecmp(trim((string) $status), 'Closed') !== 0
+    && !(!empty($deadline) && $deadline !== '0000-00-00' && (string) $deadline < date('Y-m-d'))
+    && detail_not_open_yet($openDate);
+/* Shown status (same as Browse): Closed when closed by the provider or the deadline has passed,
+   Upcoming when applications have not opened yet, otherwise Open. */
+$displayStatus = $isOpen ? 'Open' : ($notOpenYet ? 'Upcoming' : 'Closed');
 $isClosed = $displayStatus === 'Closed';
 
 /* "Verified Participant": an accepted application through Ufuq and no extra selection stages
@@ -772,6 +775,35 @@ user_header($me, 'Opportunity Details', 'browse');
 
         .detail-page .grid-2 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: stretch;
+        }
+
+        /* Opportunity information: three equal cards per row */
+        .detail-page .grid-3 {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-auto-rows: 1fr;
+            align-items: stretch;
+        }
+
+        /* Every card the same size (the last one included, whatever the site stylesheet adds) */
+        .detail-page .grid-3 > .field-view {
+            align-self: stretch !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 15px !important;
+        }
+
+        @media (max-width: 900px) {
+            .detail-page .grid-3 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 560px) {
+            .detail-page .grid-3 {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         /* ---------- Badges ---------- */
@@ -794,6 +826,53 @@ user_header($me, 'Opportunity Details', 'browse');
             color: var(--detail-purple);
             background: var(--detail-purple-light);
             border-color: #e6dcf6;
+        }
+
+        /* Opportunity type: outline only (same as Browse) */
+        .detail-page .badge-type {
+            padding: 5px 10px;
+            border: 1px solid #e7e0ef;
+            border-radius: 30px;
+            background: transparent;
+            color: #5b4a7a;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        /* Opportunity status: Open / Upcoming / Closed with a dot (same as Browse) */
+        .detail-page .status-badge {
+            gap: 7px;
+            min-width: 96px;
+            padding: 5px 12px;
+            border-radius: 30px;
+            font-size: 12px;
+        }
+
+        .detail-page .status-badge::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .detail-page .status-badge.is-open {
+            color: #24653c;
+            background: #e8f5ec;
+            border-color: #cfe8d9;
+        }
+
+        .detail-page .status-badge.is-upcoming {
+            color: #5f5a6b;
+            background: #f3f2f5;
+            border-color: #e3e0e8;
+        }
+
+        .detail-page .status-badge.is-closed {
+            color: #9c263d;
+            background: #fff1f2;
+            border-color: #f1d4d8;
         }
 
         .detail-page .badge-primary {
@@ -889,7 +968,7 @@ user_header($me, 'Opportunity Details', 'browse');
         }
 
         .opportunity-heading h2 {
-            margin: 10px 0 5px;
+            margin: 0 0 5px;
             overflow-wrap: anywhere;
         }
 
@@ -1134,6 +1213,21 @@ user_header($me, 'Opportunity Details', 'browse');
             display: flex;
             flex-wrap: wrap;
             gap: 7px;
+        }
+
+        .description-badges {
+            margin-top: 14px;
+        }
+
+        /* Type and status: same size */
+        .detail-page .description-badges .badge {
+            box-sizing: border-box;
+            min-width: 96px;
+            height: 32px;
+            padding: 0 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            line-height: 1;
         }
 
         .verified-badge {
@@ -1491,7 +1585,7 @@ user_header($me, 'Opportunity Details', 'browse');
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 48px;
+            min-width: 62px;
             padding: 7px 10px;
             border: 1px solid #e6e1ee;
             border-radius: 10px;
@@ -1508,9 +1602,30 @@ user_header($me, 'Opportunity Details', 'browse');
         }
 
         .schedule-time {
-            margin: 12px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 12px;
             color: var(--detail-text) !important;
             font-weight: 700;
+        }
+
+        .schedule-time svg {
+            flex-shrink: 0;
+            color: var(--detail-purple);
+        }
+
+        @media (max-width: 420px) {
+            .schedule-days {
+                gap: 4px;
+            }
+
+            .schedule-day {
+                min-width: 0;
+                flex: 1 1 0;
+                padding: 7px 2px;
+                font-size: 11.5px;
+            }
         }
 
         .tl-note {
@@ -1755,16 +1870,6 @@ user_header($me, 'Opportunity Details', 'browse');
 
                     <div class="opportunity-heading-main">
 
-                        <div class="heading-badges">
-                            <span class="badge badge-neutral">
-                                <?= detail_h($type) ?>
-                            </span>
-
-                            <?php if ($isClosed): ?>
-                                <span class="badge badge-closed">Closed</span>
-                            <?php endif; ?>
-                        </div>
-
                         <h2><?= detail_h($title) ?></h2>
 
                         <div class="opportunity-provider-line">
@@ -1811,12 +1916,23 @@ user_header($me, 'Opportunity Details', 'browse');
                     <p class="detail-description"><?= detail_h(
                         $description ?: 'No description provided.'
                     ) ?></p>
+
+                    <!-- Type and status -->
+                    <div class="heading-badges description-badges">
+                        <span class="badge badge-type">
+                            <?= detail_h($type) ?>
+                        </span>
+
+                        <span class="badge status-badge <?= $isOpen ? 'is-open' : ($isClosed ? 'is-closed' : 'is-upcoming') ?>">
+                            <?= detail_h($displayStatus) ?>
+                        </span>
+                    </div>
                 </section>
 
                 <div class="divider"></div>
 
                 <!-- Opportunity Information -->
-                <div class="grid grid-2">
+                <div class="grid grid-3">
 
                     <div class="field-view">
                         <div class="field-label">Start Date</div>
@@ -1841,11 +1957,6 @@ user_header($me, 'Opportunity Details', 'browse');
                     </div>
 
                     <div class="field-view">
-                        <div class="field-label">Application Method</div>
-                        <?= detail_h($method ?: 'Not specified') ?>
-                    </div>
-
-                    <div class="field-view">
                         <div class="field-label">Price</div>
 
                         <?php if ($priceStatus === 'Free'): ?>
@@ -1863,14 +1974,6 @@ user_header($me, 'Opportunity Details', 'browse');
                     <div class="field-view">
                         <div class="field-label">Industry Sector</div>
                         <?= detail_h($industrySector) ?>
-                    </div>
-
-                    <div class="field-view">
-                        <div class="field-label">Opportunity Status</div>
-
-                        <span class="badge <?= $isOpen ? 'badge-success' : ($isClosed ? 'badge-closed' : 'badge-neutral') ?>">
-                            <?= detail_h($displayStatus) ?>
-                        </span>
                     </div>
 
                 </div>
@@ -1932,14 +2035,13 @@ user_header($me, 'Opportunity Details', 'browse');
 
                     <section>
                         <h3>Schedule</h3>
+                        <p class="schedule-time"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><?= detail_h($scheduleTime) ?></span></p>
 
                         <div class="schedule-days">
                             <?php foreach (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $dayKey): ?>
                                 <span class="schedule-day <?= in_array($dayKey, $scheduleDays, true) ? 'is-on' : '' ?>"><?= detail_h($dayKey) ?></span>
                             <?php endforeach; ?>
                         </div>
-
-                        <p class="schedule-time"><?= detail_h($scheduleTime) ?></p>
                     </section>
                 <?php endif; ?>
 

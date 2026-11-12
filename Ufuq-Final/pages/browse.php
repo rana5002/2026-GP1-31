@@ -1143,6 +1143,20 @@ user_header($me, 'Browse', 'browse');
     border: 1px solid transparent;
 }
 
+/* Type (top) and status (bottom): exactly the same size */
+.user-browse .opportunity-meta .badge,
+.user-browse .opportunity-footer .badge {
+    box-sizing: border-box;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    border-width: 1px;
+    border-style: solid;
+    font-size: .78rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 /* Small dot in the status colour, so the state reads at a glance without a loud fill */
 .user-browse .opportunity-footer .badge::before {
     content: "";
