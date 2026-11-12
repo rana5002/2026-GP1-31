@@ -4,9 +4,9 @@ $base = $base ?? '';
 ?>
 
 <style>
-/* Footer colours and fonts matched to the rest of Ufuq (hero purple, gold accent, Playfair brand) */
+/* Footer: blends the banner purple (#281a46 / #39265f) into the button plum (#44384D); gold accent, Playfair brand */
 .site-footer.ufuq-footer{
-    background:linear-gradient(135deg,#281a46 0%,#39265f 55%,#49316f 100%);
+    background:linear-gradient(135deg,#2b1f45 0%,#3a2b55 30%,#44384d 70%,#44384d 100%);
     color:rgba(240,235,248,.78);
     border-top:0 !important;   /* no line between the content and the footer */
     box-shadow:none !important;
@@ -25,6 +25,15 @@ $base = $base ?? '';
 .site-footer.ufuq-footer .ufuq-footer-contact a:hover{color:#e2a94b}
 .site-footer.ufuq-footer .ufuq-footer-arrow{color:#e2a94b}
 .site-footer.ufuq-footer .ufuq-footer-bottom{border-top-color:rgba(240,235,248,.14);color:rgba(240,235,248,.6)}
+/* Copyright in the middle, tagline stays on the right */
+.site-footer.ufuq-footer .ufuq-footer-bottom{display:grid !important;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.site-footer.ufuq-footer .ufuq-footer-copy{grid-column:2;text-align:center}
+.site-footer.ufuq-footer .ufuq-footer-tagline{grid-column:3;justify-self:end;text-align:right}
+@media (max-width:620px){
+    .site-footer.ufuq-footer .ufuq-footer-bottom{grid-template-columns:1fr}
+    .site-footer.ufuq-footer .ufuq-footer-copy,
+    .site-footer.ufuq-footer .ufuq-footer-tagline{grid-column:1;justify-self:center;text-align:center}
+}
 .site-footer.ufuq-footer .ufuq-footer-tagline{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:rgba(240,235,248,.7)}
 </style>
 
@@ -63,7 +72,7 @@ $base = $base ?? '';
         </div>
 
         <div class="ufuq-footer-bottom">
-            <span>© 2026 Ufuq. All rights reserved.</span>
+            <span class="ufuq-footer-copy">© 2026 Ufuq. All rights reserved.</span>
             <span class="ufuq-footer-tagline">Made for your next step.</span>
         </div>
 

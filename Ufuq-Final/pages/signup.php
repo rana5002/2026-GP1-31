@@ -273,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($errQual) $errors['qualifications'] = $errQual;
 
         if ($emptyFound) {
-            $banner = 'All fields are mandatory. Please check the highlighted fields.';
+            $banner = 'Please fill in all required fields and check the highlighted ones.';
         } elseif ($errors) {
             $banner = error_summary($errors, $LABELS_USER);
         }
@@ -1083,7 +1083,7 @@ require __DIR__ . '/../includes/header.php';
     });
 
     if (anyEmpty) showBanner(form.id === "userForm"
-      ? "All fields are mandatory. Please check the highlighted fields."
+      ? "Please fill in all required fields and check the highlighted ones."
       : "All required fields must be filled.");
     else if (anyBad) showBanner("Please correct: " + (names.length ? names.join(", ") : "the highlighted fields") + ".");
     else hideBanner();
