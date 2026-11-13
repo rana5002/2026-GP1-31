@@ -7,6 +7,7 @@ require __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../includes/email_templates.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/confirm-modal.php';
 
 $adminId = require_admin();
 
@@ -530,6 +531,195 @@ admin_header('Company Review', 'verification');
     display: none !important;
 }
 
+/* Button icons: white tick on Approve, red icon on Reject, so they are clear */
+.company-review-page .review-btn-primary .icon {
+    background-color: #fff !important;
+    opacity: 1;
+}
+
+.company-review-page .review-btn-primary svg { color: #fff; stroke: #fff; }
+.company-review-page .review-btn-primary img { filter: brightness(0) invert(1); }
+
+.company-review-page .review-btn-danger .icon {
+    background-color: var(--review-danger) !important;
+    opacity: 1;
+}
+
+.company-review-page .review-btn-danger svg { color: var(--review-danger); stroke: var(--review-danger); }
+
+/* Page background: same beige as the public company profile */
+body {
+    background: #faf6ef;
+}
+
+/* Status badge with a dot and a light border (same as the rest of Ufuq) */
+.company-review-page .status-badge {
+    gap: 7px;
+    min-width: 96px;
+    justify-content: center;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 30px;
+    font-size: .78rem;
+}
+
+.company-review-page .status-badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.company-review-page .status-badge.badge-warning { border-color: #f0dfb4; }
+.company-review-page .status-badge.badge-success { border-color: #cfe8d9; }
+.company-review-page .status-badge.badge-danger  { border-color: #f1d4d8; }
+
+/* ---------- Company information: same design as the public company profile ---------- */
+.company-review-page .profile-identity,
+.company-review-page .profile-section {
+    border: 1px solid #e9e3ed;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40, 26, 70, .045);
+}
+
+.company-review-page .profile-identity {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 25px;
+    margin-bottom: 22px;
+}
+
+.company-review-page .profile-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 92px;
+    width: 92px;
+    height: 92px;
+    overflow: hidden;
+    border: 4px solid #f0ebf8;
+    border-radius: 22px;
+    background: #f0ebf8;
+    color: var(--review-purple);
+    font-size: 1.8rem;
+    font-weight: 750;
+}
+
+.company-review-page .profile-avatar.has-logo { background: #fff; }
+.company-review-page .profile-avatar img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+.company-review-page .profile-avatar img[hidden] { display: none !important; }
+.company-review-page .profile-avatar .avatar-initial { display: none; }
+.company-review-page .profile-avatar img[hidden] + .avatar-initial { display: block; }
+
+.company-review-page .profile-identity-details { flex: 1; min-width: 0; }
+
+.company-review-page .profile-identity-details h2 {
+    margin: 0;
+    color: #29243a;
+    font-size: 1.4rem;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-subtitle {
+    margin-top: 6px;
+    color: #777184;
+    font-size: .92rem;
+}
+
+.company-review-page .profile-identity .status-badge {
+    flex-shrink: 0;
+    min-width: 96px;
+    justify-content: center;
+}
+
+.company-review-page .profile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.company-review-page .profile-grid .is-wide { grid-column: 1 / -1; }
+
+.company-review-page .profile-section { padding: 22px 24px; min-width: 0; }
+
+.company-review-page .profile-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 15px;
+    margin-bottom: 17px;
+    border-bottom: 1px solid #e9e4ef;
+}
+
+.company-review-page .profile-section-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    color: #29243a;
+    font-size: 1.05rem;
+    font-weight: 750;
+}
+
+.company-review-page .profile-section-header h3::before {
+    content: "";
+    display: block;
+    width: 5px;
+    height: 22px;
+    border-radius: 5px;
+    background: var(--review-gold);
+}
+
+.company-review-page .profile-view-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 22px;
+}
+
+.company-review-page .profile-field-label { margin-bottom: 6px; color: #777184; font-size: .8rem; }
+
+.company-review-page .profile-field-value {
+    color: #29243a;
+    font-size: .93rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-field-value a { color: var(--review-purple); font-weight: 600; }
+
+.company-review-page .profile-about {
+    margin: 0;
+    color: #29243a;
+    font-size: .93rem;
+    line-height: 1.8;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-empty {
+    margin: 0;
+    padding: 14px;
+    border: 1px dashed #ded5ec;
+    border-radius: 12px;
+    background: #faf9fd;
+    color: #777184;
+    font-size: .87rem;
+}
+
+@media (max-width: 760px) {
+    .company-review-page .profile-grid,
+    .company-review-page .profile-view-grid { grid-template-columns: minmax(0, 1fr); }
+    .company-review-page .profile-identity { flex-wrap: wrap; padding: 20px; gap: 16px; }
+    .company-review-page .profile-avatar { flex-basis: 72px; width: 72px; height: 72px; }
+}
+
 @media (max-width: 700px) {
     .company-review-page {
         padding: 20px 14px 32px;
@@ -601,88 +791,69 @@ admin_header('Company Review', 'verification');
         &larr; Back to Company Verification
     </a>
 
-    <div class="company-heading">
-        <div class="company-icon">
-    <?php if (!empty($c['Logo'])): ?>
-        <img
-            src="../uploads/logos/<?= htmlspecialchars(
-                basename($c['Logo']),
-                ENT_QUOTES,
-                'UTF-8'
-            ) ?>"
-            alt="Company Logo"
-            class="company-logo"
-        >
-    <?php else: ?>
-        <?= icon('company', 28, 'icon-primary') ?>
-    <?php endif; ?>
-</div>
+    <!-- Identity (same design as the public company profile) -->
+    <?php
+    $reviewInitial = mb_strtoupper(mb_substr(trim((string)$c['CompanyName']) ?: 'C', 0, 1, 'UTF-8'), 'UTF-8');
+    $reviewWebsite = trim((string)($c['WebsiteURL'] ?? ''));
+    ?>
+    <section class="profile-identity">
+        <div class="profile-avatar <?= !empty($c['Logo']) ? 'has-logo' : '' ?>">
+            <?php if (!empty($c['Logo'])): ?>
+                <img
+                    src="../uploads/logos/<?= e(basename($c['Logo'])) ?>"
+                    alt="<?= e($c['CompanyName']) ?>"
+                    onerror="this.hidden=true;this.parentNode.classList.remove('has-logo')"
+                ><span class="avatar-initial"><?= e($reviewInitial) ?></span>
+            <?php else: ?>
+                <?= e($reviewInitial) ?>
+            <?php endif; ?>
+        </div>
 
-        <div style="min-width:0;">
+        <div class="profile-identity-details">
             <h2><?= e($c['CompanyName']) ?></h2>
-
-            <div class="heading-details">
-                <span class="status-badge <?= e($badge) ?>">
-                    <?= e($c['Status']) ?>
-                </span>
+            <div class="profile-subtitle">
+                <?= e($c['IndustrySector'] ?: 'Industry not specified') ?>
+                <?php if (!empty($c['Location'])): ?> &middot; <?= e($c['Location']) ?><?php endif; ?>
             </div>
         </div>
-    </div>
 
-    <div class="review-card">
-        <h3 class="section-heading">
-            <span class="section-icon">
-                <?= icon('company', 19, 'icon-primary') ?>
-            </span>
-            Company Details
-        </h3>
+        <span class="status-badge <?= e($badge) ?>"><?= e($c['Status']) ?></span>
+    </section>
 
-        <div class="company-info-grid">
+    <div class="profile-grid">
 
-            <div class="field-view">
-                <div class="field-label">Email</div>
-                <div class="field-value"><?= e($c['Email']) ?></div>
+        <!-- Company information -->
+        <section class="profile-section">
+            <div class="profile-section-header"><h3>Company Information</h3></div>
+            <div class="profile-view-grid">
+                <div><div class="profile-field-label">Industry Sector</div><div class="profile-field-value"><?= e($c['IndustrySector'] ?: '—') ?></div></div>
+                <div><div class="profile-field-label">Location</div><div class="profile-field-value"><?= e($c['Location'] ?: '—') ?></div></div>
+                <div style="grid-column:1/-1"><div class="profile-field-label">CR Number</div><div class="profile-field-value"><?= e($c['CrNumber'] ?: '—') ?></div></div>
             </div>
+        </section>
 
-            <div class="field-view">
-                <div class="field-label">Phone</div>
-                <div class="field-value"><?= e($c['Phone']) ?></div>
+        <!-- Contact -->
+        <section class="profile-section">
+            <div class="profile-section-header"><h3>Contact Information</h3></div>
+            <div class="profile-view-grid">
+                <div><div class="profile-field-label">Email</div><div class="profile-field-value"><?= e($c['Email'] ?: '—') ?></div></div>
+                <div><div class="profile-field-label">Phone</div><div class="profile-field-value"><?= e($c['Phone'] ?: '—') ?></div></div>
+                <div style="grid-column:1/-1"><div class="profile-field-label">Website</div><div class="profile-field-value">
+                    <?php if ($reviewWebsite !== ''): ?><a href="<?= e($reviewWebsite) ?>" target="_blank" rel="noopener noreferrer"><?= e($reviewWebsite) ?></a><?php else: ?>—<?php endif; ?>
+                </div></div>
             </div>
+        </section>
 
-            <div class="field-view">
-                <div class="field-label">CR Number</div>
-                <div class="field-value"><?= e($c['CrNumber']) ?></div>
-            </div>
+        <!-- About -->
+        <section class="profile-section is-wide">
+            <div class="profile-section-header"><h3>About the Company</h3></div>
+            <?php if (trim((string)($c['Description'] ?? '')) === ''): ?>
+                <p class="profile-empty">No company description has been added.</p>
+            <?php else: ?>
+                <p class="profile-about"><?= e($c['Description']) ?></p>
+            <?php endif; ?>
+        </section>
 
-            <div class="field-view">
-                <div class="field-label">Industry</div>
-                <div class="field-value"><?= e($c['IndustrySector']) ?></div>
-            </div>
-
-            <div class="field-view">
-                <div class="field-label">Location</div>
-                <div class="field-value"><?= e($c['Location']) ?></div>
-            </div>
-
-            <div class="field-view">
-                <div class="field-label">Website</div>
-                <div class="field-value">
-                    <?php if (!empty($c['WebsiteURL'])): ?>
-                        <?= e($c['WebsiteURL']) ?>
-                    <?php else: ?>
-                        &mdash;
-                    <?php endif; ?>
-                </div>
-            </div>
-
-        </div>
-
-        <div class="field-view description-field">
-            <div class="field-label">Description</div>
-            <div class="field-value">
-                <?= e($c['Description'] ?? '') ?: '&mdash;' ?>
-            </div>
-        </div>
     </div>
 
     <div class="review-card">
@@ -753,14 +924,14 @@ admin_header('Company Review', 'verification');
             <form method="post" class="decision-actions">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 
+                <!-- Approve opens a confirmation message first -->
                 <button
-                    type="submit"
+                    type="button"
                     class="review-btn review-btn-primary"
-                    name="action"
-                    value="approve"
+                    onclick="openConfirmModal('approveCompanyModal')"
                 >
-                    <?= icon('done', 17) ?>
                     Approve
+                    <?= icon('done', 17) ?>
                 </button>
 
                 <button
@@ -768,14 +939,15 @@ admin_header('Company Review', 'verification');
                     class="review-btn review-btn-danger"
                     id="rejectToggleBtn"
                 >
-                    <?= icon('error', 17) ?>
                     Reject
+                    <?= icon('error', 17) ?>
                 </button>
             </form>
 
             <form
                 method="post"
                 id="rejectForm"
+                novalidate
                 class="rejection-form <?= $error ? '' : 'hidden' ?>"
             >
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -794,16 +966,14 @@ admin_header('Company Review', 'verification');
                     required
                 ><?= e($reason) ?></textarea>
 
-                <?php if ($error): ?>
-                    <div class="form-error">
-                        <?= e($error) ?>
-                    </div>
-                <?php endif; ?>
+                <div class="form-error <?= $error ? '' : 'hidden' ?>" id="reasonError">
+                    <?= e($error ?: 'Please specify a reason for rejection.') ?>
+                </div>
 
                 <div class="form-actions">
                     <button type="submit" class="review-btn review-btn-danger">
-                        <?= icon('error', 16) ?>
                         Confirm Rejection
+                        <?= icon('error', 16) ?>
                     </button>
 
                     <button
@@ -819,6 +989,31 @@ admin_header('Company Review', 'verification');
     <?php endif; ?>
 
 </div>
+
+<?php if ($c['Status'] === 'Pending'): ?>
+    <?php
+    /* Confirmation messages in the middle of the screen (same as Delete Opportunity) */
+    confirm_modal([
+        'id'            => 'approveCompanyModal',
+        'title'         => 'Approve Company?',
+        'message'       => $c['CompanyName'] . ' will be verified and can start publishing opportunities. An approval email will be sent to the company.',
+        'confirm_label' => 'Yes, Approve',
+        'icon'          => 'check',
+        'variant'       => 'primary',
+        'fields'        => ['action' => 'approve'],
+    ]);
+
+    confirm_modal([
+        'id'            => 'rejectCompanyModal',
+        'title'         => 'Reject Company?',
+        'message'       => $c['CompanyName'] . ' will be rejected and will receive an email with your reason. This cannot be undone.',
+        'confirm_label' => 'Yes, Reject',
+        'icon'          => 'alert',
+        'fields'        => ['action' => 'reject'],
+        'id_field'      => 'reason',
+    ]);
+    ?>
+<?php endif; ?>
 
 <script>
 (function () {
@@ -839,8 +1034,27 @@ admin_header('Company Review', 'verification');
 
         rejectForm.classList.add('hidden');
     });
+
+    /* Confirm Rejection: check the reason, then ask for confirmation in the middle of the screen */
+    const reasonError = document.getElementById('reasonError');
+
+    rejectForm?.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+
+        const reason = (reasonField?.value || '').trim();
+
+        if (reason === '') {
+            reasonField?.classList.add('invalid');
+            reasonError?.classList.remove('hidden');
+            reasonField?.focus();
+            return;
+        }
+
+        reasonField?.classList.remove('invalid');
+        reasonError?.classList.add('hidden');
+        openConfirmModal('rejectCompanyModal', reason);
+    });
 })();
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

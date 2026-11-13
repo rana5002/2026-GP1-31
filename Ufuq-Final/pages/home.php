@@ -93,12 +93,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     $check->execute([$userId, $opportunityId]);
 
     if ($check->fetchColumn()) {
+        $favoriteResult = 'favorite_removed';
         $delete = $pdo->prepare("
             DELETE FROM favorite
             WHERE UserID = ? AND OpportunityID = ?
         ");
         $delete->execute([$userId, $opportunityId]);
     } else {
+        $favoriteResult = 'favorite_added';
         $insert = $pdo->prepare("
             INSERT INTO favorite (UserID, OpportunityID)
             VALUES (?, ?)
@@ -117,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         $returnTo = 'home.php';
     }
 
-    header('Location: ' . $returnTo . '?msg=favorite_updated');
+    header('Location: ' . $returnTo . '?msg=' . $favoriteResult);
     exit;
 }
 
@@ -216,7 +218,10 @@ $stmt = $pdo->prepare("
         o.OpportunityID,
         o.Title,
         o.ApplicationDeadLine,
-        o.OpportunityProvider
+        o.ApplicationOpenDate,
+        o.OpportunityProvider,
+        o.Location,
+        o.Status
     FROM favorite f
     JOIN opportunity o
         ON o.OpportunityID = f.OpportunityID
@@ -238,14 +243,9 @@ $deadlines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ---------- Opportunity preview ---------- */
 $stmt = $pdo->prepare("
-    SELECT
-        o.OpportunityID,
-        o.Title,
-        o.OpportunityProvider,
-        o.Type,
-        o.Location,
-        o.ApplicationDeadLine
+    SELECT o.*, cmp.Logo AS CompanyLogo, cmp.CompanyName AS PostingCompanyName
     FROM opportunity o
+    LEFT JOIN company cmp ON cmp.CompanyID = o.CreatedByCompanyID
     WHERE o.Status = 'Open'
       AND (
           o.ApplicationDeadLine IS NULL
@@ -830,31 +830,35 @@ user_header($me, 'Home', 'user-home');
     border-top: 1px solid #f0edf4;
 }
 
+/* Upcoming deadlines: one light box per opportunity (same as the company profile list) */
 .user-dashboard .deadline-list {
     display: flex;
     flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .user-dashboard .deadline-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 14px;
-    padding: 14px 2px;
-    border-bottom: 1px solid #f0edf4;
-}
-
-.user-dashboard .deadline-item:last-child {
-    border-bottom: none;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid #eee9f5;
+    border-radius: 12px;
+    background: #faf9fd;
 }
 
 .user-dashboard .deadline-title {
     display: block;
-    margin-bottom: 4px;
+    margin: 0;
     color: var(--user-text);
-    font-size: .91rem;
-    font-weight: 700;
-    line-height: 1.6;
+    font-size: .95rem;
+    font-weight: 750;
+    line-height: 1.55;
     overflow-wrap: anywhere;
     text-decoration: none;
 }
@@ -865,27 +869,44 @@ user_header($me, 'Home', 'user-home');
 }
 
 .user-dashboard .deadline-company {
-    color: var(--user-muted);
-    font-size: .81rem;
+    margin-top: 3px;
+    color: #5e596c;
+    font-size: .87rem;
+    overflow-wrap: anywhere;
 }
 
-.user-dashboard .deadline-date {
+.user-dashboard .deadline-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
     flex-shrink: 0;
-    padding: 7px 10px;
-    border: 1px solid #eee4d1;
-    border-radius: 10px;
+    min-width: 96px;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 30px;
+    font-size: .78rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.user-dashboard .deadline-status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.user-dashboard .deadline-status.badge-open { background: #e8f5ec; color: #24653c; border-color: #cfe8d9; }
+.user-dashboard .deadline-status.badge-upcoming { background: #f3f2f5; color: #5f5a6b; border-color: #e3e0e8; }
+.user-dashboard .deadline-status.badge-closed { background: #fff1f2; color: #9c263d; border-color: #f1d4d8; }
+
+/* Deadline badge: gold, same size and shape as the status badges */
+.user-dashboard .deadline-status.deadline-badge {
     background: #fbf6eb;
     color: #76531d;
-    font-size: .79rem;
-    font-weight: 750;
-    text-align: center;
-}
-
-.user-dashboard .deadline-date small {
-    display: block;
-    margin-bottom: 2px;
-    font-size: .7rem;
-    font-weight: 500;
+    border-color: #eee4d1;
 }
 
 .user-dashboard .notification-list {
@@ -1095,15 +1116,6 @@ user_header($me, 'Home', 'user-home');
         padding: 16px;
     }
 
-    .user-dashboard .deadline-item {
-        align-items: flex-start;
-    }
-
-    .user-dashboard .deadline-date {
-        max-width: 115px;
-        white-space: normal;
-    }
-
     .user-dashboard .card-heading-row {
         align-items: flex-start;
     }
@@ -1117,6 +1129,79 @@ user_header($me, 'Home', 'user-home');
         transition: none !important;
         scroll-behavior: auto !important;
     }
+}
+
+/* Toast: success message that slides down from the top, then disappears (same as Browse) */
+.browse-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfe3cc;
+    border-radius: 13px;
+    background: #eaf7ef;
+    color: #1f6b47;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(31,107,71,.16);
+    transform: translate(-50%, -150%);
+    opacity: 0;
+    transition: transform .35s ease, opacity .35s ease;
+}
+
+.browse-toast.is-shown {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.browse-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2f8a5c;
+    color: #fff;
+    font-size: .85rem;
+}
+
+.browse-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #1f6b47;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.browse-toast-close:hover {
+    background: rgba(31,107,71,.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .browse-toast { transition: none; }
+}
+
+/* Explore Opportunities: same card as Browse, 3 per row */
+.user-dashboard #opportunities .opportunity-grid {
+    gap: 18px;
 }
 
 /* ===== Recommended cards (same look as the Browse cards) ===== */
@@ -1379,10 +1464,12 @@ user_header($me, 'Home', 'user-home');
         $message = $_GET['msg'] ?? '';
         ?>
 
-        <?php if ($message === 'favorite_updated'): ?>
-            <div class="dashboard-notice" role="status">
-                <span aria-hidden="true">✓</span>
-                <span>Your favorites have been updated.</span>
+        <?php if (in_array($message, ['favorite_added', 'favorite_removed', 'favorite_updated'], true)): ?>
+            <!-- Toast: slides down from the top, then disappears (same as Browse) -->
+            <div class="browse-toast" id="browseToast" role="status" aria-live="polite">
+                <span class="browse-toast-icon" aria-hidden="true">✓</span>
+                <span><?= $message === 'favorite_added' ? 'Added to your favorites.' : 'Removed from your favorites.' ?></span>
+                <button type="button" class="browse-toast-close" aria-label="Close">&times;</button>
             </div>
         <?php elseif ($message === 'unavailable'): ?>
             <div class="dashboard-notice notice-warning" role="status">
@@ -1603,11 +1690,17 @@ user_header($me, 'Home', 'user-home');
 
                 <?php if ($deadlines): ?>
 
-                    <div class="deadline-list">
+                    <ul class="deadline-list">
 
-                        <?php foreach ($deadlines as $d): ?>
+                        <?php foreach ($deadlines as $d):
+                            $dState = home_state($d);
+                            $dClass = $dState === 'Open'
+                                ? 'badge-open'
+                                : ($dState === 'Upcoming' ? 'badge-upcoming' : 'badge-closed');
+                            $dLocation = trim((string)($d['Location'] ?? ''));
+                        ?>
 
-                            <div class="deadline-item">
+                            <li class="deadline-item">
 
                                 <div style="min-width:0;">
                                     <a class="deadline-title"
@@ -1617,19 +1710,21 @@ user_header($me, 'Home', 'user-home');
 
                                     <div class="deadline-company">
                                         <?= e(dashboard_company_name($d)) ?>
+                                        &middot;
+                                        <?= e($dLocation !== '' ? $dLocation : 'Location not specified') ?>
                                     </div>
                                 </div>
 
-                                <div class="deadline-date">
-                                    <small>Deadline</small>
-                                    <?= e(dashboard_date($d['ApplicationDeadLine'])) ?>
-                                </div>
+                                <!-- Deadline inside the badge (same shape as the status badge) -->
+                                <span class="deadline-status deadline-badge">
+                                    Deadline: <?= e(dashboard_date($d['ApplicationDeadLine'])) ?>
+                                </span>
 
-                            </div>
+                            </li>
 
                         <?php endforeach; ?>
 
-                    </div>
+                    </ul>
 
                 <?php else: ?>
 
@@ -1709,88 +1804,88 @@ user_header($me, 'Home', 'user-home');
                 <div class="opportunity-grid">
 
                     <?php foreach ($opportunities as $o): ?>
-
                         <?php
-                        $oppId = (int)$o['OpportunityID'];
+                        $oppId      = (int)$o['OpportunityID'];
                         $isFavorite = in_array($oppId, $favoriteIds, true);
-                        $companyName = dashboard_company_name($o);
+                        $provider   = dashboard_company_name($o);
+
+                        // Avatar: posting company's logo, otherwise the first letter of the name (same as Browse).
+                        $avatarName = $provider;
+                        $avatarLogo = '';
+                        if (!empty($o['CreatedByCompanyID'])) {
+                            $logo = trim((string)($o['CompanyLogo'] ?? ''));
+                            if ($logo !== '') {
+                                $avatarLogo = preg_match('~^https?://~i', $logo) ? $logo : '../' . ltrim($logo, '/');
+                            }
+                            $postingName = trim((string)($o['PostingCompanyName'] ?? ''));
+                            if ($postingName !== '') {
+                                $avatarName = $postingName;
+                            }
+                        }
+
+                        $opType     = trim((string)($o['Type'] ?? 'Opportunity'));
+                        $opLocation = trim((string)($o['Location'] ?? ''));
+                        if ($opLocation === '') {
+                            $opLocation = 'Location not specified';
+                        }
+                        $opDuration = home_duration($o['StartDate'] ?? null, $o['EndDate'] ?? null);
+
+                        $state      = home_state($o);
+                        $stateClass = $state === 'Open'
+                            ? 'badge-open'
+                            : ($state === 'Upcoming' ? 'badge-upcoming' : 'badge-closed');
                         ?>
 
-                        <article class="opportunity-card">
+                        <article class="reco-card">
 
-                            <div class="opportunity-top">
-
-                                <div class="company-info">
-
-                                    <div class="company-logo"
-                                         aria-hidden="true">
-                                        <?= e(mb_strtoupper(
-                                            mb_substr($companyName, 0, 1, 'UTF-8'),
-                                            'UTF-8'
-                                        )) ?>
+                            <div class="reco-top">
+                                <div class="reco-info">
+                                    <div class="reco-logo" aria-hidden="true">
+                                        <?php if ($avatarLogo !== ''): ?>
+                                            <img src="<?= e($avatarLogo) ?>" alt="">
+                                        <?php else: ?>
+                                            <?= e(mb_strtoupper(mb_substr($avatarName, 0, 1, 'UTF-8'), 'UTF-8')) ?>
+                                        <?php endif; ?>
                                     </div>
 
-                                    <div class="company-details">
-                                        <h3 class="opportunity-title">
-                                            <?= e($o['Title']) ?>
-                                        </h3>
-
-                                        <div class="company-name">
-                                            <?= e($companyName) ?>
-                                        </div>
-                                    </div>
-
+                                    <h3 class="reco-title">
+                                        <a href="opportunity-detail.php?id=<?= $oppId ?>"><?= e($o['Title']) ?></a>
+                                    </h3>
                                 </div>
 
-                                <form method="post" class="favorite-form">
-
-                                    <input type="hidden" name="csrf"
-                                           value="<?= e(csrf_token()) ?>">
-
-                                    <input type="hidden" name="action"
-                                           value="toggle_favorite">
-
-                                    <input type="hidden" name="opportunity_id"
-                                           value="<?= $oppId ?>">
-
-                                    <input type="hidden" name="return_to"
-                                           value="home.php">
+                                <form method="post" class="reco-fav-form">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="toggle_favorite">
+                                    <input type="hidden" name="opportunity_id" value="<?= $oppId ?>">
+                                    <input type="hidden" name="return_to" value="home.php">
 
                                     <button type="submit"
-                                            class="favorite-button <?= $isFavorite ? 'is-favorite' : '' ?>"
+                                            class="reco-fav <?= $isFavorite ? 'is-favorite' : '' ?>"
                                             aria-label="<?= $isFavorite ? 'Remove from favorites' : 'Add to favorites' ?>"
                                             title="<?= $isFavorite ? 'Remove from favorites' : 'Save to favorites' ?>">
-
-                                        <span aria-hidden="true">
-                                            <?= $isFavorite ? '♥' : '♡' ?>
-                                        </span>
-
+                                        <span aria-hidden="true"><?= $isFavorite ? '♥' : '♡' ?></span>
                                     </button>
                                 </form>
-
                             </div>
 
-                            <div class="opportunity-meta">
+                            <div class="reco-company"><?= e($provider) ?></div>
 
-                                <span class="badge <?= ($o['Type'] ?? '') === 'Course' ? 'badge-course' : 'badge-program' ?>">
-                                    <?= e($o['Type'] ?? 'Opportunity') ?>
-                                </span>
-
-                                <span>
-                                    <?= e($o['Location'] ?: 'Location not specified') ?>
-                                </span>
-
+                            <div class="reco-meta">
+                                <span class="reco-type"><?= e($opType) ?></span>
+                                <span><span aria-hidden="true">⌖</span> <?= e($opLocation) ?></span>
+                                <span><span aria-hidden="true">◷</span> <?= e($opDuration) ?></span>
                             </div>
 
-                            <div class="opportunity-footer">
-                                <a class="btn btn-outline btn-sm"
+                            <div class="reco-footer">
+                                <span class="reco-status <?= $stateClass ?>"><?= e($state) ?></span>
+
+                                <a class="btn btn-primary btn-sm"
                                    href="opportunity-detail.php?id=<?= $oppId ?>">
-                                    View Details
+                                    View Details <span aria-hidden="true">&rarr;</span>
                                 </a>
                             </div>
 
                         </article>
-
                     <?php endforeach; ?>
 
                 </div>
@@ -1814,4 +1909,33 @@ user_header($me, 'Home', 'user-home');
 
     </div>
 </div>
+<script>
+/* Toast: slides down, stays for a few seconds, then slides up and is removed (same as Browse). */
+(function () {
+    const toast = document.getElementById('browseToast');
+    if (!toast) return;
+
+    document.body.appendChild(toast);
+
+    /* Remove ?msg= from the address so a refresh does not show the message again. */
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('msg')) {
+        url.searchParams.delete('msg');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+
+    function hide() {
+        toast.classList.remove('is-shown');
+        setTimeout(function () { toast.remove(); }, 400);
+    }
+
+    requestAnimationFrame(function () { toast.classList.add('is-shown'); });
+    const timer = setTimeout(hide, 3500);
+    toast.querySelector('.browse-toast-close').addEventListener('click', function () {
+        clearTimeout(timer);
+        hide();
+    });
+})();
+</script>
+
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

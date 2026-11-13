@@ -41,7 +41,14 @@ function user_header(array $me, string $title, string $active): void {
         'history'     => ['Application History', 'application-history.php'],
     ];
 
-    /* Notifications are "Coming Soon", so the unread count badge is not shown for now. */
+    /* IsRead is stored on the usernotification relationship table. */
+    $st = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM usernotification
+         WHERE UserID = ? AND IsRead = 0'
+    );
+    $st->execute([$me['UserID']]);
+    $unread = (int) $st->fetchColumn();
 
     $firstName = $me['FirstName'] ?? '';
     $lastName  = $me['LastName'] ?? '';
@@ -134,11 +141,13 @@ function user_header(array $me, string $title, string $active): void {
                 style="padding:8px;position:relative;"
             >
                 <?= icon('notification') ?>
-            </a>
 
-            <!-- Log out -->
-            <a href="logout.php" class="btn btn-ghost btn-sm">
-                Log Out
+                <?php if ($unread > 0): ?>
+                    <span
+                        aria-label="<?= $unread ?> unread notifications"
+                        style="position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--color-danger);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;"
+                    ><?= $unread > 99 ? '99+' : $unread ?></span>
+                <?php endif; ?>
             </a>
 
             <!-- User profile -->
@@ -157,6 +166,11 @@ function user_header(array $me, string $title, string $active): void {
                         style="width:38px;height:38px;font-size:.9rem;"
                     ><?= e($initials) ?></span>
                 <?php endif; ?>
+            </a>
+
+            <!-- Log out -->
+            <a href="logout.php" class="btn btn-ghost btn-sm">
+                Log Out
             </a>
 
             <!-- Mobile menu -->

@@ -12,7 +12,8 @@
  *       'title'         => 'Delete Opportunity?',
  *       'message'       => 'This opportunity will be permanently deleted. This cannot be undone.',
  *       'confirm_label' => 'Yes, Delete',
- *       'icon'          => 'trash',              // trash | lock | alert
+ *       'icon'          => 'trash',              // trash | lock | alert | check
+ *       'variant'       => 'danger',             // danger (red, default) | primary (purple, for positive actions)
  *       'fields'        => ['action' => 'delete_opportunity', 'tab' => 'opportunities'],
  *       'id_field'      => 'opportunity_id',     // filled when the modal is opened
  *   ]);
@@ -35,6 +36,7 @@ if (!function_exists('confirm_modal')) {
             'trash' => '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
             'lock'  => '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
             'alert' => '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/>',
+            'check' => '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>',
         ];
         $paths = $icons[$name] ?? $icons['alert'];
         return '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $paths . '</svg>';
@@ -57,6 +59,11 @@ if (!function_exists('confirm_modal')) {
 .ufuq-confirm-actions button{min-width:120px;min-height:42px}
 .ufuq-confirm-submit{border:none;border-radius:8px;padding:10px 16px;background:#b42318;color:#fff;font-weight:700;cursor:pointer}
 .ufuq-confirm-submit:hover{background:#912018}
+/* Purple variant for positive actions (e.g. Approve) */
+.ufuq-confirm-overlay.is-primary .ufuq-confirm-icon{background:#f0ebf8;color:#39265f}
+.ufuq-confirm-overlay.is-primary .ufuq-confirm-submit{background:#39265f}
+.ufuq-confirm-overlay.is-primary .ufuq-confirm-submit:hover{background:#281a46}
+.ufuq-confirm-overlay.is-primary .ufuq-confirm-box.is-attention{box-shadow:0 0 0 4px rgba(57,38,95,.18),0 24px 60px rgba(40,26,70,.22)}
 /* Focus effect: shown when the user clicks outside / presses Esc before choosing */
 .ufuq-confirm-box.is-attention{animation:ufuqConfirmShake .45s ease both}
 .ufuq-confirm-box.is-attention{box-shadow:0 0 0 4px rgba(180,35,24,.18),0 24px 60px rgba(40,26,70,.22)}
@@ -132,8 +139,9 @@ body.ufuq-confirm-lock{overflow:hidden}
         $icon    = (string)($o['icon'] ?? 'alert');
         $fields  = (array)($o['fields'] ?? []);
         $idField = $o['id_field'] ?? null;
+        $variant = ($o['variant'] ?? 'danger') === 'primary' ? ' is-primary' : '';
         ?>
-<div id="<?= e($id) ?>" class="ufuq-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="<?= e($id) ?>Title">
+<div id="<?= e($id) ?>" class="ufuq-confirm-overlay<?= $variant ?>" role="dialog" aria-modal="true" aria-labelledby="<?= e($id) ?>Title">
   <div class="ufuq-confirm-box">
     <div class="ufuq-confirm-icon"><?= confirm_modal_icon($icon) ?></div>
     <h2 id="<?= e($id) ?>Title"><?= e($title) ?></h2>
