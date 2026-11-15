@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/user-layout.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/recommendations.php';
 
 /* ---------- Database connection ---------- */
 if (!isset($pdo) && isset($db)) {
@@ -19,6 +20,19 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
 require_login('User');
 
 $uid = (int) ($_SESSION['user_id'] ?? 0);
+
+
+/* Remember the page the student came from, for the Back link. */
+$ref = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+if (
+    $_SERVER['REQUEST_METHOD'] === 'GET'
+    && $ref !== ''
+    && strpos($ref, (string) ($_SERVER['HTTP_HOST'] ?? 'x')) !== false
+    && strpos($ref, 'opportunity-detail.php') === false
+) {
+    $_SESSION['detail_back'] = $ref;
+}
+
 
 /* ---------- Validate opportunity ID ---------- */
 $opportunityId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
@@ -180,6 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
                 $_SESSION['detail_message'] =
                     'Added to your favorites.';
             }
+             recommender_reload(); 
         }
 
         /* Apply for an opportunity */
@@ -1820,9 +1835,9 @@ user_header($me, 'Opportunity Details', 'browse');
 <div class="detail-page">
     <div class="detail-container">
 
-        <a href="<?= htmlspecialchars((string)($_SESSION['browse_back'] ?? 'browse.php'), ENT_QUOTES, 'UTF-8') ?>" class="detail-back">
+                <a href="<?= htmlspecialchars((string) ($_SESSION['detail_back'] ?? 'browse.php'), ENT_QUOTES, 'UTF-8') ?>" class="detail-back">
             <span aria-hidden="true">&larr;</span>
-            Back to Browse
+            Back
         </a>
 
         <?php if (!$opp): ?>
