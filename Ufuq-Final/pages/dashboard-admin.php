@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
 require __DIR__ . '/auth.php';
+require_once __DIR__ . '/../includes/confirm-modal.php';
 
 require_login('Administrator');
 $adminId = (int)$_SESSION['user_id'];
@@ -1525,30 +1526,13 @@ a.mini-card:hover {
                                                     <?= icon('edit') ?>
                                                 </a>
 
-                                                <form method="post"
-                                                      onsubmit="return confirm('Delete this opportunity? This cannot be undone.');"
-                                                      style="margin:0;">
-
-                                                    <input type="hidden"
-                                                           name="csrf"
-                                                           value="<?= csrf_token() ?>">
-
-                                                    <input type="hidden"
-                                                           name="action"
-                                                           value="delete">
-
-                                                    <input type="hidden"
-                                                           name="id"
-                                                           value="<?= (int)$o['OpportunityID'] ?>">
-
-                                                    <button type="submit"
-                                                            class="btn btn-ghost btn-sm"
-                                                            title="Delete"
-                                                            aria-label="Delete opportunity">
-                                                        <?= icon('delete', 18, 'icon-danger') ?>
-                                                    </button>
-
-                                                </form>
+                                                <button type="button"
+                                                        class="btn btn-ghost btn-sm"
+                                                        title="Delete"
+                                                        aria-label="Delete opportunity"
+                                                        onclick="openConfirmModal('deleteAdminOppModal', <?= (int)$o['OpportunityID'] ?>)">
+                                                    <?= icon('delete', 18, 'icon-danger') ?>
+                                                </button>
 
                                             </div>
                                         </td>
@@ -1566,6 +1550,19 @@ a.mini-card:hover {
         <?php endif; ?>
 
     </div>
+
+    <!-- Shared confirmation modal, matching the Company dashboard delete modal. -->
+    <?php
+    confirm_modal([
+        'id'            => 'deleteAdminOppModal',
+        'title'         => 'Delete Opportunity?',
+        'message'       => 'This opportunity will be permanently deleted. This cannot be undone.',
+        'confirm_label' => 'Yes, Delete',
+        'icon'          => 'trash',
+        'fields'        => ['action' => 'delete'],
+        'id_field'      => 'id',
+    ]);
+    ?>
 </div>
 
 <script>

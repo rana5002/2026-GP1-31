@@ -4,6 +4,7 @@ ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../includes/confirm-modal.php';
 require_once __DIR__ . '/user-layout.php';
 require_once __DIR__ . '/auth.php';
 
@@ -138,7 +139,7 @@ if ($opp && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
 /* ---------- Handle POST actions ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
-    $submittedToken = (string) ($_POST['csrf_token'] ?? '');
+    $submittedToken = (string) ($_POST['csrf_token'] ?? $_POST['csrf'] ?? '');
     $sessionToken = (string) ($_SESSION['csrf_token'] ?? '');
 
     if (
@@ -218,69 +219,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
             }
         }
 
-        /* Submit a review */
-        elseif ($action === 'submit_review') {
-            $rating = filter_input(
-                INPUT_POST,
-                'rating',
-                FILTER_VALIDATE_INT
-            );
+        /* Add, update, or delete the current user's review */
+        elseif (in_array($action, ['submit_review', 'update_review', 'delete_review'], true)) {
 
-            $reviewText = trim((string) ($_POST['review_text'] ?? ''));
-            $declared = ($_POST['completion_declaration'] ?? '') === '1';
-
-            if (
-                $rating === false
-                || $rating === null
-                || $rating < 1
-                || $rating > 5
-                || $reviewText === ''
-            ) {
-                $_SESSION['detail_message'] =
-                    'Please complete all review fields: select a star rating and write your review.';
-            } elseif (!$declared) {
-                $_SESSION['detail_message'] =
-                    'Please confirm that you have completed this training opportunity or course.';
-            } elseif (mb_strlen($reviewText, 'UTF-8') > 500) {
-                $_SESSION['detail_message'] =
-                    'Your review must not exceed 500 characters.';
-            } else {
-                $check = $pdo->prepare(
-                    'SELECT 1
-                     FROM review
-                     WHERE UserID = ? AND OpportunityID = ?
-                     LIMIT 1'
+            // Delete is handled separately and is restricted to the signed-in user.
+            if ($action === 'delete_review') {
+                $deleteStmt = $pdo->prepare(
+                    'DELETE FROM review
+                     WHERE UserID = ? AND OpportunityID = ?'
                 );
-                $check->execute([$uid, $opportunityId]);
+                $deleteStmt->execute([$uid, $opportunityId]);
 
-                if ($check->fetchColumn()) {
+                $_SESSION['detail_message'] = $deleteStmt->rowCount() > 0
+                    ? 'Your review has been deleted successfully.'
+                    : 'No review was found to delete.';
+
+            } else {
+                $rating = filter_input(INPUT_POST, 'rating', FILTER_VALIDATE_INT);
+                $reviewText = trim((string) ($_POST['review_text'] ?? ''));
+                $declared = ($_POST['completion_declaration'] ?? '') === '1';
+
+                if (
+                    $rating === false
+                    || $rating === null
+                    || $rating < 1
+                    || $rating > 5
+                    || $reviewText === ''
+                ) {
                     $_SESSION['detail_message'] =
-                        'You have already reviewed this opportunity.';
+                        'Please complete all review fields: select a star rating and write your review.';
+
+                } elseif (!$declared) {
+                    $_SESSION['detail_message'] =
+                        'Please confirm that you have completed this training opportunity or course.';
+
+                } elseif (mb_strlen($reviewText, 'UTF-8') > 500) {
+                    $_SESSION['detail_message'] =
+                        'Your review must not exceed 500 characters.';
+
                 } else {
-                    $stmt = $pdo->prepare(
-                        'INSERT INTO review
-                         (Rating, ReviewText, UserID, OpportunityID)
-                         VALUES (?, ?, ?, ?)'
+                    $check = $pdo->prepare(
+                        'SELECT 1
+                         FROM review
+                         WHERE UserID = ? AND OpportunityID = ?
+                         LIMIT 1'
                     );
+                    $check->execute([$uid, $opportunityId]);
+                    $reviewExists = (bool) $check->fetchColumn();
 
-                    $stmt->execute([
-                        $rating,
-                        $reviewText,
-                        $uid,
-                        $opportunityId
-                    ]);
+                    if ($action === 'update_review') {
+                        if (!$reviewExists) {
+                            $_SESSION['detail_message'] =
+                                'Review not found. Please refresh the page and try again.';
+                        } else {
+                            $updateStmt = $pdo->prepare(
+                                'UPDATE review
+                                 SET Rating = ?, ReviewText = ?
+                                 WHERE UserID = ? AND OpportunityID = ?'
+                            );
+                            $updateStmt->execute([
+                                $rating,
+                                $reviewText,
+                                $uid,
+                                $opportunityId
+                            ]);
 
-                    $verifyCheck = $pdo->prepare(
-                        "SELECT 1 FROM application
-                         WHERE UserID = ? AND OpportunityID = ? AND ApplicationStatus = 'Accepted'
-                         LIMIT 1"
-                    );
-                    $verifyCheck->execute([$uid, $opportunityId]);
-                    $hasStages = !empty($opp['ScreeningDate']) || !empty($opp['InterviewDate']);
+                            $_SESSION['detail_message'] =
+                                'Your review has been updated successfully.';
+                        }
 
-                    $_SESSION['detail_message'] = ($verifyCheck->fetchColumn() && !$hasStages)
-                        ? 'Your review has been published with a Verified Participant badge.'
-                        : 'Your review has been published.';
+                    } elseif ($reviewExists) {
+                        $_SESSION['detail_message'] =
+                            'You have already reviewed this opportunity.';
+
+                    } else {
+                        $insertStmt = $pdo->prepare(
+                            'INSERT INTO review
+                             (Rating, ReviewText, UserID, OpportunityID)
+                             VALUES (?, ?, ?, ?)'
+                        );
+                        $insertStmt->execute([
+                            $rating,
+                            $reviewText,
+                            $uid,
+                            $opportunityId
+                        ]);
+
+                        $verifyCheck = $pdo->prepare(
+                            "SELECT 1 FROM application
+                             WHERE UserID = ?
+                               AND OpportunityID = ?
+                               AND ApplicationStatus = 'Accepted'
+                             LIMIT 1"
+                        );
+                        $verifyCheck->execute([$uid, $opportunityId]);
+
+                        $hasStages = !empty($opp['ScreeningDate'])
+                            || !empty($opp['InterviewDate']);
+
+                        $_SESSION['detail_message'] =
+                            ($verifyCheck->fetchColumn() && !$hasStages)
+                            ? 'Your review has been published with a Verified Participant badge.'
+                            : 'Your review has been published.';
+                    }
                 }
             }
         }
@@ -378,7 +419,7 @@ if ($opp) {
 $reviews = [];
 $averageRating = null;
 $myReview = false;
-
+$myReviewData = null;
 if ($opp) {
     $reviewStmt = $pdo->prepare(
         "SELECT r.Rating, r.ReviewText, r.CreatedAt,
@@ -406,11 +447,12 @@ if ($opp) {
     }
 
     foreach ($reviews as $review) {
-        if ((int) $review['UserID'] === $uid) {
-            $myReview = true;
-            break;
-        }
+    if ((int) $review['UserID'] === $uid) {
+        $myReview = true;
+        $myReviewData = $review;
+        break;
     }
+}
 }
 
 /* ---------- Opportunity timeline (columns of `opportunity`) ----------
@@ -525,6 +567,8 @@ $successMessages = [
     'Your review has been published with a Verified Participant badge.',
     'Your application has been submitted successfully.',
     'Added to your favorites.',
+    'Your review has been updated successfully.',
+    'Your review has been deleted successfully.',
     'Removed from your favorites.'
 ];
 
@@ -1417,14 +1461,131 @@ user_header($me, 'Opportunity Details', 'browse');
             resize: vertical;
         }
 
-        /* ---------- Individual Reviews ---------- */
-        .review-item {
-            padding: 17px 0;
-            border-bottom: 1px solid var(--detail-border);
+        /* ---------- Review form and list polish ---------- */
+        .review-form-panel {
+            margin-top: 22px;
+            padding: 22px;
+            border: 1px solid #ece6f2;
+            border-radius: 14px;
+            background: #fcfbfe;
         }
 
-        .review-item:last-child {
-            border-bottom: none;
+        .review-form-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .review-form-heading h4 {
+            margin: 0 0 5px;
+            color: var(--detail-text);
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .review-form-heading p {
+            margin: 0;
+            color: var(--detail-muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .review-status-badge,
+        .my-review-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 9px;
+            border: 1px solid #e4d9f3;
+            border-radius: 999px;
+            background: #f2edfa;
+            color: var(--detail-purple);
+            font-size: 11px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .required-mark {
+            color: var(--detail-red);
+        }
+
+        .review-character-note {
+            margin-top: 6px;
+            color: var(--detail-muted);
+            font-size: 11px;
+        }
+
+        .review-form-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .delete-review-form {
+            margin-top: 10px;
+        }
+
+        .detail-page .btn-delete-review {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 145px;
+            min-height: 42px;
+            padding: 10px 8px;
+            border: 1px solid #efc7cc;
+            border-radius: 10px;
+            background: #fff7f7;
+            color: #a52b3a;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 750;
+            line-height: 1.4;
+            white-space: nowrap;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition:
+                background 0.2s ease,
+                color 0.2s ease,
+                border-color 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .detail-page .btn-delete-review:hover {
+            background: #ffeded;
+            border-color: #e9aeb5;
+            color: #8f1f2d;
+            transform: translateY(-1px);
+        }
+
+        .detail-page .btn-delete-review:focus-visible {
+            outline: 3px solid rgba(73, 44, 108, .22);
+            outline-offset: 2px;
+        }
+
+        .review-list {
+            display: grid;
+            gap: 12px;
+            width: 100%;
+        }
+
+        /* ---------- Individual Reviews ---------- */
+        .review-item {
+            min-width: 0;
+            padding: 17px 18px;
+            border: 1px solid var(--detail-border);
+            border-radius: 12px;
+            background: #ffffff;
+        }
+
+        .review-author-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
         }
 
         .review-item-header {
@@ -1507,6 +1668,14 @@ user_header($me, 'Opportunity Details', 'browse');
             .detail-page .card {
                 padding: 20px;
                 border-radius: 15px;
+            }
+
+            .review-form-panel {
+                padding: 16px;
+            }
+
+            .review-form-heading {
+                flex-direction: column;
             }
 
             .detail-page .grid-2 {
@@ -1795,6 +1964,8 @@ user_header($me, 'Opportunity Details', 'browse');
                 transition-duration: 0.01ms !important;
             }
         }
+
+
     </style>
 
 <!-- Page banner (same banner as Home / Browse) -->
@@ -1892,10 +2063,10 @@ user_header($me, 'Opportunity Details', 'browse');
                         >
 
                         <input
-                            type="hidden"
-                            name="action"
-                            value="toggle_favorite"
-                        >
+    type="hidden"
+    name="action"
+    value="<?= $myReviewData ? 'update_review' : 'submit_review' ?>"
+>
 
                         <button type="submit" class="btn btn-ghost">
                             <span class="favorite-heart" aria-hidden="true">
@@ -2262,12 +2433,8 @@ user_header($me, 'Opportunity Details', 'browse');
 
                     <div class="average-rating">
                         <span class="average-rating-star" aria-hidden="true">★</span>
-
                         <?php if ($averageRating !== null): ?>
-                            <span>
-                                <?= number_format($averageRating, 1) ?> / 5
-                            </span>
-
+                            <span><?= number_format($averageRating, 1) ?> / 5</span>
                             <span class="text-muted">
                                 (<?= count($reviews) ?>
                                 <?= count($reviews) === 1 ? 'review' : 'reviews' ?>)
@@ -2278,224 +2445,206 @@ user_header($me, 'Opportunity Details', 'browse');
                     </div>
                 </div>
 
-                <!-- Review Form -->
-                <div style="margin-top:24px;">
+                <!-- Add / Edit Review Form -->
+                <div class="review-form-panel">
+                    <div class="review-form-heading">
+                        <div>
+                            <h4><?= $myReviewData ? 'Edit Your Review' : 'Share Your Experience' ?></h4>
+                            <p>
+                                <?= $myReviewData
+                                    ? 'Update your rating or change what you wrote.'
+                                    : 'Your feedback helps others make informed decisions.' ?>
+                            </p>
+                        </div>
+                        <?php if ($myReviewData): ?>
+                            <span class="review-status-badge">Your review</span>
+                        <?php endif; ?>
+                    </div>
 
-                    <?php if ($myReview): ?>
+                    <form
+                        method="POST"
+                        action="opportunity-detail.php?id=<?= (int) $opportunityId ?>#companyReviewsCard"
+                        id="reviewForm"
+                        novalidate
+                    >
+                        <input type="hidden" name="csrf_token"
+                               value="<?= detail_h($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action"
+                               value="<?= $myReviewData ? 'update_review' : 'submit_review' ?>">
+                        <input type="hidden" name="rating" id="rating"
+                               value="<?= $myReviewData ? (int) $myReviewData['Rating'] : 0 ?>">
 
-                        <p class="review-empty">
-                            You have already reviewed this opportunity.
-                            Thank you for sharing your experience.
-                        </p>
+                        <div class="form-group">
+                            <label>
+                                Your Rating <span class="required-mark">*</span>
+                            </label>
 
-                    <?php else: ?>
+                            <div class="rating-control">
+                                <div
+                                    id="starRating"
+                                    class="rating-star-row"
+                                    role="radiogroup"
+                                    aria-label="Choose a rating from 1 to 5"
+                                >
+                                    <?php for ($i = 1; $i <= 5; $i++): ?>
+                                        <button
+                                            type="button"
+                                            class="rating-star"
+                                            data-rating="<?= $i ?>"
+                                            role="radio"
+                                            aria-checked="<?= ($myReviewData && (int)$myReviewData['Rating'] === $i) ? 'true' : 'false' ?>"
+                                            aria-label="<?= $i ?> stars"
+                                        >★</button>
+                                    <?php endfor; ?>
 
-                        <form
-                            method="POST"
-                            action="opportunity-detail.php?id=<?= (int) $opportunityId ?>"
-                            id="reviewForm"
-                            novalidate
-                        >
-                            <input
-                                type="hidden"
-                                name="csrf_token"
-                                value="<?= detail_h($_SESSION['csrf_token']) ?>"
-                            >
-
-                            <input
-                                type="hidden"
-                                name="action"
-                                value="submit_review"
-                            >
-
-                            <input
-                                type="hidden"
-                                name="rating"
-                                id="rating"
-                                value="0"
-                            >
-
-                            <div class="form-group">
-
-                                <label>
-                                    Your Rating
-                                    <span style="color:#c74755;">*</span>
-                                </label>
-
-                                <div class="rating-control">
-
-                                    <div
-                                        id="starRating"
-                                        class="rating-star-row"
-                                        role="radiogroup"
-                                        aria-label="Choose a rating from 1 to 5"
-                                    >
-                                        <?php for ($i = 1; $i <= 5; $i++): ?>
-                                            <button
-                                                type="button"
-                                                class="rating-star"
-                                                data-rating="<?= $i ?>"
-                                                role="radio"
-                                                aria-checked="false"
-                                                aria-label="<?= $i ?> stars"
-                                            >★</button>
-                                        <?php endfor; ?>
-
-                                        <span
-                                            id="ratingText"
-                                            class="rating-text"
-                                        >
-                                            Select a rating
-                                        </span>
-                                    </div>
-
-                                    <span
-                                        id="ratingError"
-                                        class="rating-error"
-                                        role="alert"
-                                        aria-live="polite"
-                                    >
-                                        Please select a rating from 1 to 5.
+                                    <span id="ratingText" class="rating-text">
+                                        <?= $myReviewData
+                                            ? (int)$myReviewData['Rating'] . ' out of 5'
+                                            : 'Select a rating' ?>
                                     </span>
-
                                 </div>
+
+                                <span id="ratingError" class="rating-error"
+                                      role="alert" aria-live="polite">
+                                    Please select a rating from 1 to 5.
+                                </span>
                             </div>
+                        </div>
 
-                            <div class="form-group">
-                                <label for="review_text">
-                                    Share Your Experience
-                                    <span style="color:#c74755;">*</span>
-                                </label>
+                        <div class="form-group">
+                            <label for="review_text">
+                                Share Your Experience <span class="required-mark">*</span>
+                            </label>
+                            <textarea
+                                class="form-control"
+                                name="review_text"
+                                id="review_text"
+                                rows="4"
+                                maxlength="500"
+                                placeholder="What did you think about this opportunity?"
+                                required
+                            ><?= detail_h($myReviewData['ReviewText'] ?? '') ?></textarea>
 
-                                <textarea
-                                    class="form-control"
-                                    name="review_text"
-                                    id="review_text"
-                                    rows="4"
-                                    maxlength="500"
-                                    placeholder="What did you think about this opportunity?"
+                            <span id="reviewTextError" class="field-error" role="alert">
+                                Please write your review.
+                            </span>
+                            <div class="review-character-note">
+                                Maximum 500 characters.
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="declaration-check">
+                                <input
+                                    type="checkbox"
+                                    name="completion_declaration"
+                                    id="completionDeclaration"
+                                    value="1"
                                     required
-                                ></textarea>
-
-                                <span id="reviewTextError" class="field-error" role="alert">
-                                    Please write your review.
+                                    <?= $myReviewData ? 'checked' : '' ?>
+                                >
+                                <span>
+                                    I confirm that I have completed this training opportunity or course.
+                                    <span class="required-mark">*</span>
                                 </span>
+                            </label>
+                            <span id="declarationError" class="field-error" role="alert">
+                                Please confirm that you have completed this opportunity.
+                            </span>
+                        </div>
 
-                                <p class="text-muted"
-                                   style="margin:6px 0 0; font-size:11px;">
-                                    Maximum 500 characters.
-                                </p>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="declaration-check">
-                                    <input
-                                        type="checkbox"
-                                        name="completion_declaration"
-                                        id="completionDeclaration"
-                                        value="1"
-                                        required
-                                    >
-                                    <span>
-                                        I confirm that I have completed this training opportunity or course.
-                                        <span style="color:#c74755;">*</span>
-                                    </span>
-                                </label>
-
-                                <span id="declarationError" class="field-error" role="alert">
-                                    Please confirm that you have completed this opportunity.
-                                </span>
-                            </div>
-
+                        <div class="review-form-actions">
                             <button type="submit" class="btn btn-primary">
-                                Submit Review
+                                <?= $myReviewData ? 'Save Changes' : 'Submit Review' ?>
                                 <span aria-hidden="true">&#8594;</span>
                             </button>
+                        </div>
+                    </form>
 
-                        </form>
-
+                    <?php if ($myReviewData): ?>
+                        <button
+                            type="button"
+                            class="btn btn-delete-review"
+                            onclick="openConfirmModal('deleteReviewModal')"
+                        >
+                            Delete My Review
+                            <?= icon('delete', 18, 'icon-danger') ?>
+                        </button>
                     <?php endif; ?>
-
                 </div>
 
                 <div class="divider"></div>
 
                 <!-- Review List -->
-                <div id="reviewList">
-
+                <div id="reviewList" class="review-list">
                     <?php if (!$reviews): ?>
-
                         <p class="review-empty">
                             No reviews yet. Be the first to share your experience.
                         </p>
-
                     <?php else: ?>
-
                         <?php foreach ($reviews as $review): ?>
-
                             <?php
                             $reviewName = trim(
-                                ($review['FirstName'] ?? '')
-                                . ' '
-                                . ($review['LastName'] ?? '')
+                                ($review['FirstName'] ?? '') . ' ' .
+                                ($review['LastName'] ?? '')
                             );
-
-                            $rating = max(
-                                0,
-                                min(5, (int) $review['Rating'])
-                            );
+                            $rating = max(0, min(5, (int) $review['Rating']));
+                            $isMyReview = (int) $review['UserID'] === $uid;
                             ?>
-
                             <article class="review-item">
-
                                 <div class="review-item-header">
-
-                                    <strong class="review-author">
-                                        <?= detail_h($reviewName ?: 'A user') ?>
-
-                                        <?php if ($canVerifyReviews && (int) ($review['IsAccepted'] ?? 0) === 1): ?>
+                                    <div class="review-author-group">
+                                        <strong class="review-author">
+                                            <?= detail_h($reviewName ?: 'A user') ?>
+                                        </strong>
+                                        <?php if ($isMyReview): ?>
+                                            <span class="my-review-badge">Your review</span>
+                                        <?php endif; ?>
+                                        <?php if ($canVerifyReviews && (int)($review['IsAccepted'] ?? 0) === 1): ?>
                                             <span class="verified-badge" title="Accepted through Ufuq">
                                                 <span aria-hidden="true">✓</span>
                                                 Verified Participant
                                             </span>
                                         <?php endif; ?>
-                                    </strong>
+                                    </div>
 
-                                    <span
-                                        class="review-stars"
-                                        aria-label="<?= $rating ?> out of 5 stars"
-                                    >
+                                    <span class="review-stars"
+                                          aria-label="<?= $rating ?> out of 5 stars">
                                         <span class="filled"><?= str_repeat('★', $rating) ?></span><span class="empty"><?= str_repeat('☆', 5 - $rating) ?></span>
                                     </span>
-
                                 </div>
 
                                 <?php if (!empty($review['ReviewText'])): ?>
-                                    <p class="review-text"><?= detail_h(
-                                        $review['ReviewText']
-                                    ) ?></p>
+                                    <p class="review-text"><?= detail_h($review['ReviewText']) ?></p>
                                 <?php endif; ?>
 
                                 <div class="review-date">
-                                    <?= detail_h(
-                                        detail_date($review['CreatedAt'] ?? null)
-                                    ) ?>
+                                    <?= detail_h(detail_date($review['CreatedAt'] ?? null)) ?>
                                 </div>
-
                             </article>
-
                         <?php endforeach; ?>
-
                     <?php endif; ?>
-
                 </div>
-
             </section>
-
         <?php endif; ?>
 
     </div>
 </div>
+
+
+<?php
+/* Shared confirmation modal for deleting the signed-in user's review. */
+confirm_modal([
+    'id'            => 'deleteReviewModal',
+    'title'         => 'Delete your review?',
+    'message'       => 'Are you sure you want to delete your review? This action cannot be undone.',
+    'confirm_label' => 'Delete Review',
+    'icon'          => 'trash',
+    'variant'       => 'danger',
+    'fields'        => ['action' => 'delete_review'],
+]);
+?>
+
 
 <script>
 /* ---------- Interactive Rating ---------- */
@@ -2515,7 +2664,7 @@ user_header($me, 'Opportunity Details', 'browse');
     const ratingError = document.getElementById('ratingError');
     const reviewForm = document.getElementById('reviewForm');
 
-    let selectedRating = 0;
+    let selectedRating = Number(ratingInput.value) || 0;
     let errorTimer = null;
 
     function hideRatingError() {
