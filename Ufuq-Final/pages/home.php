@@ -1563,7 +1563,7 @@ user_header($me, 'Home', 'user-home');
                         <span class="ai-badge">AI</span>
                         <h2>Recommended Opportunities</h2>
                     </div>
-                    <a href="browse.php" class="dashboard-link">Browse all &rarr;</a>
+                   
                 </div>
 
                 <?php if ($recoItems): ?>
