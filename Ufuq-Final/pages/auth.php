@@ -17,7 +17,7 @@ function errBox(array $errs, string $id, string $default, string $key): string {
  * Stops the browser from caching the page.
  */
 function no_cache(): void {
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
     header('Expires: 0');
 }
@@ -38,24 +38,22 @@ function dashboard_for(string $role): string {
  * Guard for protected pages.
  */
 function require_login(?string $role = null): void {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    require_once __DIR__ . '/../includes/session.php';
 
     no_cache();
 
     // Accept 'Admin' as a short name for the 'Administrator' role.
-    if ($role === 'Admin') {
-        $role = 'Administrator';
-    }
+    if ($role === 'Admin') { $role = 'Administrator'; }
+    $sessionRole = (string)($_SESSION['role'] ?? '');
+    if ($sessionRole === 'Admin') { $sessionRole = 'Administrator'; }
 
     if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
         header('Location: login.php');
         exit;
     }
 
-    if ($role !== null && $_SESSION['role'] !== $role) {
-        header('Location: ' . dashboard_for((string) $_SESSION['role']));
+    if ($role !== null && $sessionRole !== $role) {
+        header('Location: ' . dashboard_for($sessionRole));
         exit;
     }
 }

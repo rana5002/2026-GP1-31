@@ -9,15 +9,12 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/auth.php';
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
 
 no_cache();
 
 if (
     empty($_SESSION['user_id']) ||
-    ($_SESSION['role'] ?? '') !== 'Administrator'
+    !in_array(($_SESSION['role'] ?? ''), ['Administrator', 'Admin'], true)
 ) {
     http_response_code(403);
     exit('Access denied.');

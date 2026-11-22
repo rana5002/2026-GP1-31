@@ -21,7 +21,8 @@ function close_expired_opportunities(PDO $pdo): void {
         error_log('Auto-close failed: ' . $ex->getMessage());
     }
 }
-close_expired_opportunities($pdo);
+// Maintenance tasks are intentionally not executed during normal page requests.
+// Run them from the CLI using maintenance.php (scheduled task).
 
 /* Name of the reset password page (used in the "password changed" email). Change it if your page has another name. */
 const RESET_PASSWORD_PAGE = 'reset-password.php';
@@ -110,8 +111,7 @@ function notify_matching_users(PDO $pdo, int $opportunityId): void {
 
 /* User Story 37: remind users about opportunities in their favorites when the
    application deadline is 48 hours away or less. Each user is reminded once per
-   opportunity, and not when they have already applied. Runs on every page, like
-   close_expired_opportunities(). */
+   opportunity, and not when they have already applied. Run from maintenance.php. */
 function send_deadline_reminders(PDO $pdo): void {
     try {
         $stmt = $pdo->prepare("SELECT f.UserID, o.OpportunityID, o.Title, o.ApplicationDeadLine
@@ -154,7 +154,6 @@ class FieldError extends RuntimeException {
 
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-send_deadline_reminders($pdo);
 
 /* Expects login.php to set $_SESSION['user_id'] and $_SESSION['role'] ('Admin'). */
 function require_admin(): int {

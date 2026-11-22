@@ -1253,7 +1253,7 @@ $heroTitles = [
       $navActive = $activeTab;
       if ($activeTab === 'reviews') $navActive = (($_GET['from'] ?? '') === 'overview') ? 'overview' : 'opportunities';
     ?><nav class="nav-links" id="navLinks"><a href="dashboard-company.php?tab=overview" class="<?= $navActive === 'overview' ? 'active' : '' ?>">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="<?= $navActive === 'opportunities' ? 'active' : '' ?>">Opportunities</a><a href="dashboard-company.php?tab=applicants" class="<?= $activeTab === 'applicants' ? 'active' : '' ?>">Applicants</a></nav>
-    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a><button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-controls="navLinks" aria-expanded="false" type="button"><?= icon('menu', 22) ?></button></div>
+    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php if ($logoSrc !== ''): ?><img src="<?= e($logoSrc) ?>" alt="Company avatar"><?php else: ?><?= e($companyInitial) ?><?php endif; ?></span></a><form method="post" action="logout.php" class="logout-form" style="display:inline;margin:0"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button type="submit" class="btn btn-ghost btn-sm">Log Out</button></form><button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-controls="navLinks" aria-expanded="false" type="button"><?= icon('menu', 22) ?></button></div>
   </div>
 </header>
 
@@ -2016,7 +2016,7 @@ document.querySelectorAll('form[data-validate]').forEach(function (form) {
     });
 });
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('ufuq:page-loaded', function () {
     const serverError = <?= json_encode($fieldError) ?>;
     if (!serverError) return;
     const panel = document.getElementById(serverError.form);

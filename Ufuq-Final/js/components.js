@@ -377,7 +377,13 @@ function renderHeader({
 
     if (logoutBtn) {
         logoutBtn.addEventListener("click", () => {
-            window.location.href = `${base}logout.php`;
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = `${base}pages/logout.php`;
+            const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            const input = document.createElement('input');
+            input.type = 'hidden'; input.name = 'csrf'; input.value = token;
+            form.appendChild(input); document.body.appendChild(form); form.submit();
         });
     }
 

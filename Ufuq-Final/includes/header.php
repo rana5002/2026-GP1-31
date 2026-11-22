@@ -5,9 +5,7 @@
    File: includes/header.php
    ========================================================= */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/session.php';
 
 if (!function_exists('header_escape')) {
     function header_escape($value): string
@@ -109,12 +107,10 @@ $headerLogo = $headerBase . 'images-website/logo.png';
                     <?= header_escape($headerName !== '' ? $headerName : 'Account') ?>
                 </span>
 
-                <a
-                    class="btn btn-outline btn-sm"
-                    href="<?= header_escape($headerBase . 'logout.php') ?>"
-                >
-                    Log Out
-                </a>
+                <form method="post" action="<?= header_escape($headerBase . 'pages/logout.php') ?>" class="logout-form" style="display:inline;margin:0">
+                    <input type="hidden" name="csrf" value="<?= function_exists('csrf_token') ? header_escape(csrf_token()) : '' ?>">
+                    <button type="submit" class="btn btn-outline btn-sm">Log Out</button>
+                </form>
 
             <?php else: ?>
 
