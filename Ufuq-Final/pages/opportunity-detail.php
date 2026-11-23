@@ -250,7 +250,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
                     : 'No review was found to delete.';
 
             } else {
-                $rating = filter_input(INPUT_POST, 'rating', FILTER_VALIDATE_INT);
+
+    // Allow adding or editing reviews only for Closed opportunities.
+    if (!$isClosed) {
+        $_SESSION['detail_message'] =
+            'You can review this opportunity only after it is closed.';
+
+    } else {
+
+        $rating = filter_input(INPUT_POST, 'rating', FILTER_VALIDATE_INT);
                 $reviewText = trim((string) ($_POST['review_text'] ?? ''));
                 $declared = ($_POST['completion_declaration'] ?? '') === '1';
 
@@ -338,7 +346,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $opp) {
                             : 'Your review has been published.';
                     }
                 }
-            }
+    }}
         }
     }
 
@@ -2459,6 +2467,7 @@ user_header($me, 'Opportunity Details', 'browse');
                         <?php endif; ?>
                     </div>
                 </div>
+<?php if ($isClosed): ?>
 
                 <!-- Add / Edit Review Form -->
                 <div class="review-form-panel">
@@ -2587,7 +2596,15 @@ user_header($me, 'Opportunity Details', 'browse');
                         </button>
                     <?php endif; ?>
                 </div>
+<?php else: ?>
 
+    <div class="review-form-panel">
+        <p class="review-empty">
+            Reviews and ratings are available only after this opportunity is closed.
+        </p>
+    </div>
+
+<?php endif; ?>
                 <div class="divider"></div>
 
                 <!-- Review List -->
