@@ -3,6 +3,7 @@ require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/auth.php';
 // Load shared lists used by opportunity forms.
 require_once __DIR__ . '/../includes/lists.php';
+require_once __DIR__ . '/../includes/lookup_manager.php';
 
 require_login('Company');
 $companyId = (int)($_SESSION['user_id'] ?? 0);
@@ -48,6 +49,27 @@ function opp_posted_ids($value, array $options, bool &$invalid): array {
         $ids[$id] = $id;
     }
     return array_values($ids);
+}
+/*
+  Validate custom names submitted by the company.
+ */
+function opp_posted_names( $value, string $type,int $maxItems,bool &$invalid): array {
+    $invalid = false;
+    if (!is_array($value)) {
+        $invalid = true;
+        return [];}
+    if (count($value) > $maxItems) {
+        $invalid = true;
+        return []; }
+    $names = [];
+    foreach ($value as $item) {
+        try {
+            $name = lookup_clean_name($type, $item);
+            $key = mb_strtolower($name, 'UTF-8');
+            $names[$key] = $name;
+        } catch (Throwable $ex) {
+            $invalid = true;  }}
+    return array_values($names);
 }
 function opp_selected_ids(PDO $pdo, string $linkTable, string $idCol, int $opportunityId): array {
     $stmt = $pdo->prepare("SELECT `$idCol` FROM `$linkTable` WHERE OpportunityID = ?");
@@ -149,7 +171,7 @@ function opp_timeline_errors(array $dates, string $start, array $required): arra
 function lookup_picker(string $name, string $placeholder, array $options, array $selectedIds, bool $invalid = false, bool $required = false, string $chipClass = ''): string
 {
     ob_start(); ?>
-    <div class="lookup-picker" data-lookup-picker data-placeholder="<?= e($placeholder) ?>" data-chip-class="<?= e($chipClass) ?>" <?= $required ? 'data-required' : '' ?>>
+    <div class="lookup-picker" data-lookup-picker data-lookup-name="<?= e($name) ?>" data-placeholder="<?= e($placeholder) ?>" data-chip-class="<?= e($chipClass) ?>" <?= $required ? 'data-required' : '' ?>>
         <button type="button" class="form-control lookup-toggle <?= $invalid ? 'invalid' : '' ?>" aria-haspopup="listbox" aria-expanded="false">
             <span class="lookup-toggle-text"><?= e($placeholder) ?></span>
             <span class="lookup-caret" aria-hidden="true">&#9662;</span>
@@ -166,8 +188,14 @@ function lookup_picker(string $name, string $placeholder, array $options, array 
                 <div class="lookup-empty" hidden>No matches found</div>
             </div>
         </div>
-        <div class="lookup-chips"></div>
-    </div>
+<div class="lookup-chips"></div>
+<div class="lookup-custom-add">
+    <input type="text" class="form-control lookup-custom-input" maxlength="<?= $name === 'skills' ? 50 : 100 ?>" placeholder="Enter another value" autocomplete="off">
+    <button type="button" class="btn btn-ghost lookup-custom-button">
+        + Add Other
+    </button>
+</div>
+<div class="lookup-custom-error" hidden></div>    </div>
     <?php
     return (string)ob_get_clean();
 }
@@ -334,9 +362,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $scheduleStart = trim((string)($_POST['schedule_start'] ?? ''));
         $scheduleEnd = trim((string)($_POST['schedule_end'] ?? ''));
         $badSkill = $badQualification = $badExperience = false;
-        $skillIds = opp_posted_ids($_POST['skills'] ?? [], $skillOptions, $badSkill);
-        $qualificationIds = opp_posted_ids($_POST['qualifications'] ?? [], $qualificationOptions, $badQualification);
-        $experienceIds = opp_posted_ids($_POST['experience'] ?? [], $experienceOptions, $badExperience);
+        $badSkillOther = $badQualificationOther = $badExperienceOther = false;
+        $skillIds = opp_posted_ids( $_POST['skills'] ?? [], $skillOptions, $badSkill);
+        $qualificationIds = opp_posted_ids(   $_POST['qualifications'] ?? [],   $qualificationOptions, $badQualification );
+        $experienceIds = opp_posted_ids( $_POST['experience'] ?? [],$experienceOptions,$badExperience );
+        $skillOther = opp_posted_names( $_POST['skills_other'] ?? [],'skill', 30,$badSkillOther);
+        $qualificationOther = opp_posted_names( $_POST['qualifications_other'] ?? [],   'qualification',  20, $badQualificationOther );
+        $experienceOther = opp_posted_names( $_POST['experience_other'] ?? [], 'experience', 20, $badExperienceOther);
 
         $values = ['Title'=>$title,'Description'=>$description,'Type'=>$type,'ApplicationMethod'=>$method,'ExternalURL'=>$externalUrl,'Location'=>$location,'StartDate'=>$startDate,'EndDate'=>$endDate,'ApplicationDeadLine'=>$deadline,'ApplicationOpenDate'=>$openDate,'ScreeningDate'=>$screeningDate,'InterviewDate'=>$interviewDate,'AcceptanceDate'=>$acceptanceDate,'ScheduleDays'=>$scheduleDays,'ScheduleStartTime'=>$scheduleStart,'ScheduleEndTime'=>$scheduleEnd,'PriceStatus'=>$priceStatus,'Price'=>($priceStatus === 'Free' ? '0' : ($priceStatus === 'Unknown' ? '' : $priceRaw))];
         if ($title === '') $errors['title'] = 'This field is required.';
@@ -425,16 +457,31 @@ if ($isReopenPost) {
             $price = '0.00';
         }
         /* Skills are required; qualifications and experience are optional. */
-        if ($badSkill) $errors['skills'] = 'Please select skills from the list.';
-        elseif (!$skillIds) $errors['skills'] = 'This field is required.';
-        if ($badQualification) $errors['qualifications'] = 'Please select qualifications from the list.';
-        if ($badExperience) $errors['experience'] = 'Please select experience from the list.';
+        if ($badSkill || $badSkillOther) {
+            $errors['skills'] = 'Please select or enter valid skills.';
+        } elseif (!$skillIds && !$skillOther) {
+            $errors['skills'] = 'This field is required.';}
+        if ($badQualification || $badQualificationOther) {
+            $errors['qualifications'] = 'Please select or enter valid qualifications.';}
+        if ($badExperience || $badExperienceOther) {
+            $errors['experience'] = 'Please select or enter valid experience types.';}
 
         $requiredEmpty = ($title === '' || $description === '' || $type === '' || $location === '' || $startDate === '' || $endDate === '' || !$skillIds || ($method === METHOD_LINK && $externalUrl === '') || $openDate === '' || $deadline === '' || ($method === METHOD_SYSTEM && $acceptanceDate === ''));
         if ($errors) {
             // Re-display entered values and errors below.
         } else {
             $pdo->beginTransaction();
+            /*
+             Resolve custom lookup values inside the same transaction.
+             Existing values reuse their IDs; missing values are inserted.
+            */
+            $newSkillIds = lookup_resolve_names($pdo,'skill',$skillOther, 30);
+            $newQualificationIds = lookup_resolve_names($pdo,'qualification',$qualificationOther,20);
+            $newExperienceIds = lookup_resolve_names($pdo,'experience',$experienceOther,20);
+            $skillIds = array_values(array_unique(array_merge($skillIds, $newSkillIds)));
+            $qualificationIds = array_values(array_unique(array_merge( $qualificationIds, $newQualificationIds)));
+            $experienceIds = array_values(array_unique(array_merge( $experienceIds, $newExperienceIds)));
+
             /* Empty timeline dates are saved as NULL. */
             $orNull = fn(string $date): ?string => $date !== '' ? $date : null;
             $timelineParams = [$orNull($openDate), $orNull($deadline), $orNull($screeningDate), $orNull($interviewDate), $orNull($acceptanceDate)];
@@ -578,118 +625,15 @@ if (!empty($values['StartDate']) && !empty($values['EndDate'])) {
 <link rel="stylesheet" href="../css/base.css">
 <link rel="stylesheet" href="../css/layout.css">
 <link rel="stylesheet" href="../css/icons.css">
-<style>
-/* Keep the shared Ufuq dashboard design and only add small form-specific helpers. */
-.server-error{display:block}
-.form-error.server-error{display:block}
-.required-mark{color:#c83440;margin-left:3px}
-.company-header-profile{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;padding:4px;border-radius:10px;white-space:nowrap}
-.company-header-profile:hover{background:var(--color-surface-alt,#f3f4f6)}
-.company-header-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#e9edf5;color:var(--color-primary,#1f3566);font-weight:700;border:1px solid var(--color-border,#ddd)}
-.company-header-avatar img{width:100%;height:100%;object-fit:cover}
-.form-banner{padding:12px 16px;border-radius:8px;margin-bottom:16px;background:#fbe6e7;color:#b4232f}
-/* Searchable multi-select pickers */
-#oppForm .lookup-picker{position:relative}
-#oppForm .lookup-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer}
-#oppForm .lookup-toggle-text.is-placeholder{color:#8a8396}
-#oppForm .lookup-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
-#oppForm .lookup-picker.is-open .lookup-caret{transform:rotate(180deg)}
-#oppForm .lookup-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
-#oppForm .lookup-panel[hidden]{display:none!important}
-#oppForm .lookup-list{max-height:210px;margin-top:8px;overflow-y:auto}
-#oppForm .lookup-option{display:flex;align-items:flex-start;gap:9px;padding:8px;border-radius:8px;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
-#oppForm .lookup-option:hover{background:var(--color-surface-alt,#f3f4f6)}
-#oppForm .lookup-option[hidden]{display:none!important}
-#oppForm .lookup-option input{width:16px;height:16px;flex-shrink:0;margin:3px 0 0;accent-color:var(--color-primary,#39265f);cursor:pointer}
-#oppForm .lookup-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
-#oppForm .lookup-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-/* ===== Same look as the other Ufuq pages (purple theme) ===== */
-:root{--admin-purple:#39265f;--admin-purple-dark:#281a46;--admin-purple-light:#f4f0fa;--admin-gold:#e2a94b;--entry-error:#d94b56;--entry-error-text:#c43643;--entry-border:#e5dfed;--entry-muted:#777184}
-main{background:#faf6ef;min-height:70vh;padding-bottom:48px}
-.dashboard-hero{position:relative;overflow:hidden;padding:38px 0 42px;margin-bottom:28px;background:linear-gradient(125deg,#281a46 0%,#39265f 55%,#49316f 100%);color:#fff}
-.dashboard-hero::before,.dashboard-hero::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
-.dashboard-hero::before{width:250px;height:250px;right:7%;top:-150px;border:35px solid rgba(255,255,255,.07)}
-.dashboard-hero::after{width:190px;height:190px;right:23%;bottom:-145px;background:rgba(226,169,75,.10)}
-.dashboard-hero-inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:22px}
-.dashboard-hero .welcome-label{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;margin-bottom:12px;border:1px solid rgba(255,255,255,.2);border-radius:30px;background:rgba(255,255,255,.08);font-size:.84rem;letter-spacing:.2px}
-.dashboard-hero h1{margin:0;color:#fff;font-size:clamp(1.65rem,3vw,2.15rem);font-weight:750;line-height:1.5}
-.dashboard-hero p{margin:8px 0 0;color:rgba(255,255,255,.82);font-size:.96rem;line-height:1.8}
-.dashboard-hero .hero-icon{display:flex;align-items:center;justify-content:center;width:78px;height:78px;flex-shrink:0;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(255,255,255,.08);box-shadow:0 10px 28px rgba(15,8,30,.16);font-size:2rem;animation:oppFloat 4s ease-in-out infinite}
-.opp-section-heading{display:flex;align-items:center;gap:10px;margin:0 0 7px;color:#29243a;font-size:1.18rem;font-weight:750}
-.opp-section-heading::before{content:"";display:block;width:5px;height:23px;flex-shrink:0;border-radius:5px;background:#e2a94b}
-.page-content.container>div>p.text-muted{color:var(--entry-muted);font-size:.9rem;line-height:1.7;margin-bottom:18px!important}
-@keyframes oppFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
-@media(max-width:620px){.dashboard-hero{padding:30px 0}.dashboard-hero .hero-icon{width:60px;height:60px;border-radius:18px;font-size:1.6rem}}
-#oppForm.card{display:block;width:100%;box-sizing:border-box;padding:clamp(20px,3.5vw,30px)!important;background:#fff;border:1px solid #e9e3ed;border-radius:16px;box-shadow:0 5px 18px rgba(40,26,70,.045);overflow:visible}
-#oppForm .form-group{min-width:0;margin-bottom:21px}
-#oppForm .form-label{display:block;margin-bottom:8px;color:#35264f;font-size:.92rem;font-weight:700;line-height:1.5}
-#oppForm .icon-label{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:#35264f}
-#oppForm .icon-label .icon{color:var(--admin-purple);background-color:var(--admin-purple)}
-#oppForm .required-mark{color:var(--entry-error);font-weight:800;margin-left:2px}
-#oppForm .form-control{display:block;width:100%;min-width:0;min-height:46px;box-sizing:border-box;padding:11px 13px;border:1px solid #dcd5e8;border-radius:10px;outline:none;background:#fff;color:#2c233b;font:inherit;font-size:.94rem;line-height:1.5;box-shadow:0 1px 2px rgba(40,26,70,.025);transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
-#oppForm textarea.form-control{min-height:125px;resize:vertical}
-#oppForm .form-control::placeholder{color:#a19aaa;opacity:1}
-#oppForm .form-control:hover{border-color:#b9a8d3}
-#oppForm .form-control:focus{border-color:var(--admin-purple)!important;box-shadow:0 0 0 4px rgba(57,38,95,.11)}
-#oppForm select.form-control{cursor:pointer}
-#oppForm .form-control[readonly]{color:#675b78;background:#f4f1f8;border-color:#e3dcec;cursor:default}
-#oppForm .form-control.invalid{border:1.5px solid var(--entry-error)!important;background-color:#fff7f7!important;box-shadow:0 0 0 3px rgba(217,75,86,.08)}
-#oppForm .form-error{color:var(--entry-error-text);font-size:.84rem;line-height:1.5;margin-top:7px}
-#oppForm .form-hint{margin-top:7px;color:var(--entry-muted);font-size:.82rem;line-height:1.5}
-#oppForm .form-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
-#oppForm .form-row.form-row-3{grid-template-columns:repeat(3,minmax(0,1fr))}
-#oppForm .role-toggle{display:flex;gap:6px;padding:5px;border:1px solid #e5ddef;border-radius:12px;background:var(--admin-purple-light)}
-#oppForm .role-toggle button{flex:1;min-height:40px;padding:9px 14px;border:0;border-radius:9px;background:transparent;color:#5e536d;font:inherit;font-size:.9rem;font-weight:700;cursor:pointer;transition:background-color .18s ease,color .18s ease,box-shadow .18s ease}
-#oppForm .role-toggle button:hover:not(:disabled){color:var(--admin-purple)}
-#oppForm .role-toggle button.active{background:var(--admin-purple);color:#fff;box-shadow:0 4px 12px rgba(57,38,95,.18)}
-#oppForm .role-toggle button:disabled{cursor:not-allowed;opacity:.75}
-#oppForm .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:43px;padding:10px 17px;border:1px solid transparent;border-radius:10px;font:inherit;font-size:.91rem;font-weight:700;line-height:1.3;text-decoration:none;cursor:pointer;transition:background-color .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease}
-#oppForm .btn:hover{transform:translateY(-1px)}
-#oppForm .btn-primary{color:#fff;background:var(--admin-purple);border-color:var(--admin-purple);box-shadow:0 5px 13px rgba(57,38,95,.18)}
-#oppForm .btn-primary:hover{color:#fff;background:var(--admin-purple-dark);border-color:var(--admin-purple-dark);box-shadow:0 7px 17px rgba(40,26,70,.22)}
-#oppForm .btn-outline{color:var(--admin-purple);background:#fff;border-color:#cfc1e3}
-#oppForm .btn-outline:hover{background:var(--admin-purple-light);border-color:#ad98ce}
-#oppForm .btn-ghost{color:#5e536d;background:#fff;border-color:#ded7e8}
-#oppForm .btn-ghost:hover{color:var(--admin-purple);background:var(--admin-purple-light);border-color:#cfc1e3}
-#oppForm .flex-between{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:24px!important;padding-top:21px;border-top:1px solid #eee8f4}
-#oppForm .flex-between .btn{min-width:125px}
-#oppForm .lookup-option:hover{background:var(--admin-purple-light)}
-#oppForm .lookup-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:var(--admin-purple-dark);font-size:.84rem;font-weight:700}
-#oppForm .lookup-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:var(--admin-purple);font-size:1rem;line-height:1;cursor:pointer}
-#oppForm .lookup-chip button:hover{color:var(--entry-error);background:rgba(217,75,86,.09)}
-/* One-choice drop-down with search (Location) */
-#oppForm .search-single .lookup-toggle-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#oppForm .search-single .lookup-option{align-items:center}
-#oppForm .search-single .lookup-option.is-selected{background:#f2ecfa;color:var(--admin-purple-dark,#281a46);font-weight:650}
-.form-banner{border:1px solid #f1c8cb;background:#fff3f3!important;color:#b82f3b!important;border-radius:10px!important;line-height:1.6}
-@media(max-width:1000px){#oppForm .form-row.form-row-3{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){#oppForm .form-row,#oppForm .form-row.form-row-3{grid-template-columns:minmax(0,1fr);gap:0}}
-/* Timeline rows and locked (grey) price field */
-#oppForm .timeline-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
-#oppForm .timeline-row{display:grid;grid-template-columns:minmax(0,1fr) 190px 46px;gap:10px;align-items:center}
-#oppForm .timeline-remove{min-width:0!important;width:46px;padding:0!important;font-size:1.3rem;line-height:1}
-@media(max-width:700px){#oppForm .timeline-row{grid-template-columns:minmax(0,1fr) 46px}#oppForm .timeline-row input[type=text]{grid-column:1 / -1}}
-#oppForm .form-control:disabled{color:#8a8a93;background:#efeff1;border-color:#dddde2;cursor:not-allowed;-webkit-text-fill-color:#8a8a93;opacity:1}
-/* Schedule day picks */
-#oppForm .day-picks{display:flex;flex-wrap:wrap;gap:8px}
-#oppForm .day-pick{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border:1px solid #dcd5e8;border-radius:999px;background:#fff;color:#35264f;font-size:.88rem;font-weight:600;cursor:pointer;transition:background-color .18s ease,border-color .18s ease}
-#oppForm .day-pick:hover{border-color:#b9a8d3}
-#oppForm .day-pick input{width:15px;height:15px;margin:0;accent-color:var(--admin-purple);cursor:pointer}
-#oppForm .day-pick:has(input:checked){background:var(--admin-purple-light);border-color:#cfc1e3;color:var(--admin-purple-dark)}
-#oppForm .day-picks.invalid .day-pick{border-color:var(--entry-error)}
-/* Drop-down buttons: text on the left, triangle on the right (same as the admin form) */
-#oppForm .lookup-toggle{display:flex!important;align-items:center;justify-content:space-between}
-#oppForm .lookup-picker.is-open .lookup-toggle{border-color:var(--admin-purple);box-shadow:0 0 0 4px rgba(57,38,95,.11)}
-@media(prefers-reduced-motion:reduce){#oppForm *{transition:none!important}}
-@media(max-width:700px){.page-content.container>div{max-width:100%!important}.form-row{grid-template-columns:1fr!important}.role-toggle{width:100%;max-width:none!important}}
-</style>
+<link rel="stylesheet" href="../css/opportunity-form.css">
+
 </head>
 <body>
 <header id="site-header" class="site-header">
   <div class="container">
     <a href="../index.php" class="brand" style="text-decoration:none"><img src="../images-website/logo.png" alt="Ufuq" class="brand-mark" style="width:34px;height:34px;object-fit:contain;background:transparent"> Ufuq</a>
     <nav class="nav-links"><a href="dashboard-company.php?tab=overview">Dashboard</a><a href="dashboard-company.php?tab=opportunities" class="active">Opportunities</a><a href="dashboard-company.php?tab=applicants">Applicants</a></nav>
-    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php $headerLogo = trim((string)($company['Logo'] ?? '')); $headerLogoSrc = $headerLogo === '' ? '' : (str_starts_with($headerLogo, 'http') ? $headerLogo : '../' . ltrim($headerLogo, '/')); if ($headerLogoSrc !== ''): ?><img src="<?= e($headerLogoSrc) ?>" alt="Company avatar"><?php else: ?><?= e(strtoupper(substr((string)$company['CompanyName'], 0, 1))) ?><?php endif; ?></span></a><form method="post" action="logout.php" class="logout-form" style="display:inline;margin:0"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button type="submit" class="btn btn-ghost btn-sm">Log Out</button></form></div>
+    <div class="nav-actions" style="display:flex;align-items:center;gap:10px"><a href="dashboard-company.php?tab=profile" class="company-header-profile" title="Open company profile" aria-label="Open company profile"><span class="company-header-avatar"><?php $headerLogo = trim((string)($company['Logo'] ?? '')); $headerLogoSrc = $headerLogo === '' ? '' : (str_starts_with($headerLogo, 'http') ? $headerLogo : '../' . ltrim($headerLogo, '/')); if ($headerLogoSrc !== ''): ?><img src="<?= e($headerLogoSrc) ?>" alt="Company avatar"><?php else: ?><?= e(strtoupper(substr((string)$company['CompanyName'], 0, 1))) ?><?php endif; ?></span></a><a href="logout.php" class="btn btn-ghost btn-sm">Log Out</a></div>
   </div>
 </header>
 <main>
@@ -956,7 +900,8 @@ document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
   const empty = picker.querySelector('.lookup-empty');
 
   function render() {
-    chips.replaceChildren();
+    chips.querySelectorAll('.lookup-chip:not([data-custom-value])')
+    .forEach(chip => chip.remove());
     let count = 0;
     boxes.forEach(function (box) {
       if (!box.checked) return;
@@ -1052,7 +997,16 @@ document.getElementById('oppForm').addEventListener('submit',e=>{
   let valid=true;
   const requiredIds=['title','description','type','location','startDate','endDate'];
   requiredIds.forEach(id=>{const el=document.getElementById(id);const err=document.getElementById(id+'Error');const bad=!el.value.trim();el.classList.toggle('invalid',bad);if(err)err.style.display=bad?'block':'none';if(bad)valid=false;});
-  document.querySelectorAll('[data-lookup-picker][data-required]').forEach(p=>{const n=p.querySelector('input[type="checkbox"]').name.replace('[]','');const bad=!p.querySelector('input:checked');p.querySelector('.lookup-toggle').classList.toggle('invalid',bad);const err=document.getElementById(n+'Error');if(err)err.style.display=bad?'block':'none';if(bad)valid=false;});
+document.querySelectorAll('[data-lookup-picker][data-required]').forEach(p => {
+const n = p.dataset.lookupName;
+    const hasSelected = !!p.querySelector('input[type="checkbox"]:checked');
+    const hasCustom = !!p.querySelector(
+        'input[name="' + n + '_other[]"]' );
+    const bad = !hasSelected && !hasCustom;
+    p.querySelector('.lookup-toggle').classList.toggle('invalid', bad);
+    const err = document.getElementById(n + 'Error');
+    if (err) err.style.display = bad ? 'block' : 'none';
+    if (bad) valid = false;});
   const descEl=document.getElementById('description');const descErr=document.getElementById('descriptionError');if(descEl.value.trim()&&descEl.value.trim().length<15){descEl.classList.add('invalid');descErr.textContent='Description must be at least 15 characters long.';descErr.style.display='block';valid=false;}
   const method=methodInput.value;const url=document.getElementById('externalUrl');const urlErr=document.getElementById('externalUrlError');
   if(method==='External Link'){let ok=false;try{const u=new URL(url.value.trim());ok=['http:','https:'].includes(u.protocol);}catch(_e){}url.classList.toggle('invalid',!ok);urlErr.style.display=ok?'none':'block';if(!ok)valid=false;}else{url.classList.remove('invalid');urlErr.style.display='none';}
@@ -1069,7 +1023,75 @@ document.getElementById('oppForm').addEventListener('submit',e=>{
   if(!valid){e.preventDefault();const banner=document.querySelector('.form-banner');if(banner){banner.style.display='block';banner.textContent='All mandatory fields must be completed.';}const first=document.querySelector('.invalid');if(first)first.focus();}
 });
 
+/* Add custom lookup values as removable chips. */
+document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
 
+    const input = picker.querySelector('.lookup-custom-input');
+    const button = picker.querySelector('.lookup-custom-button');
+    const chips = picker.querySelector('.lookup-chips');
+    const error = picker.querySelector('.lookup-custom-error');
+
+    if (!input || !button || !chips) return;
+
+    const checkboxes = picker.querySelectorAll('input[type="checkbox"]');
+    const customFieldName = picker.dataset.lookupName + '_other[]';
+
+    button.addEventListener('click', function () {
+
+        const name = input.value.trim().replace(/\s+/g, ' ');
+        const max = Number(input.maxLength);
+
+        if (!name) {
+            input.focus();
+            return;
+        }
+
+        if (name.length > max) {
+            error.textContent = 'Maximum ' + max + ' characters allowed.';
+            error.hidden = false;
+            return;
+        }
+
+        const duplicate = [...chips.querySelectorAll('[data-custom-value]')]
+            .some(chip =>
+                chip.dataset.customValue.toLowerCase() === name.toLowerCase()
+            );
+
+        if (duplicate) {
+            error.textContent = 'This value has already been added.';
+            error.hidden = false;
+            return;
+        }
+
+        error.hidden = true;
+
+        const chip = document.createElement('span');
+        chip.className = 'lookup-chip';
+        chip.dataset.customValue = name;
+
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = customFieldName;
+        hidden.value = name;
+
+        const label = document.createElement('span');
+        label.textContent = name;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove ' + name);
+
+        remove.addEventListener('click', function () {
+            chip.remove();
+        });
+
+        chip.append(hidden, label, remove);
+        chips.appendChild(chip);
+
+        input.value = '';
+    });
+});
 </script>
 <?php /* Footer goes after the script (inside <script> it broke the page JavaScript) */ require_once __DIR__ . '/../includes/footer.php'; ?>
 </body>

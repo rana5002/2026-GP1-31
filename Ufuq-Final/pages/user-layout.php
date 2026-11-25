@@ -32,7 +32,7 @@ function color_for(string $name): string {
 }
 
 function user_header(array $me, string $title, string $active): void {
-    global $pdo;
+    global $pdo, $extraCss;
 
     $links = [
         'user-home'   => ['Home', 'home.php'],
@@ -70,6 +70,8 @@ function user_header(array $me, string $title, string $active): void {
     $isFavoritesPage = basename($_SERVER['PHP_SELF'] ?? '') === 'favorites.php';
     ?>
 
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -81,6 +83,12 @@ function user_header(array $me, string $title, string $active): void {
     <link rel="stylesheet" href="../css/base.css">
     <link rel="stylesheet" href="../css/layout.css">
     <link rel="stylesheet" href="../css/icons.css">
+    <?php if (!empty($extraCss)): ?>
+        <link
+            rel="stylesheet"
+            href="<?= htmlspecialchars((string) $extraCss, ENT_QUOTES, 'UTF-8') ?>"
+        >
+    <?php endif; ?>
 </head>
 
 <body>
@@ -198,10 +206,3 @@ document.getElementById("navToggle")?.addEventListener("click", function () {
 }
 
     ?>
-</main>
-
-
-
-</body>
-</html>
-    <?php

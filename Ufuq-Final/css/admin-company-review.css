@@ -1,0 +1,666 @@
+/* ==========================================
+   UFUQ Admin Company Review Page CSS
+   ========================================== */
+
+:root {
+    --review-purple: #39265f;
+    --review-purple-dark: #281a46;
+    --review-purple-mid: #4b3478;
+    --review-purple-soft: #f5f1fb;
+    --review-purple-border: #e4dced;
+    --review-gold: #e2a94b;
+    --review-text: #2c263b;
+    --review-muted: #777186;
+    --review-border: #e9e3f0;
+    --review-surface: #ffffff;
+    --review-bg: #fcfbfe;
+    --review-danger: #c74750;
+    --review-danger-bg: #fff3f3;
+    --review-success: #287a54;
+    --review-success-bg: #eaf7ef;
+    --review-warning: #95671b;
+    --review-warning-bg: #fff5df;
+}
+
+.company-review-page {
+    width: 100%;
+    max-width: 1000px !important;
+    margin: 0 auto;
+    padding: 28px 24px 45px;
+    box-sizing: border-box;
+    color: var(--review-text);
+}
+
+.company-review-page * {
+    box-sizing: border-box;
+}
+
+.company-review-page .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 22px;
+    color: var(--review-muted);
+    font-size: .9rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color .2s ease;
+}
+
+.company-review-page .back-link:hover {
+    color: var(--review-purple);
+}
+
+.company-review-page .company-heading {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 25px;
+    padding: 22px 24px;
+    border: 1px solid var(--review-purple-border);
+    border-radius: 17px;
+    background: linear-gradient(120deg, #fff 0%, #f8f4fd 100%);
+    box-shadow: 0 8px 24px rgba(40, 26, 70, .055);
+}
+
+.company-review-page .company-heading .company-icon {
+    display: flex;
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 15px;
+    background: var(--review-purple-soft);
+    color: var(--review-purple);
+}
+
+.company-review-page .company-heading h2 {
+    margin: 0 0 8px;
+    color: var(--review-purple-dark);
+    font-size: clamp(1.3rem, 2.5vw, 1.8rem);
+    font-weight: 800;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .company-heading .heading-details {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+}
+
+.company-review-page .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    font-size: .8rem;
+    font-weight: 750;
+    line-height: 1.4;
+}
+
+.company-review-page .status-badge.badge-success {
+    background: var(--review-success-bg);
+    color: var(--review-success);
+}
+
+.company-review-page .status-badge.badge-danger {
+    background: #fdebec;
+    color: var(--review-danger);
+}
+
+.company-review-page .status-badge.badge-warning {
+    background: var(--review-warning-bg);
+    color: var(--review-warning);
+}
+
+.company-review-page .review-card {
+    margin-bottom: 20px;
+    padding: clamp(20px, 3vw, 29px);
+    border: 1px solid var(--review-border);
+    border-radius: 16px;
+    background: var(--review-surface);
+    box-shadow: 0 8px 24px rgba(40, 26, 70, .055);
+}
+
+.company-review-page .section-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 22px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee8f4;
+    color: var(--review-purple-dark);
+    font-size: 1.08rem;
+    font-weight: 800;
+}
+
+.company-review-page .section-heading .section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 35px;
+    height: 35px;
+    border-radius: 10px;
+    background: var(--review-purple-soft);
+    color: var(--review-purple);
+}
+
+.company-review-page .company-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.company-review-page .field-view {
+    min-width: 0;
+    padding: 14px 15px;
+    border: 1px solid #eee8f4;
+    border-radius: 11px;
+    background: var(--review-bg);
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .field-label {
+    margin-bottom: 7px;
+    color: var(--review-muted);
+    font-size: .82rem;
+    font-weight: 650;
+}
+
+.company-review-page .field-value {
+    color: var(--review-text);
+    font-size: .94rem;
+    font-weight: 600;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.company-review-page .description-field {
+    margin-top: 18px;
+}
+
+.company-review-page .description-field .field-value {
+    font-weight: 400;
+}
+
+.company-review-page .document-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 17px;
+    border: 1px solid var(--review-purple-border);
+    border-radius: 13px;
+    background: linear-gradient(120deg, #fff 0%, #faf7fe 100%);
+}
+
+.company-review-page .document-icon {
+    display: flex;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--review-purple-soft);
+    color: var(--review-purple);
+}
+
+.company-review-page .document-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.company-review-page .document-name {
+    color: var(--review-purple-dark);
+    font-size: .92rem;
+    font-weight: 750;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .document-caption {
+    margin-top: 5px;
+    color: var(--review-muted);
+    font-size: .82rem;
+    line-height: 1.5;
+}
+
+.company-review-page .review-card.rejection-notice {
+    border-color: #f0c9cc;
+    background: var(--review-danger-bg);
+    box-shadow: none;
+}
+
+.company-review-page .rejection-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 10px;
+    color: var(--review-danger);
+    font-weight: 800;
+}
+
+.company-review-page .rejection-text {
+    color: #71373b;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.company-review-page .decision-description {
+    margin: -8px 0 20px;
+    color: var(--review-muted);
+    font-size: .9rem;
+    line-height: 1.65;
+}
+
+.company-review-page .decision-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.company-review-page .review-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 11px 19px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: .9rem;
+    font-weight: 750;
+    line-height: 1.4;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .2s ease, border-color .2s ease,
+                box-shadow .2s ease, transform .2s ease;
+}
+
+.company-review-page .review-btn:hover {
+    transform: translateY(-1px);
+}
+
+.company-review-page .review-btn-primary {
+    background: var(--review-purple);
+    border-color: var(--review-purple);
+    color: #fff;
+    box-shadow: 0 5px 12px rgba(57, 38, 95, .15);
+}
+
+.company-review-page .review-btn-primary:hover {
+    background: var(--review-purple-dark);
+    border-color: var(--review-purple-dark);
+    color: #fff;
+    box-shadow: 0 7px 16px rgba(40, 26, 70, .2);
+}
+
+.company-review-page .review-btn-danger {
+    background: #fff;
+    border-color: #e8b9bd;
+    color: var(--review-danger);
+}
+
+.company-review-page .review-btn-danger:hover {
+    background: #fff0f1;
+    border-color: var(--review-danger);
+}
+
+.company-review-page .review-btn-outline {
+    flex-shrink: 0;
+    min-height: 38px;
+    padding: 9px 13px;
+    border-color: var(--review-purple-border);
+    background: #fff;
+    color: var(--review-purple);
+    font-size: .82rem;
+}
+
+.company-review-page .review-btn-outline:hover {
+    background: var(--review-purple-soft);
+    border-color: var(--review-purple);
+}
+
+.company-review-page .review-btn-ghost {
+    background: #fff;
+    border-color: #ded7e8;
+    color: var(--review-muted);
+}
+
+.company-review-page .review-btn-ghost:hover {
+    background: #f6f3fa;
+    color: var(--review-purple);
+}
+
+.company-review-page .rejection-form {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee8f4;
+}
+
+.company-review-page .form-label {
+    display: block;
+    margin-bottom: 9px;
+    color: var(--review-purple-dark);
+    font-size: .9rem;
+    font-weight: 750;
+}
+
+.company-review-page .form-control {
+    display: block;
+    width: 100%;
+    min-height: 45px;
+    padding: 11px 13px;
+    border: 1px solid #ded8e8;
+    border-radius: 10px;
+    outline: none;
+    background: #fcfbfe;
+    color: var(--review-text);
+    font: inherit;
+    font-size: .92rem;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.company-review-page textarea.form-control {
+    min-height: 120px;
+    resize: vertical;
+    line-height: 1.65;
+}
+
+.company-review-page .form-control::placeholder {
+    color: #a49caf;
+}
+
+.company-review-page .form-control:focus {
+    border-color: var(--review-purple);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(57, 38, 95, .12);
+}
+
+.company-review-page .form-control.invalid {
+    border-color: #e5646a;
+    background: #fff8f8;
+    box-shadow: 0 0 0 2px rgba(229, 100, 106, .08);
+}
+
+.company-review-page .form-error {
+    display: block;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid #f1c5c8;
+    border-radius: 9px;
+    background: #fff0f0;
+    color: #a6373e;
+    font-size: .86rem;
+    line-height: 1.5;
+}
+
+.company-review-page .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 13px;
+}
+
+.company-review-page .hidden {
+    display: none !important;
+}
+
+/* Button icons: white tick on Approve, red icon on Reject, so they are clear */
+.company-review-page .review-btn-primary .icon {
+    background-color: #fff !important;
+    opacity: 1;
+}
+
+.company-review-page .review-btn-primary svg { color: #fff; stroke: #fff; }
+.company-review-page .review-btn-primary img { filter: brightness(0) invert(1); }
+
+.company-review-page .review-btn-danger .icon {
+    background-color: var(--review-danger) !important;
+    opacity: 1;
+}
+
+.company-review-page .review-btn-danger svg { color: var(--review-danger); stroke: var(--review-danger); }
+
+/* Page background: same beige as the public company profile */
+body {
+    background: #faf6ef;
+}
+
+/* Status badge with a dot and a light border (same as the rest of Ufuq) */
+.company-review-page .status-badge {
+    gap: 7px;
+    min-width: 96px;
+    justify-content: center;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 30px;
+    font-size: .78rem;
+}
+
+.company-review-page .status-badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.company-review-page .status-badge.badge-warning { border-color: #f0dfb4; }
+.company-review-page .status-badge.badge-success { border-color: #cfe8d9; }
+.company-review-page .status-badge.badge-danger  { border-color: #f1d4d8; }
+
+/* ---------- Company information: same design as the public company profile ---------- */
+.company-review-page .profile-identity,
+.company-review-page .profile-section {
+    border: 1px solid #e9e3ed;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(40, 26, 70, .045);
+}
+
+.company-review-page .profile-identity {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 25px;
+    margin-bottom: 22px;
+}
+
+.company-review-page .profile-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 92px;
+    width: 92px;
+    height: 92px;
+    overflow: hidden;
+    border: 4px solid #f0ebf8;
+    border-radius: 22px;
+    background: #f0ebf8;
+    color: var(--review-purple);
+    font-size: 1.8rem;
+    font-weight: 750;
+}
+
+.company-review-page .profile-avatar.has-logo { background: #fff; }
+.company-review-page .profile-avatar img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+.company-review-page .profile-avatar img[hidden] { display: none !important; }
+.company-review-page .profile-avatar .avatar-initial { display: none; }
+.company-review-page .profile-avatar img[hidden] + .avatar-initial { display: block; }
+
+.company-review-page .profile-identity-details { flex: 1; min-width: 0; }
+
+.company-review-page .profile-identity-details h2 {
+    margin: 0;
+    color: #29243a;
+    font-size: 1.4rem;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-subtitle {
+    margin-top: 6px;
+    color: #777184;
+    font-size: .92rem;
+}
+
+.company-review-page .profile-identity .status-badge {
+    flex-shrink: 0;
+    min-width: 96px;
+    justify-content: center;
+}
+
+.company-review-page .profile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.company-review-page .profile-grid .is-wide { grid-column: 1 / -1; }
+
+.company-review-page .profile-section { padding: 22px 24px; min-width: 0; }
+
+.company-review-page .profile-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 15px;
+    margin-bottom: 17px;
+    border-bottom: 1px solid #e9e4ef;
+}
+
+.company-review-page .profile-section-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    color: #29243a;
+    font-size: 1.05rem;
+    font-weight: 750;
+}
+
+.company-review-page .profile-section-header h3::before {
+    content: "";
+    display: block;
+    width: 5px;
+    height: 22px;
+    border-radius: 5px;
+    background: var(--review-gold);
+}
+
+.company-review-page .profile-view-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 22px;
+}
+
+.company-review-page .profile-field-label { margin-bottom: 6px; color: #777184; font-size: .8rem; }
+
+.company-review-page .profile-field-value {
+    color: #29243a;
+    font-size: .93rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-field-value a { color: var(--review-purple); font-weight: 600; }
+
+.company-review-page .profile-about {
+    margin: 0;
+    color: #29243a;
+    font-size: .93rem;
+    line-height: 1.8;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.company-review-page .profile-empty {
+    margin: 0;
+    padding: 14px;
+    border: 1px dashed #ded5ec;
+    border-radius: 12px;
+    background: #faf9fd;
+    color: #777184;
+    font-size: .87rem;
+}
+
+@media (max-width: 760px) {
+    .company-review-page .profile-grid,
+    .company-review-page .profile-view-grid { grid-template-columns: minmax(0, 1fr); }
+    .company-review-page .profile-identity { flex-wrap: wrap; padding: 20px; gap: 16px; }
+    .company-review-page .profile-avatar { flex-basis: 72px; width: 72px; height: 72px; }
+}
+
+@media (max-width: 700px) {
+    .company-review-page {
+        padding: 20px 14px 32px;
+    }
+
+    .company-review-page .company-heading {
+        align-items: flex-start;
+        gap: 12px;
+        padding: 17px;
+    }
+
+    .company-review-page .company-heading .company-icon {
+        flex-basis: 45px;
+        width: 45px;
+        height: 45px;
+        border-radius: 12px;
+    }
+
+    .company-review-page .company-info-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .company-review-page .review-card {
+        padding: 19px 15px;
+        border-radius: 13px;
+    }
+
+    .company-review-page .document-card {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 14px;
+    }
+
+    .company-review-page .document-info {
+        width: calc(100% - 65px);
+    }
+
+    .company-review-page .document-card .review-btn {
+        width: 100%;
+    }
+
+    .company-review-page .decision-actions .review-btn {
+        flex: 1 1 140px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .company-review-page * {
+        transition: none !important;
+
+    }
+    .company-heading .company-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 10px;
+}
+
+.company-heading .company-icon {
+    overflow: hidden;
+}
+}

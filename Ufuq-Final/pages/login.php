@@ -1,5 +1,4 @@
 <?php
-session_start();
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/bootstrap.php';
@@ -103,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['role'] = $role;
 
                     // Get the logged-in admin's name
-                    if ($role === 'Admin') {
+                    if ($role === 'Administrator') {
                         $adminStmt = $pdo->prepare(
                             'SELECT FirstName, LastName
                              FROM administrator
@@ -115,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $_SESSION['admin_name'] = $admin
                             ? $admin['FirstName'] . ' ' . $admin['LastName']
-                            : 'Admin';
+                            : 'Administrator';
                     } else {
                         unset($_SESSION['admin_name']);
                     }

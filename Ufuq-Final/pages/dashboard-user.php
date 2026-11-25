@@ -9,6 +9,7 @@ require __DIR__ . '/auth.php';
 // Load shared lists used across the platform.
 require_once __DIR__ . '/../includes/lists.php';
 require_once __DIR__ . '/../includes/recommendations.php';
+require_once __DIR__ . '/../includes/lookup_manager.php';
 
 $uid = require_user();
 
@@ -96,6 +97,7 @@ if (!$me) {
 
 /* Handle profile updates */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     csrf_check(); 
     $action = $_POST['action'] ?? '';
 
     try {
@@ -252,21 +254,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'skills') {
             $skillIds = $_POST['Skills'] ?? [];
-            if (!is_array($skillIds)) $skillIds = [];
-            $skillIds = array_values(array_unique(array_filter(array_map('intval', $skillIds), fn($id) => $id > 0)));
-
+            $skillsOther = $_POST['SkillsOther'] ?? [];
+            if (!is_array($skillIds) || !is_array($skillsOther)) {
+                throw new FieldError('skillsForm', 'Skills', 'Invalid skills list.');}
+            if (count($skillIds) > 50 || count($skillsOther) > 30) {
+                throw new FieldError('skillsForm', 'Skills', 'Too many skills were submitted.');}
+            $validIds = [];
+            foreach ($skillIds as $skillId) {
+                if (!is_string($skillId) || !ctype_digit($skillId)) {
+                    throw new FieldError('skillsForm', 'Skills', 'Invalid skill selection.'); }
+                $validIds[] = lookup_resolve_choice( $pdo, 'skill', $skillId);}
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare('DELETE FROM userskill WHERE UserID = ?');
-            $stmt->execute([$uid]);
-
-            if ($skillIds) {
-                $placeholders = implode(',', array_fill(0, count($skillIds), '?'));
-                $stmt = $pdo->prepare("SELECT SkillID FROM skill WHERE SkillID IN ($placeholders)");
-                $stmt->execute($skillIds);
-                $validIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-                $insert = $pdo->prepare('INSERT INTO userskill (UserID, SkillID) VALUES (?, ?)');
-                foreach ($validIds as $skillId) $insert->execute([$uid, $skillId]);
-            }
+            $newSkillIds = lookup_resolve_names($pdo,'skill', $skillsOther,30);
+            $allSkillIds = array_values(array_unique(array_merge( $validIds,$newSkillIds)));
+            
+            $pdo->prepare(
+                'DELETE FROM userskill WHERE UserID = ?'
+            )->execute([$uid]);
+            $insert = $pdo->prepare(
+                'INSERT IGNORE INTO userskill (UserID, SkillID)
+                VALUES (?, ?)');
+            foreach ($allSkillIds as $skillId) {
+                $insert->execute([$uid, $skillId]);}
             $pdo->commit();
             profile_flash('success', 'Skills updated successfully.');
             profile_redirect();
@@ -304,72 +313,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Experience: `experience` is a lookup table; the details live in `userexperience` */
         if ($action === 'add_experience') {
-            $experienceId = (int)($_POST['ExperienceID'] ?? 0);
+            $experienceChoice = trim((string)($_POST['ExperienceID'] ?? ''));
+            $experienceOther = trim((string)($_POST['ExperienceOther'] ?? ''));
             $jobTitle = trim($_POST['JobTitle'] ?? '');
             $organization = trim($_POST['Organization'] ?? '');
             $startDate = trim($_POST['StartDate'] ?? '');
             $endDate = trim($_POST['EndDate'] ?? '');
-
-            if ($experienceId <= 0) throw new FieldError('experienceForm', 'ExperienceID', 'This field is required.');
-            if ($jobTitle === '') throw new FieldError('experienceForm', 'JobTitle', 'This field is required.');
-            if ($organization === '') throw new FieldError('experienceForm', 'Organization', 'This field is required.');
-            if ($startDate === '') throw new FieldError('experienceForm', 'StartDate', 'This field is required.');
+            if ($experienceChoice === '') {
+                throw new FieldError('experienceForm', 'ExperienceID', 'This field is required.'); }
+            if ($jobTitle === '') {
+                throw new FieldError('experienceForm', 'JobTitle', 'This field is required.');}
+            if ($organization === '') {
+                throw new FieldError('experienceForm', 'Organization', 'This field is required.'); }
+            if ($startDate === '') {
+                throw new FieldError('experienceForm', 'StartDate', 'This field is required.'); }
             if (mb_strlen($jobTitle) > 50) {
-                throw new FieldError('experienceForm', 'JobTitle', 'Job title must be 50 characters or fewer.');
-            }
+                throw new FieldError('experienceForm', 'JobTitle', 'Job title must be 50 characters or fewer.'); }
             if (mb_strlen($organization) > 100) {
-                throw new FieldError('experienceForm', 'Organization', 'Organization must be 100 characters or fewer.');
-            }
-
+                throw new FieldError('experienceForm', 'Organization', 'Organization must be 100 characters or fewer.');}
+            if ($experienceChoice === '__other__') {
+                try {
+                    lookup_clean_name('experience', $experienceOther);
+                } catch (Throwable $ex) {
+                    throw new FieldError('experienceForm', 'ExperienceOther', $ex->getMessage());  } }
             $start = profile_valid_date($startDate);
             $end = $endDate !== '' ? profile_valid_date($endDate) : null;
             if (!$start || ($endDate !== '' && !$end)) {
-                throw new FieldError('experienceForm', 'StartDate', 'Please enter valid experience dates.');
-            }
+                throw new FieldError('experienceForm', 'StartDate', 'Please enter valid experience dates.');}
             if ($end && $end < $start) {
-                throw new FieldError('experienceForm', 'EndDate', 'End date cannot be earlier than start date.');
-            }
-
+                throw new FieldError('experienceForm', 'EndDate', 'End date cannot be earlier than start date.'); }
+            /* Resolve the selected type or add the custom value. */
+            $pdo->beginTransaction();
+            if ($experienceChoice === '__other__') {
+                $experienceId = lookup_resolve_name(
+                    $pdo,
+                    'experience',
+                    $experienceOther );
+            } else {
+                $experienceId = lookup_resolve_choice(
+                    $pdo,
+                    'experience',
+                    $experienceChoice ); }
             $stmt = $pdo->prepare('SELECT 1 FROM experience WHERE ExperienceID = ?');
             $stmt->execute([$experienceId]);
             if (!$stmt->fetchColumn()) {
-                throw new FieldError('experienceForm', 'ExperienceID', 'Please select a valid experience type.');
-            }
-
-            
+                throw new FieldError('experienceForm', 'ExperienceID', 'Please select a valid experience type.'); }
 
             // Duration is a generated column in the database, so it is not inserted
             $stmt = $pdo->prepare(
                 'INSERT INTO userexperience (UserID, ExperienceID, JobTitle, Organization, StartDate, EndDate)
-                 VALUES (?, ?, ?, ?, ?, ?)'
-            );
+                 VALUES (?, ?, ?, ?, ?, ?)' );
             $stmt->execute([$uid, $experienceId, $jobTitle, $organization, $startDate, $endDate !== '' ? $endDate : null]);
+            $pdo->commit();
             profile_flash('success', 'Experience added successfully.');
             profile_redirect();
         }
 
         /* Qualifications: `qualification` is a lookup table; the details live in `userqualification` */
         if ($action === 'add_qualification') {
-            $qualificationId = (int)($_POST['QualificationID'] ?? 0);
+            $qualificationChoice = trim((string)($_POST['QualificationID'] ?? ''));
+            $qualificationOther = trim((string)($_POST['QualificationOther'] ?? ''));
             $institution = trim($_POST['Institution'] ?? '');
             $year = (int)($_POST['YearObtained'] ?? 0);
             $durationRaw = trim($_POST['Duration'] ?? '');
-
-            if ($qualificationId <= 0) throw new FieldError('qualificationForm', 'QualificationID', 'This field is required.');
-            if ($institution === '') throw new FieldError('qualificationForm', 'Institution', 'This field is required.');
+            if ($qualificationChoice === '') {
+                throw new FieldError('qualificationForm', 'QualificationID', 'This field is required.'); }
+            if ($qualificationChoice === '__other__') {
+                try {
+                    lookup_clean_name('qualification', $qualificationOther);
+                } catch (Throwable $ex) {
+                    throw new FieldError('qualificationForm', 'QualificationOther', $ex->getMessage());  } }
+            if ($institution === '') {
+                throw new FieldError('qualificationForm', 'Institution', 'This field is required.'); }
             if (mb_strlen($institution) > 100) {
-                throw new FieldError('qualificationForm', 'Institution', 'Institution must be 100 characters or fewer.');
-            }
+                throw new FieldError('qualificationForm', 'Institution', 'Institution must be 100 characters or fewer.'); }
             if ($year < 1900 || $year > (int)date('Y')) {
-                throw new FieldError('qualificationForm', 'YearObtained', 'Please enter a valid year obtained.');
-            }
+                throw new FieldError('qualificationForm', 'YearObtained', 'Please enter a valid year obtained.'); }
             $duration = null;
             if ($durationRaw !== '') {
                 $duration = (int)$durationRaw;
                 if ($duration < 1 || $duration > 120) {
-                    throw new FieldError('qualificationForm', 'Duration', 'Duration must be between 1 and 120 months.');
-                }
-            }
+                    throw new FieldError('qualificationForm', 'Duration', 'Duration must be between 1 and 120 months.'); } }
+
+            $pdo->beginTransaction();
+            if ($qualificationChoice === '__other__') {
+                $qualificationId = lookup_resolve_name($pdo, 'qualification', $qualificationOther );
+            } else {
+                $qualificationId = lookup_resolve_choice( $pdo, 'qualification', $qualificationChoice); }
 
             $stmt = $pdo->prepare('SELECT 1 FROM qualification WHERE QualificationID = ?');
             $stmt->execute([$qualificationId]);
@@ -384,6 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  VALUES (?, ?, ?, ?, ?)'
             );
             $stmt->execute([$uid, $qualificationId, $institution, $year, $duration]);
+            $pdo->commit();
             profile_flash('success', 'Qualification added successfully.');
             profile_redirect();
         }
@@ -392,31 +423,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Edit an experience (the type can be changed too; the same type may be used more than once) */
         if ($action === 'edit_experience') {
             $recordId = (int)($_POST['UserExperienceID'] ?? 0);
-            $experienceId = (int)($_POST['ExperienceID'] ?? 0);
+            $experienceChoice = trim((string)($_POST['ExperienceID'] ?? ''));
+            $experienceOther = trim((string)($_POST['ExperienceOther'] ?? ''));
             $jobTitle = trim($_POST['JobTitle'] ?? '');
             $organization = trim($_POST['Organization'] ?? '');
             $startDate = trim($_POST['StartDate'] ?? '');
             $endDate = trim($_POST['EndDate'] ?? '');
-
-            if ($experienceId <= 0) throw new FieldError('editExperienceForm', 'EditExperienceID', 'This field is required.');
-            if ($jobTitle === '') throw new FieldError('editExperienceForm', 'EditJobTitle', 'This field is required.');
-            if ($organization === '') throw new FieldError('editExperienceForm', 'EditOrganization', 'This field is required.');
-            if ($startDate === '') throw new FieldError('editExperienceForm', 'EditStartDate', 'This field is required.');
+            if ($experienceChoice === '') {
+                throw new FieldError('experienceForm', 'ExperienceID', 'This field is required.');  }
+            if ($jobTitle === '') {
+                throw new FieldError('experienceForm', 'JobTitle', 'This field is required.'); }
+            if ($organization === '') {
+                throw new FieldError('experienceForm', 'Organization', 'This field is required.'); }
+            if ($startDate === '') {
+                throw new FieldError('experienceForm', 'StartDate', 'This field is required.'); }
             if (mb_strlen($jobTitle) > 50) {
-                throw new FieldError('editExperienceForm', 'EditJobTitle', 'Job title must be 50 characters or fewer.');
-            }
+                throw new FieldError('experienceForm', 'JobTitle', 'Job title must be 50 characters or fewer.'); }
             if (mb_strlen($organization) > 100) {
-                throw new FieldError('editExperienceForm', 'EditOrganization', 'Organization must be 100 characters or fewer.');
-            }
-
+                throw new FieldError('experienceForm', 'Organization', 'Organization must be 100 characters or fewer.'); }
+            if ($experienceChoice === '__other__') {
+                try {
+                    lookup_clean_name('experience', $experienceOther);
+                } catch (Throwable $ex) {
+                    throw new FieldError('experienceForm', 'ExperienceOther', $ex->getMessage()); } }
             $start = profile_valid_date($startDate);
             $end = $endDate !== '' ? profile_valid_date($endDate) : null;
             if (!$start || ($endDate !== '' && !$end)) {
-                throw new FieldError('editExperienceForm', 'EditStartDate', 'Please enter valid experience dates.');
-            }
+                throw new FieldError('experienceForm', 'StartDate', 'Please enter valid experience dates.');}
             if ($end && $end < $start) {
-                throw new FieldError('editExperienceForm', 'EditEndDate', 'End date cannot be earlier than start date.');
-            }
+                throw new FieldError('experienceForm', 'EndDate', 'End date cannot be earlier than start date.'); }
+            /* Resolve the selected type or add the custom value. */
+            $pdo->beginTransaction();
+            if ($experienceChoice === '__other__') {
+                $experienceId = lookup_resolve_name( $pdo, 'experience',  $experienceOther);
+            } else {
+                $experienceId = lookup_resolve_choice($pdo,'experience',$experienceChoice ); }
 
             /* The record must belong to this user. */
             $stmt = $pdo->prepare('SELECT 1 FROM userexperience WHERE UserID = ? AND UserExperienceID = ?');
@@ -437,6 +478,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  WHERE UserID = ? AND UserExperienceID = ?'
             );
             $stmt->execute([$experienceId, $jobTitle, $organization, $startDate, $endDate !== '' ? $endDate : null, $uid, $recordId]);
+            $pdo->commit();
             profile_flash('success', 'Experience updated successfully.');
             profile_redirect();
         }
@@ -444,26 +486,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Edit a qualification (the qualification can be changed too; the same one may be used more than once) */
         if ($action === 'edit_qualification') {
             $recordId = (int)($_POST['UserQualificationID'] ?? 0);
-            $qualificationId = (int)($_POST['QualificationID'] ?? 0);
+            $qualificationChoice = trim((string)($_POST['QualificationID'] ?? ''));
+            $qualificationOther = trim((string)($_POST['QualificationOther'] ?? ''));
             $institution = trim($_POST['Institution'] ?? '');
             $year = (int)($_POST['YearObtained'] ?? 0);
             $durationRaw = trim($_POST['Duration'] ?? '');
-
-            if ($qualificationId <= 0) throw new FieldError('editQualificationForm', 'EditQualificationID', 'This field is required.');
-            if ($institution === '') throw new FieldError('editQualificationForm', 'EditInstitution', 'This field is required.');
+            if ($qualificationChoice === '') {
+                throw new FieldError('qualificationForm', 'QualificationID', 'This field is required.');}
+            if ($qualificationChoice === '__other__') {
+                try {
+                    lookup_clean_name('qualification', $qualificationOther);
+                } catch (Throwable $ex) {
+                    throw new FieldError('qualificationForm', 'QualificationOther', $ex->getMessage()); }}
+            if ($institution === '') {
+                throw new FieldError('qualificationForm', 'Institution', 'This field is required.');}
             if (mb_strlen($institution) > 100) {
-                throw new FieldError('editQualificationForm', 'EditInstitution', 'Institution must be 100 characters or fewer.');
-            }
+                throw new FieldError('qualificationForm', 'Institution', 'Institution must be 100 characters or fewer.');}
             if ($year < 1900 || $year > (int)date('Y')) {
-                throw new FieldError('editQualificationForm', 'EditYearObtained', 'Please enter a valid year obtained.');
-            }
+                throw new FieldError('qualificationForm', 'YearObtained', 'Please enter a valid year obtained.');}
             $duration = null;
             if ($durationRaw !== '') {
                 $duration = (int)$durationRaw;
                 if ($duration < 1 || $duration > 120) {
-                    throw new FieldError('editQualificationForm', 'EditDuration', 'Duration must be between 1 and 120 months.');
-                }
-            }
+                    throw new FieldError('qualificationForm', 'Duration', 'Duration must be between 1 and 120 months.');}}
+
+            $pdo->beginTransaction();
+            if ($qualificationChoice === '__other__') {
+                $qualificationId = lookup_resolve_name( $pdo, 'qualification', $qualificationOther);
+            } else {
+                $qualificationId = lookup_resolve_choice($pdo,'qualification', $qualificationChoice);}
 
             /* The record must belong to this user. */
             $stmt = $pdo->prepare('SELECT 1 FROM userqualification WHERE UserID = ? AND UserQualificationID = ?');
@@ -483,6 +534,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  WHERE UserID = ? AND UserQualificationID = ?'
             );
             $stmt->execute([$qualificationId, $institution, $year, $duration, $uid, $recordId]);
+            $pdo->commit();
             profile_flash('success', 'Qualification updated successfully.');
             profile_redirect();
         }
@@ -580,227 +632,11 @@ $lastInitial = mb_substr($me['LastName'] ?? '', 0, 1);
 /* Main field of study = most recent study record */
 $mainField = $studies[0]['FieldOfStudy'] ?? '';
 
+$extraCss = '../css/dashboard-user.css';
 user_header($me, 'My Profile', '');
 ?>
 
-<style>
-/* Profile page styled to match the Ufuq Admin Dashboard */
-.profile-dashboard {
-    --profile-purple: #39265f;
-    --profile-purple-dark: #281a46;
-    --profile-purple-mid: #49316f;
-    --profile-lavender: #f0ebf8;
-    --profile-gold: #e2a94b;
-    --profile-text: #29243a;
-    --profile-muted: #777184;
-    --profile-bg: #faf6ef;
-    color: var(--profile-text);
-    padding-bottom: 50px;
-    background: var(--profile-bg);
-    min-height: 70vh;
-}
-.profile-dashboard * { box-sizing: border-box; }
-.profile-dashboard .profile-hero {
-    position: relative;
-    overflow: hidden;
-    padding: 38px 0 42px;
-    margin-bottom: 28px;
-    background: linear-gradient(125deg, #281a46 0%, #39265f 55%, #49316f 100%);
-    color: #fff;
-}
-.profile-dashboard .profile-hero::before,
-.profile-dashboard .profile-hero::after {
-    content: "";
-    position: absolute;
-    border-radius: 50%;
-    pointer-events: none;
-}
-.profile-dashboard .profile-hero::before {
-    width: 250px; height: 250px; right: 7%; top: -150px;
-    border: 35px solid rgba(255,255,255,.07);
-}
-.profile-dashboard .profile-hero::after {
-    width: 190px; height: 190px; right: 23%; bottom: -145px;
-    background: rgba(226,169,75,.10);
-}
-.profile-dashboard .profile-hero-inner {
-    position: relative; z-index: 1; display: flex; align-items: center;
-    justify-content: space-between; flex-wrap: wrap; gap: 22px;
-}
-.profile-dashboard .welcome-label {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,.2);
-    border-radius: 30px; background: rgba(255,255,255,.08); font-size: .84rem;
-}
-.profile-dashboard .profile-hero h1 {
-    margin: 0; color: #fff; font-size: clamp(1.65rem, 3vw, 2.15rem);
-    font-weight: 750; line-height: 1.5;
-}
-.profile-dashboard .profile-hero p { margin: 8px 0 0; color: rgba(255,255,255,.82); font-size: .98rem; }
-.profile-dashboard .hero-icon {
-    display: flex; align-items: center; justify-content: center; width: 78px; height: 78px;
-    border: 1px solid rgba(255,255,255,.2); border-radius: 24px; background: rgba(255,255,255,.08);
-    box-shadow: 0 10px 28px rgba(15,8,30,.16); font-size: 2rem; animation: profileFloat 4s ease-in-out infinite;
-}
-.profile-dashboard .profile-content { animation: profileFadeUp .55s ease both; }
-.profile-dashboard .profile-alert {
-    display: flex; align-items: center; gap: 10px; padding: 13px 16px; margin-bottom: 22px;
-    border-radius: 13px; line-height: 1.6; animation: profileFadeUp .35s ease both;
-}
-.profile-dashboard .profile-alert.success { border: 1px solid #b8e5cf; background: #e4f6ed; color: #286546; }
-.profile-dashboard .profile-alert.error { border: 1px solid #f0c6ca; background: #fbe6e7; color: #9a3038; }
-.profile-dashboard .profile-identity,
-.profile-dashboard .profile-section {
-    border: 1px solid #ece7f2; border-radius: 16px; background: #fff;
-    box-shadow: 0 5px 18px rgba(40,26,70,.045);
-    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
-}
-.profile-dashboard .profile-identity:hover,
-.profile-dashboard .profile-section:hover {
-    border-color: #d8cbe7; box-shadow: 0 9px 24px rgba(40,26,70,.075);
-}
-.profile-dashboard .profile-identity {
-    display: flex; align-items: center; gap: 22px; padding: 25px; margin-bottom: 22px;
-    animation: profileFadeUp .45s ease both;
-}
-.profile-dashboard .profile-avatar-wrap { position: relative; flex: 0 0 92px; width: 92px; height: 92px; }
-.profile-dashboard .profile-avatar {
-    display: flex; align-items: center; justify-content: center; width: 92px; height: 92px;
-    overflow: hidden; border: 4px solid #f0ebf8; border-radius: 50%;
-    background: var(--profile-lavender); color: var(--profile-purple); font-size: 1.8rem; font-weight: 750;
-}
-.profile-dashboard .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.profile-dashboard .profile-avatar-upload {
-    position: absolute; right: -3px; bottom: 0; display: flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px; border: 2px solid #fff; border-radius: 50%;
-    background: var(--profile-purple); color: #fff; cursor: pointer; transition: transform .18s ease, background .18s ease;
-}
-.profile-dashboard .profile-avatar-upload:hover { transform: scale(1.07); background: var(--profile-purple-dark); }
-.profile-dashboard .profile-identity-details { flex: 1; min-width: 0; }
-.profile-dashboard .profile-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.profile-dashboard .profile-name-row h2 { margin: 0; color: var(--profile-text); font-size: 1.35rem; overflow-wrap: anywhere; }
-.profile-dashboard .profile-subtitle { margin-top: 6px; color: var(--profile-muted); font-size: .9rem; }
-.profile-dashboard .profile-meta { margin-top: 9px; color: var(--profile-muted); font-size: .84rem; }
-.profile-dashboard .profile-section {
-    padding: 24px; margin-bottom: 20px; animation: profileFadeUp .45s ease both;
-}
-.profile-dashboard .profile-section-header {
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
-    padding-bottom: 17px; margin-bottom: 19px; border-bottom: 1px solid #e9e4ef;
-}
-.profile-dashboard .profile-section-header h2 {
-    display: flex; align-items: center; gap: 10px; margin: 0; color: var(--profile-text);
-    font-size: 1.08rem; font-weight: 750;
-}
-.profile-dashboard .profile-section-header h2::before {
-    content: ""; display: block; width: 5px; height: 23px; border-radius: 5px; background: var(--profile-gold);
-}
-.profile-dashboard .profile-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.profile-dashboard .profile-view-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 21px 25px; }
-.profile-dashboard .profile-field { min-width: 0; }
-.profile-dashboard .profile-field-label { margin-bottom: 7px; color: var(--profile-muted); font-size: .82rem; }
-.profile-dashboard .profile-field-value { color: var(--profile-text); font-size: .93rem; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
-.profile-dashboard .profile-form { margin-top: 5px; }
-.profile-dashboard .profile-form .form-group { margin-bottom: 17px; }
-.profile-dashboard .profile-form .form-label { display: block; margin-bottom: 7px; color: var(--profile-text); font-size: .87rem; font-weight: 650; }
-.profile-dashboard .profile-form .form-control {
-    width: 100%; box-sizing: border-box; border-radius: 9px; border-color: #ddd5e8;
-    transition: border-color .18s ease, box-shadow .18s ease;
-}
-.profile-dashboard .profile-form .form-control:focus { border-color: var(--profile-purple); box-shadow: 0 0 0 3px rgba(57,38,95,.10); outline: none; }
-.profile-dashboard .profile-form textarea { resize: vertical; }
-.profile-dashboard .profile-form-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 19px; }
-.profile-dashboard .profile-form-actions .btn-primary { background: var(--profile-purple); border-color: var(--profile-purple); }
-.profile-dashboard .profile-form-actions .btn-primary:hover { background: var(--profile-purple-dark); border-color: var(--profile-purple-dark); }
-.profile-dashboard .profile-hidden { display: none !important; }
-.profile-dashboard .profile-record { padding: 17px 0; border-bottom: 1px solid #f0edf4; }
-.profile-dashboard .profile-record:first-child { padding-top: 0; }
-.profile-dashboard .profile-record:last-child { padding-bottom: 0; border-bottom: 0; }
-.profile-dashboard .profile-record-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
-.profile-dashboard .profile-record-title { margin: 0; color: var(--profile-text); font-size: .96rem; font-weight: 750; min-width: 0; }
-.profile-dashboard .profile-record-header .icon-btn { flex-shrink: 0; margin-top: -4px; }
-.profile-dashboard .profile-record-subtitle { color: var(--profile-muted); font-size: .85rem; line-height: 1.7; }
-.profile-dashboard .profile-record-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; }
-.profile-dashboard .profile-record-actions form { margin: 0; display: flex; }
-.profile-dashboard .profile-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.profile-dashboard .profile-chip {
-    display: inline-flex; padding: 7px 11px; border: 1px solid #e2d8ef; border-radius: 9px;
-    background: var(--profile-lavender); color: var(--profile-purple); font-size: .82rem; font-weight: 600;
-}
-.profile-dashboard .profile-skills-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; }
-.profile-dashboard .profile-skill-option {
-    display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid #e9e4ef;
-    border-radius: 10px; font-size: .88rem; cursor: pointer; transition: border-color .18s ease, background .18s ease;
-}
-.profile-dashboard .profile-skill-option:has(input:checked) { border-color: var(--profile-purple); background: var(--profile-lavender); }
-.profile-dashboard .profile-skill-option input { accent-color: var(--profile-purple); }
-.profile-dashboard .profile-empty { color: var(--profile-muted); font-size: .9rem; line-height: 1.7; }
-.profile-dashboard .profile-inline-form { padding-top: 17px; margin-top: 20px; border-top: 1px solid #e9e4ef; }
-.profile-dashboard .profile-subheading { margin: 24px 0 14px; color: var(--profile-muted); font-size: .82rem; font-weight: 650; letter-spacing: .02em; }
-.profile-dashboard .profile-danger-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 6px 10px; border-radius: 9px; background: transparent; color: #a43c45; font-family: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; transition: background .18s ease; }
-.profile-dashboard .profile-danger-btn:hover { background: #fff0f1; }
-.profile-dashboard .icon-btn { border-radius: 9px; transition: background .18s ease, color .18s ease; }
-.profile-dashboard .icon-btn:hover { background: var(--profile-lavender); color: var(--profile-purple); }
-@media (max-width: 700px) {
-    .profile-dashboard .profile-hero { padding: 30px 0; }
-    .profile-dashboard .hero-icon { width: 60px; height: 60px; border-radius: 18px; font-size: 1.6rem; }
-    .profile-dashboard .profile-identity { align-items: flex-start; gap: 15px; padding: 19px; }
-    .profile-dashboard .profile-avatar-wrap, .profile-dashboard .profile-avatar { width: 70px; height: 70px; flex-basis: 70px; }
-    .profile-dashboard .profile-avatar { font-size: 1.4rem; }
-    .profile-dashboard .profile-name-row h2 { font-size: 1.1rem; }
-    .profile-dashboard .profile-section { padding: 19px 16px; }
-    .profile-dashboard .profile-view-grid, .profile-dashboard .profile-skills-grid { grid-template-columns: 1fr; gap: 17px; }
-}
-/* Success message: slides down from the top, then disappears (same as the other pages) */
-.ufuq-toast {
-    position: fixed; top: 18px; left: 50%; z-index: 1000; display: flex; align-items: center; gap: 11px;
-    width: max-content; max-width: calc(100% - 32px); padding: 13px 14px 13px 16px;
-    border: 1px solid #bfe3cc; border-radius: 13px; background: #eaf7ef; color: #1f6b47;
-    font-size: .92rem; font-weight: 700; line-height: 1.5; box-shadow: 0 12px 30px rgba(31,107,71,.16);
-    transform: translate(-50%, -150%); opacity: 0; transition: transform .35s ease, opacity .35s ease;
-}
-.ufuq-toast.is-shown { transform: translate(-50%, 0); opacity: 1; }
-.ufuq-toast-icon {
-    display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0;
-    border-radius: 50%; background: #2f8a5c; color: #fff; font-size: .85rem;
-}
-.ufuq-toast-close {
-    display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0;
-    padding: 0; border: 0; border-radius: 8px; background: none; color: #1f6b47; font-size: 1.2rem; line-height: 1; cursor: pointer;
-}
-.ufuq-toast-close:hover { background: rgba(31,107,71,.1); }
-/* Drop-down list with search (skills, experience, qualifications, ...) */
-.search-select{position:relative}
-.search-select > select{display:none!important}
-.search-select-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;cursor:pointer;background:#fff}
-.search-select-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.search-select-text.is-placeholder{color:#8a8396}
-.search-select-caret{flex-shrink:0;color:#8a8396;font-size:.8rem;transition:transform .18s ease}
-.search-select.is-open .search-select-caret{transform:rotate(180deg)}
-.search-select-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;padding:10px;border:1px solid #e5ddef;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(40,26,70,.14)}
-.search-select-panel[hidden]{display:none!important}
-.search-select-list{max-height:210px;margin-top:8px;overflow-y:auto;overscroll-behavior:contain}
-.search-select-option{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;color:#29243a;font-size:.9rem;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
-.search-select-option:hover,.search-select-option.is-selected{background:#f2ecfa}
-.search-select-option.is-selected{color:#281a46;font-weight:650}
-.search-select-option[hidden]{display:none!important}
-.search-select-option input{width:16px;height:16px;flex-shrink:0;margin:0;accent-color:#39265f;cursor:pointer}
-.search-select-empty{padding:10px 8px;color:#8a8396;font-size:.85rem;text-align:center}
-.search-select-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.search-select-chips:empty{display:none}
-.search-select-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border:1px solid #d9cbea;border-radius:999px;background:#f2ecfa;color:#281a46;font-size:.84rem;font-weight:700}
-.search-select-chip button{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:none;color:#39265f;font-size:1rem;line-height:1;cursor:pointer}
-.search-select-chip button:hover{color:#d94b56;background:rgba(217,75,86,.09)}
-/* Field validation: red field + message under it (same as the other forms) */
-.profile-dashboard .form-control.invalid{border:1.5px solid #d94b56!important;background-color:#fff7f7!important;box-shadow:0 0 0 3px rgba(217,75,86,.08)}
-.profile-dashboard .field-error{display:none;margin-top:7px;color:#c43643;font-size:.84rem;line-height:1.5}
-.profile-dashboard .required-mark{color:#d94b56;font-weight:800;margin-left:2px}
-@keyframes profileFadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes profileFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-@media (prefers-reduced-motion: reduce) {
-    .profile-dashboard *, .profile-dashboard *::before, .profile-dashboard *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-}
-</style>
+
 
 <div class="profile-dashboard">
     <section class="profile-hero">
@@ -867,6 +703,8 @@ user_header($me, 'My Profile', '');
         <section class="profile-section profile-hidden" id="pictureForm">
             <div class="profile-section-header"><h2>Change Profile Picture</h2></div>
             <form id="pictureInputForm" method="post" enctype="multipart/form-data" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="picture">
                 <input type="file" id="pictureInput" name="ProfilePicture" accept=".png,.jpg,.jpeg,image/png,image/jpeg" class="profile-hidden" required onchange="previewImage(this, 'pictureForm')">
                 <p class="profile-empty">Selected image: <strong data-file-name></strong></p>
@@ -880,6 +718,8 @@ user_header($me, 'My Profile', '');
         <section class="profile-section profile-hidden" id="nameForm">
             <div class="profile-section-header"><h2>Edit Name</h2></div>
             <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="name">
                 <div class="profile-view-grid">
                     <div class="form-group">
@@ -912,6 +752,7 @@ user_header($me, 'My Profile', '');
             </div>
             <div id="contactForm" class="profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="contact">
                     <div class="profile-view-grid">
                         <div class="form-group">
@@ -953,6 +794,7 @@ user_header($me, 'My Profile', '');
             </div>
             <div id="passwordForm" class="profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="change_password">
                     <div class="profile-view-grid">
                         <div class="form-group">
@@ -988,6 +830,7 @@ user_header($me, 'My Profile', '');
 
             <div id="educationForm" class="profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="education">
                     <div class="form-group">
                         <label class="form-label" for="EducationalStatus">Educational Status</label>
@@ -1015,6 +858,7 @@ user_header($me, 'My Profile', '');
                     </div>
                     <div class="profile-record-actions">
                         <form method="post" onsubmit="return confirm('Remove this study from your profile?')">
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_study">
                             <input type="hidden" name="FieldID" value="<?= (int)$study['FieldID'] ?>">
                             <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>                          </form>
@@ -1024,6 +868,7 @@ user_header($me, 'My Profile', '');
 
             <div id="studyForm" class="profile-inline-form profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_study">
                     <div class="profile-view-grid">
                         <div class="form-group">
@@ -1086,6 +931,7 @@ user_header($me, 'My Profile', '');
                     </div>
                     <div class="profile-record-actions">
                         <form method="post" onsubmit="return confirm('Remove this experience from your profile?')">
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_experience">
                             <input type="hidden" name="UserExperienceID" value="<?= (int)$experience['UserExperienceID'] ?>">   
                          <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>
@@ -1102,7 +948,10 @@ user_header($me, 'My Profile', '');
                     </div>
                 <?php else: ?>
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_experience">
+                    <input type="text" name="ExperienceOther" id="ExperienceOther"class="form-control lookup-other-input"
+                     maxlength="100" placeholder="Enter experience type" hidden>
                     <div class="form-group">
                         <label class="form-label" for="ExperienceID">Experience Type</label>
                         <select class="form-control" id="ExperienceID" name="ExperienceID" required data-search>
@@ -1110,6 +959,7 @@ user_header($me, 'My Profile', '');
                             <?php foreach ($experienceOptions as $opt): ?>
                                 <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__other__">Other (Add new)</option>
                         </select>
                     </div>
                     <div class="form-group"><label class="form-label" for="JobTitle">Job Title</label><input class="form-control" id="JobTitle" name="JobTitle" required maxlength="50"></div>
@@ -1128,14 +978,18 @@ user_header($me, 'My Profile', '');
 
             <div id="editExperienceForm" class="profile-inline-form profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="edit_experience">
                     <input type="hidden" name="UserExperienceID" id="UserExperienceID" value="">
+                    <input type="text" name="ExperienceOther" id="EditExperienceOther" class="form-control lookup-other-input"
+                     maxlength="100" placeholder="Enter experience type" hidden>
                     <div class="form-group">
                         <label class="form-label" for="EditExperienceID">Experience Type</label>
                         <select class="form-control" id="EditExperienceID" name="ExperienceID" required>
                             <?php foreach ($allExperienceTypes as $opt): ?>
                                 <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__other__">Other (Add new)</option>
                         </select>
                     </div>
                     <div class="form-group"><label class="form-label" for="EditJobTitle">Job Title</label><input class="form-control" id="EditJobTitle" name="JobTitle" required maxlength="50"></div>
@@ -1172,6 +1026,7 @@ user_header($me, 'My Profile', '');
                     </div>
                     <div class="profile-record-actions">
                         <form method="post" onsubmit="return confirm('Remove this qualification from your profile?')">
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_qualification">
                             <input type="hidden" name="UserQualificationID" value="<?= (int)$qualification['UserQualificationID'] ?>">
                             <button class="profile-danger-btn" type="submit"><?= icon('delete', 14) ?> Remove</button>
@@ -1188,7 +1043,10 @@ user_header($me, 'My Profile', '');
                     </div>
                 <?php else: ?>
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_qualification">
+                    <input type="text" name="QualificationOther" id="QualificationOther"
+                    class="form-control lookup-other-input" maxlength="100"  placeholder="Enter qualification" hidden>
                     <div class="form-group">
                         <label class="form-label" for="QualificationID">Qualification</label>
                         <select class="form-control" id="QualificationID" name="QualificationID" required data-search>
@@ -1196,6 +1054,7 @@ user_header($me, 'My Profile', '');
                             <?php foreach ($qualificationOptions as $opt): ?>
                                 <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__other__">Other (Add new)</option>
                         </select>
                     </div>
                     <div class="form-group"><label class="form-label" for="Institution">Institution</label><input class="form-control" id="Institution" name="Institution" required maxlength="100"></div>
@@ -1213,14 +1072,18 @@ user_header($me, 'My Profile', '');
 
                 <div id="editQualificationForm" class="profile-inline-form profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="edit_qualification">
                     <input type="hidden" name="UserQualificationID" id="UserQualificationID" value="">
+                    <input type="text" name="QualificationOther" id="EditQualificationOther" class="form-control lookup-other-input"
+                    maxlength="100" placeholder="Enter qualification" hidden>
                     <div class="form-group">
                         <label class="form-label" for="EditQualificationID">Qualification</label>
                         <select class="form-control" id="EditQualificationID" name="QualificationID" required>
                             <?php foreach ($allQualificationTypes as $opt): ?>
                                 <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__other__">Other (Add new)</option>
                         </select>
                     </div>
                     <div class="form-group"><label class="form-label" for="EditInstitution">Institution</label><input class="form-control" id="EditInstitution" name="Institution" required maxlength="100"></div>
@@ -1253,6 +1116,7 @@ user_header($me, 'My Profile', '');
             </div>
             <div id="skillsForm" class="profile-hidden">
                 <form method="post" class="profile-form" data-validate>
+<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="skills">
                     <?php if (!$skills): ?>
                         <p class="profile-empty">No skills are available in the database yet.</p>
@@ -1263,6 +1127,14 @@ user_header($me, 'My Profile', '');
                                 <?php foreach ($skills as $skill): ?>
                                     <option value="<?= (int)$skill['SkillID'] ?>" <?= in_array((int)$skill['SkillID'], $selectedSkills, true) ? 'selected' : '' ?>><?= profile_escape($skill['SkillName']) ?></option>
                                 <?php endforeach; ?>
+                                <div class="lookup-custom-add">
+                                    <input type="text" id="profileOtherSkill" class="form-control"  maxlength="50" placeholder="Enter another skill">
+                                    <button type="button" class="btn btn-ghost" id="profileAddSkill">
+                                        + other (Add skill)
+                                    </button>
+                                </div>
+
+                                <div id="profileCustomSkills" class="chip-list"></div>
                             </select>
                         </div>
                     <?php endif; ?>
@@ -1449,6 +1321,32 @@ function makeSearchSelect(select) {
 }
 
 document.querySelectorAll('select[data-search]').forEach(makeSearchSelect);
+function setupLookupOther(selectId, inputId) {
+    const select = document.getElementById(selectId);
+    const input = document.getElementById(inputId);
+
+    if (!select || !input) return;
+
+    function syncOther() {
+        const show = select.value === '__other__';
+
+        input.hidden = !show;
+        input.required = show;
+
+        if (!show) {
+            input.value = '';
+        }
+    }
+
+    select.addEventListener('change', syncOther);
+    syncOther();
+}
+
+setupLookupOther('ExperienceID', 'ExperienceOther');
+setupLookupOther('EditExperienceID', 'EditExperienceOther');
+
+setupLookupOther('QualificationID', 'QualificationOther');
+setupLookupOther('EditQualificationID', 'EditQualificationOther');
 
 /* Field validation (same as the other forms): the field turns red and the message shows under it.
    Errors found by the server (for example "Email already registered") are shown the same way. */
@@ -1549,7 +1447,7 @@ document.querySelectorAll('form[data-validate]').forEach(function (form) {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-    const serverError = <?= json_encode($fieldError) ?>;
+    const serverError = <?= json_encode($fieldError, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     if (!serverError) return;
     const panel = document.getElementById(serverError.form);
     if (panel && panel.classList.contains('profile-hidden')) {
@@ -1676,6 +1574,54 @@ function toggleProfileForm(id) {
         target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
+
+(function () {
+    const input = document.getElementById('profileOtherSkill');
+    const button = document.getElementById('profileAddSkill');
+    const container = document.getElementById('profileCustomSkills');
+
+    if (!input || !button || !container) return;
+
+    button.addEventListener('click', function () {
+        const name = input.value.trim().replace(/\s+/g, ' ');
+
+        if (!name || name.length > 50) {
+            input.focus();
+            return;
+        }
+
+        const duplicate = [...container.querySelectorAll('[data-skill-name]')]
+            .some(item => item.dataset.skillName.toLowerCase() === name.toLowerCase());
+
+        if (duplicate) {
+            alert('This skill has already been added.');
+            return;
+        }
+
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.dataset.skillName = name;
+
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'SkillsOther[]';
+        hidden.value = name;
+
+        const label = document.createElement('span');
+        label.textContent = name;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'chip-x';
+        remove.textContent = '×';
+        remove.addEventListener('click', () => chip.remove());
+
+        chip.append(hidden, label, remove);
+        container.appendChild(chip);
+
+        input.value = '';
+    });
+})();
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

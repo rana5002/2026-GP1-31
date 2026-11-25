@@ -1,8 +1,6 @@
 <?php
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/../includes/session.php';
 
 // One shared database connection ($pdo). Settings come from .env, nothing is hardcoded.
 require_once __DIR__ . '/../config/db.php';
@@ -153,7 +151,13 @@ class FieldError extends RuntimeException {
 }
 
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-
+function safe_http_url($url): string {
+    $url = trim((string)$url);
+    if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) return '';
+    $p = parse_url($url);
+    $scheme = strtolower((string)($p['scheme'] ?? ''));
+    return (in_array($scheme, ['http', 'https'], true) && !empty($p['host'])) ? $url : '';
+}
 
 /* Expects login.php to set $_SESSION['user_id'] and $_SESSION['role'] ('Admin'). */
 function require_admin(): int {
@@ -167,14 +171,16 @@ function require_admin(): int {
 }
 
 function csrf_token(): string {
-    return $_SESSION['csrf'] ??= bin2hex(random_bytes(16));
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
 }
 
 function csrf_check(): void {
-    $expected = $_SESSION['csrf'] ?? '';
-    $given    = $_POST['csrf'] ?? '';
+    $expected = (string)($_SESSION['csrf_token'] ?? '');
+    $given    = $_POST['csrf'] ?? $_POST['csrf_token'] ?? '';
 
-    // An empty session token must never match an empty form token.
     if ($expected === '' || !is_string($given) || !hash_equals($expected, $given)) {
         http_response_code(400);
         exit('Invalid request.');

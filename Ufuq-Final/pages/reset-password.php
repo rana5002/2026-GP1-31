@@ -1,5 +1,4 @@
 <?php
-session_start();
 
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/auth.php';
@@ -7,6 +6,7 @@ require_once __DIR__ . '/../includes/members.php';
 require_once __DIR__ . '/../includes/signed_token.php';
 
 no_cache();
+header('Referrer-Policy: no-referrer');
 
 $token = is_string($_REQUEST['t'] ?? null) ? $_REQUEST['t'] : '';
 
@@ -77,20 +77,37 @@ if ($member && $_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
 <?= auth_css() ?>
 
-body { background: var(--color-cream); }   /* beige page background*/
-
-.pw-wrap { position: relative; }
-.pw-wrap > input { padding-right: 44px; }
+body { 
+    background: var(--color-cream); }   /* beige page background*/
+.pw-wrap { 
+    position: relative; }
+.pw-wrap > input { 
+    padding-right: 44px; }
 .pw-eye {
-  position: absolute; top: 0; right: 0; height: 100%; width: 44px;
-  display: flex; align-items: center; justify-content: center;
-  background: none; border: 0; cursor: pointer; color: var(--color-text-faint);
+  position: absolute; 
+  top: 0; right: 0; 
+  height: 100%; 
+  width: 44px;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  background: none; 
+  border: 0; 
+  cursor: pointer; 
+  color: var(--color-text-faint);
 }
-.pw-eye:hover, .pw-eye:focus-visible { color: var(--color-primary-dark); outline: none; }
-.pw-eye svg { width: 20px; height: 20px; }
-.pw-eye .eye-off { display: none; }
-.pw-eye.shown .eye-on { display: none; }
-.pw-eye.shown .eye-off { display: block; }
+.pw-eye:hover, .pw-eye:focus-visible { 
+    color: var(--color-primary-dark); 
+    outline: none; }
+.pw-eye svg { 
+    width: 20px; 
+    height: 20px; }
+.pw-eye .eye-off { 
+    display: none; }
+.pw-eye.shown .eye-on { 
+    display: none; }
+.pw-eye.shown .eye-off { 
+    display: block; }
 
 </style>
 </head>

@@ -44,11 +44,14 @@ $headerLinks = [
     ],
     'company' => [],
     'admin' => [
-        ['label' => 'Company Verification', 'url' => $headerBase . 'pages/dashboard-admin.php', 'key' => 'verification'],
-        ['label' => 'Manage Opportunities', 'url' => $headerBase . 'pages/admin-opportunities.php', 'key' => 'opportunities'],
+        ['label' => 'Company Verification', 'url' => $headerBase . 'pages/dashboard-admin.php?tab=verification', 'key' => 'verification'],
+        ['label' => 'Manage Opportunities', 'url' => $headerBase . 'pages/dashboard-admin.php?tab=opportunities', 'key' => 'opportunities'],
     ],
 ];
 
+if ($headerRole === 'administrator') {
+    $headerRole = 'admin';
+}
 if (!isset($headerLinks[$headerRole])) {
     $headerRole = 'guest';
 }
@@ -56,6 +59,9 @@ if (!isset($headerLinks[$headerRole])) {
 $headerLogo = $headerBase . 'images-website/logo.png';
 ?>
 
+<?php if (!empty($extraCss)): ?>
+    <link rel="stylesheet" href="<?= htmlspecialchars((string) $extraCss, ENT_QUOTES, 'UTF-8') ?>">
+<?php endif; ?>
 <header class="site-header">
     <div class="container">
 
