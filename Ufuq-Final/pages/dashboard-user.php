@@ -1,7 +1,5 @@
 <?php
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
-error_reporting(E_ALL);
+
 
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/user-layout.php';
@@ -718,7 +716,6 @@ user_header($me, 'My Profile', '');
         <section class="profile-section profile-hidden" id="nameForm">
             <div class="profile-section-header"><h2>Edit Name</h2></div>
             <form method="post" class="profile-form" data-validate>
-<input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="name">
                 <div class="profile-view-grid">
@@ -950,8 +947,7 @@ user_header($me, 'My Profile', '');
                 <form method="post" class="profile-form" data-validate>
 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_experience">
-                    <input type="text" name="ExperienceOther" id="ExperienceOther"class="form-control lookup-other-input"
-                     maxlength="100" placeholder="Enter experience type" hidden>
+                    
                     <div class="form-group">
                         <label class="form-label" for="ExperienceID">Experience Type</label>
                         <select class="form-control" id="ExperienceID" name="ExperienceID" required data-search>
@@ -959,8 +955,22 @@ user_header($me, 'My Profile', '');
                             <?php foreach ($experienceOptions as $opt): ?>
                                 <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
                             <?php endforeach; ?>
-                            <option value="__other__">Other (Add new)</option>
                         </select>
+                    </div>
+                    <div class="lookup-custom-add">
+                        <button type="button" class="btn btn-ghost lookup-show-other" id="showExperienceOther">
+                            + Add Other
+                        </button>
+                        <div class="lookup-custom-entry" id="experienceOtherEntry" hidden>
+                            <input type="text" name="ExperienceOther" id="ExperienceOther"
+                                class="form-control lookup-custom-input"
+                                maxlength="100" placeholder="Enter experience type"
+                                autocomplete="off">
+                            <button type="button" class="btn btn-primary btn-sm lookup-custom-button"
+                                    id="addExperienceOther">
+                                Add
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group"><label class="form-label" for="JobTitle">Job Title</label><input class="form-control" id="JobTitle" name="JobTitle" required maxlength="50"></div>
                     <div class="form-group"><label class="form-label" for="Organization">Organization</label><input class="form-control" id="Organization" name="Organization" required maxlength="100"></div>
@@ -981,16 +991,32 @@ user_header($me, 'My Profile', '');
 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="edit_experience">
                     <input type="hidden" name="UserExperienceID" id="UserExperienceID" value="">
-                    <input type="text" name="ExperienceOther" id="EditExperienceOther" class="form-control lookup-other-input"
-                     maxlength="100" placeholder="Enter experience type" hidden>
+                    
                     <div class="form-group">
                         <label class="form-label" for="EditExperienceID">Experience Type</label>
                         <select class="form-control" id="EditExperienceID" name="ExperienceID" required>
                             <?php foreach ($allExperienceTypes as $opt): ?>
                                 <option value="<?= (int)$opt['ExperienceID'] ?>"><?= profile_escape($opt['ExperienceName']) ?></option>
                             <?php endforeach; ?>
-                            <option value="__other__">Other (Add new)</option>
                         </select>
+                    </div>
+                    <div class="lookup-custom-add">
+                        <button type="button" class="btn btn-ghost lookup-show-other"
+                                id="showEditExperienceOther">
+                            + Add Other
+                        </button>
+
+                        <div class="lookup-custom-entry" id="editExperienceOtherEntry" hidden>
+                            <input type="text" name="ExperienceOther" id="EditExperienceOther"
+                                class="form-control lookup-custom-input"
+                                maxlength="100" placeholder="Enter experience type"
+                                autocomplete="off">
+
+                            <button type="button" class="btn btn-primary btn-sm lookup-custom-button"
+                                    id="addEditExperienceOther">
+                                Add
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group"><label class="form-label" for="EditJobTitle">Job Title</label><input class="form-control" id="EditJobTitle" name="JobTitle" required maxlength="50"></div>
                     <div class="form-group"><label class="form-label" for="EditOrganization">Organization</label><input class="form-control" id="EditOrganization" name="Organization" required maxlength="100"></div>
@@ -1045,8 +1071,6 @@ user_header($me, 'My Profile', '');
                 <form method="post" class="profile-form" data-validate>
 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_qualification">
-                    <input type="text" name="QualificationOther" id="QualificationOther"
-                    class="form-control lookup-other-input" maxlength="100"  placeholder="Enter qualification" hidden>
                     <div class="form-group">
                         <label class="form-label" for="QualificationID">Qualification</label>
                         <select class="form-control" id="QualificationID" name="QualificationID" required data-search>
@@ -1054,8 +1078,25 @@ user_header($me, 'My Profile', '');
                             <?php foreach ($qualificationOptions as $opt): ?>
                                 <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
                             <?php endforeach; ?>
-                            <option value="__other__">Other (Add new)</option>
                         </select>
+                    </div>
+                    <div class="lookup-custom-add">
+                        <button type="button" class="btn btn-ghost lookup-show-other"
+                                id="showQualificationOther">
+                            + Add Other
+                        </button>
+
+                        <div class="lookup-custom-entry" id="qualificationOtherEntry" hidden>
+                            <input type="text" name="QualificationOther" id="QualificationOther"
+                                class="form-control lookup-custom-input"
+                                maxlength="100" placeholder="Enter qualification"
+                                autocomplete="off">
+
+                            <button type="button" class="btn btn-primary btn-sm lookup-custom-button"
+                                    id="addQualificationOther">
+                                Add
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group"><label class="form-label" for="Institution">Institution</label><input class="form-control" id="Institution" name="Institution" required maxlength="100"></div>
                     <div class="profile-view-grid">
@@ -1075,16 +1116,31 @@ user_header($me, 'My Profile', '');
 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="edit_qualification">
                     <input type="hidden" name="UserQualificationID" id="UserQualificationID" value="">
-                    <input type="text" name="QualificationOther" id="EditQualificationOther" class="form-control lookup-other-input"
-                    maxlength="100" placeholder="Enter qualification" hidden>
                     <div class="form-group">
                         <label class="form-label" for="EditQualificationID">Qualification</label>
                         <select class="form-control" id="EditQualificationID" name="QualificationID" required>
                             <?php foreach ($allQualificationTypes as $opt): ?>
                                 <option value="<?= (int)$opt['QualificationID'] ?>"><?= profile_escape($opt['QualificationName']) ?></option>
                             <?php endforeach; ?>
-                            <option value="__other__">Other (Add new)</option>
                         </select>
+                    </div>
+                    <div class="lookup-custom-add">
+                        <button type="button" class="btn btn-ghost lookup-show-other"
+                                id="showEditQualificationOther">
+                            + Add Other
+                        </button>
+
+                        <div class="lookup-custom-entry" id="editQualificationOtherEntry" hidden>
+                            <input type="text" name="QualificationOther" id="EditQualificationOther"
+                                class="form-control lookup-custom-input"
+                                maxlength="100" placeholder="Enter qualification"
+                                autocomplete="off">
+
+                            <button type="button" class="btn btn-primary btn-sm lookup-custom-button"
+                                    id="addEditQualificationOther">
+                                Add
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group"><label class="form-label" for="EditInstitution">Institution</label><input class="form-control" id="EditInstitution" name="Institution" required maxlength="100"></div>
                     <div class="profile-view-grid">
@@ -1127,15 +1183,25 @@ user_header($me, 'My Profile', '');
                                 <?php foreach ($skills as $skill): ?>
                                     <option value="<?= (int)$skill['SkillID'] ?>" <?= in_array((int)$skill['SkillID'], $selectedSkills, true) ? 'selected' : '' ?>><?= profile_escape($skill['SkillName']) ?></option>
                                 <?php endforeach; ?>
+                                </select>
                                 <div class="lookup-custom-add">
-                                    <input type="text" id="profileOtherSkill" class="form-control"  maxlength="50" placeholder="Enter another skill">
-                                    <button type="button" class="btn btn-ghost" id="profileAddSkill">
-                                        + other (Add skill)
+                                    <button type="button" class="btn btn-ghost lookup-show-other"
+                                            id="profileAddSkill">
+                                        + Add Other
                                     </button>
+                                    <div class="lookup-custom-entry" id="profileOtherSkillEntry" hidden>
+                                        <input type="text" id="profileOtherSkill"
+                                            class="form-control lookup-custom-input"
+                                            maxlength="50" placeholder="Enter another skill"
+                                            autocomplete="off">
+                                        <button type="button" class="btn btn-primary btn-sm lookup-custom-button"
+                                                id="confirmProfileSkill">
+                                            Add
+                                        </button>
+                                    </div>
                                 </div>
-
                                 <div id="profileCustomSkills" class="chip-list"></div>
-                            </select>
+                            
                         </div>
                     <?php endif; ?>
                     <div class="profile-form-actions">
@@ -1251,7 +1317,7 @@ function makeSearchSelect(select) {
             chips.innerHTML = '';
             chosen.forEach(function (opt) {
                 const chip = document.createElement('span');
-                chip.className = 'search-select-chip';
+                chip.className = 'lookup-chip';
                 chip.textContent = opt.textContent;
                 const remove = document.createElement('button');
                 remove.type = 'button';
@@ -1321,33 +1387,106 @@ function makeSearchSelect(select) {
 }
 
 document.querySelectorAll('select[data-search]').forEach(makeSearchSelect);
-function setupLookupOther(selectId, inputId) {
-    const select = document.getElementById(selectId);
-    const input = document.getElementById(inputId);
+/* Custom values for Experience and Qualification */
+/* Custom values for Experience and Qualification */
+function setupCustomLookup(config) {
+    const select = document.getElementById(config.select);
+    const showButton = document.getElementById(config.show);
+    const entry = document.getElementById(config.entry);
+    const input = document.getElementById(config.input);
+    const addButton = document.getElementById(config.add);
 
-    if (!select || !input) return;
+    if (!select || !showButton || !entry || !input || !addButton) return;
 
-    function syncOther() {
-        const show = select.value === '__other__';
+    showButton.addEventListener('click', function () {
+        showButton.classList.add('hidden');
+        entry.hidden = false;
+        entry.classList.remove('hidden');
+        input.focus();
+    });
 
-        input.hidden = !show;
-        input.required = show;
+    addButton.addEventListener('click', function () {
+        const name = input.value.trim().replace(/\s+/g, ' ');
 
-        if (!show) {
-            input.value = '';
+        if (!name || name.length > Number(input.maxLength)) {
+            input.focus();
+            return;
         }
-    }
 
-    select.addEventListener('change', syncOther);
-    syncOther();
+        const existing = Array.from(select.options).find(function (option) {
+            return option.value !== '' &&
+                option.value !== '__other__' &&
+                option.textContent.trim().toLowerCase() === name.toLowerCase();
+        });
+
+        if (existing) {
+            select.value = existing.value;
+            input.value = '';
+        } else {
+            let customOption = select.querySelector('option[value="__other__"]');
+
+            if (!customOption) {
+                customOption = new Option(name, '__other__');
+                select.add(customOption);
+            } else {
+                customOption.textContent = name;
+            }
+
+            select.value = '__other__';
+        }
+
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+
+       // Hide the input and show the button again.
+        entry.hidden = true;
+        showButton.hidden = false;
+    });
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addButton.click();
+        }
+
+        if (e.key === 'Escape') {
+            input.value = '';
+            entry.hidden = true;
+            showButton.hidden = false;
+        }
+    });
 }
+// Add custom values for Experience and Qualification
+setupCustomLookup({
+    select: 'ExperienceID',
+    show: 'showExperienceOther',
+    entry: 'experienceOtherEntry',
+    input: 'ExperienceOther',
+    add: 'addExperienceOther'
+});
 
-setupLookupOther('ExperienceID', 'ExperienceOther');
-setupLookupOther('EditExperienceID', 'EditExperienceOther');
+setupCustomLookup({
+    select: 'EditExperienceID',
+    show: 'showEditExperienceOther',
+    entry: 'editExperienceOtherEntry',
+    input: 'EditExperienceOther',
+    add: 'addEditExperienceOther'
+});
 
-setupLookupOther('QualificationID', 'QualificationOther');
-setupLookupOther('EditQualificationID', 'EditQualificationOther');
+setupCustomLookup({
+    select: 'QualificationID',
+    show: 'showQualificationOther',
+    entry: 'qualificationOtherEntry',
+    input: 'QualificationOther',
+    add: 'addQualificationOther'
+});
 
+setupCustomLookup({
+    select: 'EditQualificationID',
+    show: 'showEditQualificationOther',
+    entry: 'editQualificationOtherEntry',
+    input: 'EditQualificationOther',
+    add: 'addEditQualificationOther'
+});
 /* Field validation (same as the other forms): the field turns red and the message shows under it.
    Errors found by the server (for example "Email already registered") are shown the same way. */
 const PW_RULE = /^(?=.*[a-z])(?=.*[A-Z]).{8,}$/;
@@ -1575,14 +1714,33 @@ function toggleProfileForm(id) {
     }
 }
 
+/* Add custom Skills. */
 (function () {
-    const input = document.getElementById('profileOtherSkill');
-    const button = document.getElementById('profileAddSkill');
-    const container = document.getElementById('profileCustomSkills');
+    const showButton = document.getElementById('showOtherSkill');
+    const entry = document.getElementById('otherSkillEntry');
+    const input = document.getElementById('skillOtherInput');
+    const addButton = document.getElementById('addOtherSkill');
+    const select = document.getElementById('skillSelect');
 
-    if (!input || !button || !container) return;
+    if (showButton) {
+        showButton.addEventListener('click', function () {
+            showButton.classList.add('hidden');
+            showButton.style.setProperty('display', 'none', 'important');
+            if (entry) {
+                entry.hidden = false;
+                entry.classList.remove('hidden');
+                entry.style.display = 'block';
+            }
+            if (input) {
+                input.hidden = false;
+                input.focus();
+            }
+        });
+    }
 
-    button.addEventListener('click', function () {
+    if (!entry || !input || !addButton) return;
+
+    addButton.addEventListener('click', function () {
         const name = input.value.trim().replace(/\s+/g, ' ');
 
         if (!name || name.length > 50) {
@@ -1590,22 +1748,31 @@ function toggleProfileForm(id) {
             return;
         }
 
-        const duplicate = [...container.querySelectorAll('[data-skill-name]')]
-            .some(item => item.dataset.skillName.toLowerCase() === name.toLowerCase());
+        const exists = select
+            ? Array.from(select.options).some(function (option) {
+                  return option.textContent.trim().toLowerCase() === name.toLowerCase();
+              })
+            : false;
 
-        if (duplicate) {
+        const alreadyAdded = Array.from(
+            document.querySelectorAll('input[name="skills_other[]"]')
+        ).some(function (item) {
+            return item.value.toLowerCase() === name.toLowerCase();
+        });
+
+        if (exists || alreadyAdded) {
             alert('This skill has already been added.');
+            input.focus();
             return;
         }
 
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        chip.dataset.skillName = name;
-
         const hidden = document.createElement('input');
         hidden.type = 'hidden';
-        hidden.name = 'SkillsOther[]';
+        hidden.name = 'skills_other[]';
         hidden.value = name;
+
+        const chip = document.createElement('span');
+        chip.className = 'chip';
 
         const label = document.createElement('span');
         label.textContent = name;
@@ -1614,12 +1781,41 @@ function toggleProfileForm(id) {
         remove.type = 'button';
         remove.className = 'chip-x';
         remove.textContent = '×';
-        remove.addEventListener('click', () => chip.remove());
+        remove.setAttribute('aria-label', 'Remove ' + name);
+
+        remove.addEventListener('click', function () {
+            chip.remove();
+        });
 
         chip.append(hidden, label, remove);
+
+        let container = document.getElementById('customSkillsList');
+
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'customSkillsList';
+            container.className = 'chip-list';
+            entry.parentElement.after(container);
+        }
+
         container.appendChild(chip);
 
         input.value = '';
+        entry.hidden = true;
+        entry.classList.add('hidden');
+        entry.style.display = 'none';
+
+        if (showButton) {
+            showButton.classList.remove('hidden');
+            showButton.style.removeProperty('display');
+        }
+    });
+
+    input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addButton.click();
+        }
     });
 })();
 </script>

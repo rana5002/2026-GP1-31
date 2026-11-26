@@ -1,5 +1,12 @@
 <?php
+header('X-Frame-Options: DENY');
+header("Content-Security-Policy: frame-ancestors 'none'");
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: strict-origin-when-cross-origin');
 
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
 require_once __DIR__ . '/../includes/session.php';
 
 // One shared database connection ($pdo). Settings come from .env, nothing is hardcoded.
@@ -200,6 +207,11 @@ function admin_header(string $title, string $active): void { ?>
     <link rel="stylesheet" href="../css/base.css">
     <link rel="stylesheet" href="../css/layout.css">
     <link rel="stylesheet" href="../css/icons.css">
+    <?php
+    global $extraCss;
+    if (!empty($extraCss)): ?>
+        <link rel="stylesheet" href="<?= htmlspecialchars((string) $extraCss, ENT_QUOTES, 'UTF-8') ?>">
+    <?php endif; ?>
 </head>
 <body>
 

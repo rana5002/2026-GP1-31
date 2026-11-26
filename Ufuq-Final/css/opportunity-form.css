@@ -408,6 +408,11 @@ main{background:#faf6ef;
 #oppForm .lookup-toggle{display:flex!important;
     align-items:center;
     justify-content:space-between}
+    
+    [hidden] {
+    display: none !important;
+}
+
 #oppForm .lookup-picker.is-open .lookup-toggle{border-color:var(--admin-purple);box-shadow:0 0 0 4px rgba(57,38,95,.11)}
 @media(prefers-reduced-motion:reduce){#oppForm *{transition:none!important}}
 @media(max-width:700px){.page-content.container>div{max-width:100%!important}.form-row{grid-template-columns:1fr!important}.role-toggle{width:100%;max-width:none!important}}

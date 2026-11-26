@@ -190,12 +190,22 @@ function lookup_picker(string $name, string $placeholder, array $options, array 
         </div>
 <div class="lookup-chips"></div>
 <div class="lookup-custom-add">
-    <input type="text" class="form-control lookup-custom-input" maxlength="<?= $name === 'skills' ? 50 : 100 ?>" placeholder="Enter another value" autocomplete="off">
-    <button type="button" class="btn btn-ghost lookup-custom-button">
+    <div class="lookup-custom-entry" hidden>
+        <input type="text" class="form-control lookup-custom-input"
+               maxlength="<?= $name === 'skills' ? 50 : 100 ?>"
+               placeholder="Enter another value"
+               autocomplete="off">
+
+        <button type="button" class="btn btn-ghost lookup-custom-button">
+            Add
+        </button>
+    </div>
+
+    <button type="button" class="btn btn-ghost lookup-show-other">
         + Add Other
     </button>
 </div>
-<div class="lookup-custom-error" hidden></div>    </div>
+<div class="lookup-custom-error" hidden></div>
     <?php
     return (string)ob_get_clean();
 }
@@ -1026,16 +1036,25 @@ const n = p.dataset.lookupName;
 /* Add custom lookup values as removable chips. */
 document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
 
+    const entry = picker.querySelector('.lookup-custom-entry');
     const input = picker.querySelector('.lookup-custom-input');
     const button = picker.querySelector('.lookup-custom-button');
+    const showOther = picker.querySelector('.lookup-show-other');
     const chips = picker.querySelector('.lookup-chips');
     const error = picker.querySelector('.lookup-custom-error');
 
-    if (!input || !button || !chips) return;
+    if (!entry || !input || !button || !showOther || !chips) return;
 
-    const checkboxes = picker.querySelectorAll('input[type="checkbox"]');
     const customFieldName = picker.dataset.lookupName + '_other[]';
 
+    // Show the input only after clicking Add Other.
+    showOther.addEventListener('click', function () {
+        entry.hidden = false;
+        showOther.style.setProperty('display', 'none', 'important');
+        input.focus();
+    });
+
+    // Add the custom value as a chip.
     button.addEventListener('click', function () {
 
         const name = input.value.trim().replace(/\s+/g, ' ');
@@ -1090,6 +1109,23 @@ document.querySelectorAll('[data-lookup-picker]').forEach(function (picker) {
         chips.appendChild(chip);
 
         input.value = '';
+        entry.hidden = true;
+        showOther.style.removeProperty('display');
+    });
+
+    // Allow Enter to add the value.
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            button.click();
+        }
+
+        if (e.key === 'Escape') {
+            input.value = '';
+            entry.hidden = true;
+            showOther.hidden = false;
+            error.hidden = true;
+        }
     });
 });
 </script>

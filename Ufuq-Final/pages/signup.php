@@ -208,19 +208,30 @@ function exp_row(array $menu, array $v = [], array $bad = []): string {
           <?php foreach ($menu as $id => $label): ?>
             <option value="<?= (int)$id ?>"<?= ((string)($v['id'] ?? '') === (string)$id) ? ' selected' : '' ?>><?= e($label) ?></option>
           <?php endforeach; ?>
-          <option value="__other__"
-            <?= (($v['id'] ?? '') === '__other__') ? 'selected' : '' ?>>
-                Other (Add new) </option>
+          <option value="__other__">Other</option>
         </select>
-          <input
-            type="text"
-            name="exp_other[]"
-            class="form-control lookup-other-input"
-            maxlength="100"
-            placeholder="Enter experience type"
-            value="<?= e($v['other'] ?? '') ?>"
-            <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>
-          >
+          <div class="lookup-custom-add">
+            <button type="button" class="btn btn-ghost lookup-show-other">
+                + Add Other
+            </button>
+
+            <div class="lookup-custom-entry"
+                 <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>>
+                <input
+                    type="text"
+                    name="exp_other[]"
+                    class="form-control lookup-other-input"
+                    maxlength="100"
+                    placeholder="Enter experience type"
+                    value="<?= e($v['other'] ?? '') ?>"
+                    <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>
+                >
+
+                <button type="button" class="btn btn-primary btn-sm lookup-confirm-other">
+                    Add
+                </button>
+            </div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Job Title</label>
@@ -255,19 +266,30 @@ function qual_row(array $menu, array $v = [], array $bad = []): string {
           <?php foreach ($menu as $id => $label): ?>
             <option value="<?= (int)$id ?>"<?= ((string)($v['id'] ?? '') === (string)$id) ? ' selected' : '' ?>><?= e($label) ?></option>
           <?php endforeach; ?>
-          <option value="__other__"
-          <?= (($v['id'] ?? '') === '__other__') ? 'selected' : '' ?>>
-          Other (Add new)</option>
+          
         </select>
+        <div class="lookup-custom-add">
+    <button type="button" class="btn btn-ghost lookup-show-other">
+        + Add Other
+    </button>
+<option value="__other__">Other</option>
+    <div class="lookup-custom-entry"
+         <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>>
         <input
-          type="text"
-          name="qual_other[]"
-          class="form-control lookup-other-input"
-          maxlength="100"
-          placeholder="Enter qualification"
-          value="<?= e($v['other'] ?? '') ?>"
-          <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>
+            type="text"
+            name="qual_other[]"
+            class="form-control lookup-other-input"
+            maxlength="100"
+            placeholder="Enter qualification"
+            value="<?= e($v['other'] ?? '') ?>"
+            <?= (($v['id'] ?? '') === '__other__') ? '' : 'hidden' ?>
         >
+
+        <button type="button" class="btn btn-primary btn-sm lookup-confirm-other">
+            Add
+        </button>
+    </div>
+</div>
       </div>
       <div class="form-group">
         <label class="form-label">Institution</label>
@@ -458,6 +480,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ] as $k => $val) {
             if ($val === '') { $errors[$k] = 'This field is required.'; $emptyFound = true; }
         }
+
 
         $docState  = check_file('doc', DOC_EXT, DOC_MIME);
         $logoState = check_file('logo', IMG_EXT, IMG_MIME);
@@ -709,16 +732,25 @@ require __DIR__ . '/../includes/header.php';
             <?php endforeach; ?>
           </select>
           <div class="lookup-custom-add">
-              <input
-                  type="text"
-                  id="skillOtherInput"
-                  class="form-control"
-                  maxlength="50"
-                  placeholder="Enter another skill">
-              <button type="button" class="btn btn-ghost" id="addOtherSkill">
-                  + Add skill
-              </button>
-          </div>
+        <button type="button" class="btn btn-ghost lookup-show-other" id="showOtherSkill">
+            + Add Other
+        </button>
+
+        <div class="lookup-custom-entry" id="otherSkillEntry" hidden>
+            <input
+                type="text"
+                id="skillOtherInput"
+                class="form-control"
+                maxlength="50"
+                placeholder="Enter another skill"
+                autocomplete="off"
+            >
+
+            <button type="button" class="btn btn-primary btn-sm" id="addOtherSkill">
+                Add
+            </button>
+        </div>
+    </div>
           <div class="chip-list" id="skillChips">
             <?php foreach ($allSkills as $sid => $sname): if (!in_array((string)$sid, $postedSkills, true)) continue; ?>
               <span class="chip" data-id="<?= (int)$sid ?>">
@@ -1288,86 +1320,184 @@ function maskDate(input) {
     });
   }
 
-  /* Show or hide custom lookup inputs. */
-  document.addEventListener('change', function (event) {
-      const select = event.target;
+ /* Handle custom Experience and Qualification values */
 
-      if (!select.matches('.entry-select')) return;
+// Show the external input.
+document.addEventListener('click', function (event) {
+    const button = event.target.closest('.lookup-show-other');
+    if (!button) return;
 
-      const row = select.closest('.entry-row');
-      if (!row) return;
+    const row = button.closest('.entry-row');
+    if (!row) return;
 
-      const otherInput = row.querySelector('.lookup-other-input');
-      if (!otherInput) return;
+    const select = row.querySelector('.entry-select');
+    const entry = row.querySelector('.lookup-custom-entry');
+    const input = row.querySelector('.lookup-other-input');
 
-      const isOther = select.value === '__other__';
+    if (!select || !entry || !input) return;
 
-      otherInput.hidden = !isOther;
-      otherInput.required = isOther;
+    select.value = '__other__';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
 
-      if (!isOther) {
-          otherInput.value = '';
-      }
+    button.style.display = 'none';
+    entry.hidden = false;
+    entry.style.display = 'block';
+
+    input.hidden = false;
+    input.focus();
+});
+
+
+// Confirm the custom value.
+document.addEventListener('click', function (event) {
+    const button = event.target.closest('.lookup-confirm-other');
+    if (!button) return;
+
+    const row = button.closest('.entry-row');
+    if (!row) return;
+
+    const entry = row.querySelector('.lookup-custom-entry');
+    const showButton = row.querySelector('.lookup-show-other');
+    const input = row.querySelector('.lookup-other-input');
+
+    if (!entry || !showButton || !input) return;
+
+    const name = input.value.trim().replace(/\s+/g, ' ');
+
+    if (!name || name.length > 100) {
+        input.focus();
+        return;
+    }
+
+    input.value = name;
+    input.required = false;
+entry.hidden = true;
+entry.style.display = 'none';
+
+showButton.hidden = false;
+showButton.style.display = '';
+
+    // Display the added value outside the dropdown.
+    let result = row.querySelector('.lookup-custom-result');
+
+    if (!result) {
+        result = document.createElement('div');
+        result.className = 'lookup-custom-result';
+        showButton.after(result);
+    }
+
+    result.textContent = name;
+});
+
+
+// Allow Enter to confirm the value.
+document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter') return;
+
+    const input = event.target.closest('.lookup-other-input');
+    if (!input) return;
+
+    event.preventDefault();
+
+    const row = input.closest('.entry-row');
+    const button = row?.querySelector('.lookup-confirm-other');
+
+    if (button) button.click();
+});
+
+
+/* Add custom Skills. */
+(function () {
+    const showButton = document.getElementById('showOtherSkill');
+    const entry = document.getElementById('otherSkillEntry');
+    const input = document.getElementById('skillOtherInput');
+    const addButton = document.getElementById('addOtherSkill');
+    const select = document.getElementById('skillSelect');
+
+    if (!showButton || !entry || !input || !addButton || !select) return;
+
+    showButton.addEventListener('click', function () {
+        showButton.hidden = true;
+    showButton.style.display = 'none';
+
+    entry.hidden = false;
+    entry.style.display = 'flex';
+
+    input.hidden = false;
+    input.focus();
+    });
+
+    addButton.addEventListener('click', function () {
+        const name = input.value.trim().replace(/\s+/g, ' ');
+
+        if (!name || name.length > 50) {
+            input.focus();
+            return;
+        }
+
+        const exists = Array.from(select.options).some(function (option) {
+            return option.textContent.trim().toLowerCase() === name.toLowerCase();
+        });
+
+        const alreadyAdded = Array.from(
+            document.querySelectorAll('input[name="skills_other[]"]')
+        ).some(function (item) {
+            return item.value.toLowerCase() === name.toLowerCase();
+        });
+
+        if (exists || alreadyAdded) {
+            alert('This skill has already been added.');
+            input.focus();
+            return;
+        }
+
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'skills_other[]';
+        hidden.value = name;
+
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+
+        const label = document.createElement('span');
+        label.textContent = name;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'chip-x';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove ' + name);
+
+        remove.addEventListener('click', function () {
+            chip.remove();
+        });
+
+        chip.append(hidden, label, remove);
+
+        let container = document.getElementById('customSkillsList');
+
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'customSkillsList';
+            container.className = 'chip-list';
+            entry.parentElement.after(container);
+        }
+
+        container.appendChild(chip);
+
+        input.value = '';
+        entry.hidden = true;
+showButton.hidden = true;  
   });
 
-  /* Add custom skills as removable chips. */
-  (function () {
-      const input = document.getElementById('skillOtherInput');
-      const button = document.getElementById('addOtherSkill');
-      const chips = document.getElementById('skillChips');
+    input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addButton.click();
+        }
+    });
+})();
 
-      if (!input || !button || !chips) return;
-
-      button.addEventListener('click', function () {
-          const name = input.value.trim().replace(/\s+/g, ' ');
-
-          if (!name) {
-              input.focus();
-              return;
-          }
-
-          if (name.length > 50) {
-              alert('Skill must not exceed 50 characters.');
-              return;
-          }
-
-          const existing = [...chips.querySelectorAll('[data-custom-skill]')]
-              .some(el => el.dataset.customSkill.toLowerCase() === name.toLowerCase());
-
-          if (existing) {
-              alert('This skill has already been added.');
-              return;
-          }
-
-          const chip = document.createElement('span');
-          chip.className = 'chip';
-          chip.dataset.customSkill = name;
-
-          const hidden = document.createElement('input');
-          hidden.type = 'hidden';
-          hidden.name = 'skills_other[]';
-          hidden.value = name;
-
-          const label = document.createElement('span');
-          label.textContent = name;
-
-          const remove = document.createElement('button');
-          remove.type = 'button';
-          remove.className = 'chip-x';
-          remove.textContent = '×';
-          remove.setAttribute('aria-label', 'Remove ' + name);
-
-          remove.addEventListener('click', function () {
-              chip.remove();
-          });
-
-          chip.append(hidden, label, remove);
-          chips.appendChild(chip);
-
-          input.value = '';
-          input.focus();
-      });
-  })();
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
 

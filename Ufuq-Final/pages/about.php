@@ -351,25 +351,12 @@ require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/footer.php';
 ?>
 
-<script src="../js/store.js"></script>
-<script src="../js/constants.js"></script>
-<script src="../js/components.js"></script>
 
 <script>
 (function () {
     "use strict";
 
-    /* Render the shared header and footer safely. */
-    if (typeof renderHeader === "function") {
-        renderHeader({
-            active: "about",
-            base: "../"
-        });
-    } else {
-        console.error(
-            "renderHeader is not available. Check ../js/components.js"
-        );
-    }
+    
 
     
 
