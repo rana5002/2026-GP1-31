@@ -213,7 +213,7 @@ function admin_header(string $title, string $active): void { ?>
         <link rel="stylesheet" href="<?= htmlspecialchars((string) $extraCss, ENT_QUOTES, 'UTF-8') ?>">
     <?php endif; ?>
 </head>
-<body>
+<body> 
 
 <header class="site-header">
     <div class="container">
